@@ -7,3 +7,6 @@ def get_puzzle_url(year, day):
 
 def get_input_url(year, day):
     return get_puzzle_url(year, day) + '/input'
+
+def get_submit_url(year, day):
+    return get_puzzle_url(year, day) + '/answer'

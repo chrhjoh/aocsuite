@@ -1,8 +1,8 @@
-from bs4 import BeautifulSoup
 from html2text import html2text
 from pyaoc.utils.session import get_aoc_session
 from pyaoc.utils.url import get_puzzle_url, get_input_url
-from pyaoc.utils.io import save_file
+from pyaoc.utils.parsing import parse_html_tag
+from pyaoc.utils.io import File
 from urllib.request import Request, urlopen
 from logging import getLogger
 from typing import Tuple
@@ -28,7 +28,7 @@ def get_and_save_experiment_files(save_directory: str, year: int, day: int) -> N
     logger.debug(f'Sample from example input: {example[:200]}')
 
     for content, name in zip([input_data, description, example], ['input.txt', 'description.md', 'example.txt']):
-        save_file(save_directory + f'/{name}', content)
+        File(name=name, content=content).save()
 
     logger.info(f'Successfully fetched input data and descriptions to {save_directory}')
 
@@ -36,9 +36,9 @@ def fetch_description_in_markdown(url: str)->Tuple[str, str]:
     req = Request(url)
     with urlopen(req) as response:
         description_html = response.read().decode('utf-8')
-    description_html = extract_tag(description_html, 'article', False)
+    description_html = parse_html_tag(description_html, 'article', False)
     description = html2text(description_html).strip()
-    example = extract_tag(description_html, 'code', True).strip()
+    example = parse_html_tag(description_html, 'code', True).strip()
     return description, example
 
 
@@ -48,12 +48,3 @@ def fetch_input_data(url: str, session: str) -> str:
         input_data = response.read().decode('utf-8').strip()
     return input_data
 
-
-def extract_tag(html_string: str, tag_name: str, only_text : bool) -> str:
-    soup = BeautifulSoup(html_string, 'html.parser')
-    tags = soup.find_all(tag_name)
-    markdown_contents = []
-    for tag in tags:
-        html_content = tag.text if only_text else str(tag)
-        markdown_contents.append(html_content.strip())  # Strip any leading/trailing whitespace
-    return '\n'.join(markdown_contents)
