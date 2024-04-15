@@ -1,51 +1,56 @@
+from typing import Iterable
 from html2text import html2text
-from pyaoc.utils.session import get_aoc_session
-from pyaoc.utils.url import get_puzzle_url, get_input_url
+from pyaoc.utils.http import initialize_http
+from pyaoc.utils.languages.language_factory import Language
 from pyaoc.utils.parsing import parse_html_tag
-from pyaoc.utils.io import File
-from urllib.request import Request, urlopen
+from pyaoc.utils import messages
+from pyaoc.utils import filenames
 from logging import getLogger
-from typing import Tuple
 from time import sleep
+from pyaoc.utils.io import File
 
 logger = getLogger(__file__)
 
-def get_and_save_experiment_files(save_directory: str, year: int, day: int) -> None:
-    session = get_aoc_session()
-    puzzle_url = get_puzzle_url(year, day)
-    input_url = get_input_url(year, day)
-
-    logger.debug(f'AoC session: {session}')
-    logger.debug(f'Puzzle url: {puzzle_url}')
-    logger.debug(f'Input Data url: {input_url}')
-
-    input_data = fetch_input_data(input_url, session)
-    sleep(5)
-    description, example = fetch_description_in_markdown(puzzle_url, session)
+def fetch_exercise_files(year: int, day: int) -> Iterable[File]:
+    http = initialize_http(year=year, day=day)
+    input_data = http.get_input()
+    sleep(2)
+    raw_puzzle = http.get_puzzle()
+    puzzle = parse_puzzle_to_markdown(raw_puzzle)
+    example = parse_puzzle_to_example(raw_puzzle)
     
-    logger.debug(f'Sample from input data: {input_data[:200]}')
-    logger.debug(f'Sample from description: {description[:200]}')
-    logger.debug(f'Sample from example input: {example[:200]}')
+    files = File(filenames.PUZZLE_FILE, puzzle), File(filenames.INPUT_FILE, input_data), File(filenames.EXAMPLE_FILE, example)
 
-    for content, name in zip([input_data, description, example], ['input.txt', 'description.md', 'example.txt']):
-        File(name=save_directory + f'/{name}', content=content).save()
+    for file in files:
+         logger.debug(messages.DEBUG_PARSED_AOC_FILES.format(input_type=file.name, sample=file.content[:200]))
 
-    logger.info(f'Successfully fetched input data and descriptions to {save_directory}')
+    return files
 
-def fetch_description_in_markdown(url: str, session)->Tuple[str, str]:
-    req = Request(url, headers={"Cookie": f'session={session}'})
-    with urlopen(req) as response:
-        description_html = response.read().decode('utf-8')
-    import pdb;pdb.set_trace()
-    description_html = parse_html_tag(description_html, 'article', False)
-    description = html2text(description_html).strip()
-    example = parse_html_tag(description_html, 'code', True).strip()
-    return description, example
+def fetch_language_files(language: Language) -> Iterable[File]:
+    files =[
+        File(filenames.EXERCISE_FILE.format(exercise=1, filetype=language.filetype), language.exercise_content()),
+        File(filenames.EXERCISE_FILE.format(exercise=2, filetype=language.filetype), language.exercise_content()),
+        File(filenames.UTIL_FILE.format(filetype=language.filetype), language.utils_content())
+    ]
+    return files
 
+def fetch_all_files(year: int, day: int, language: Language) -> Iterable[File]:
+    files = []
+    files.extend(fetch_exercise_files(year, day))
+    files.extend(fetch_language_files(language))
+    return files
+    
 
-def fetch_input_data(url: str, session: str) -> str:
-    req = Request(url, headers={"Cookie": f'session={session}'})
-    with urlopen(req) as response:
-        input_data = response.read().decode('utf-8').strip()
-    return input_data
+def parse_puzzle_to_markdown(raw_puzzle: str) -> str:
+    article = parse_article(raw_puzzle)
+    markdown = html2text(article).strip()
+    return markdown
+
+def parse_puzzle_to_example(raw_puzzle: str) -> str:
+    article = parse_article(raw_puzzle)
+    example = parse_html_tag(article, 'code', True).strip()
+    return example
+
+def parse_article(puzzle: str) -> str:
+    return parse_html_tag(puzzle, 'article', False)
 
