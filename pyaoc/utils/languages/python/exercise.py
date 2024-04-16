@@ -1,15 +1,12 @@
 
 def create_python_exercise()-> str:
-    return """from .utils import parse_args, load_data
+    return """from .utils import run_python_exercise
 
-def exercise() -> int:
-    args = parse_args()
-    data = load_data(args.data_path)
+def exercise(data: str) -> int:
 
     return 0
 
 if __name__ == '__main__':
-    result = exercise()
-    print(result)
+    run_python_exercise(exercise)    
 
     """
