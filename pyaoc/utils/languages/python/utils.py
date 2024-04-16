@@ -19,7 +19,7 @@ def load_data(data_path: str) -> str:
     Load Data from data_path to a string
 
     '''
-    return open(data_path,'r').read()
+    return open(data_path,'r').read().strip()
     
 
 
@@ -27,11 +27,10 @@ def run_python_exercise(exercise_func: Callable[[str], int]):
     args = parse_args()
     input_data = load_data(args.data_path)
     answer = exercise_func(input_data)
-    print(f'Recieved answer {answer} from exercise.')
+    print(f'Answer to exercise: {answer}')
     if args.answer_path:
         print(f'Saving answer to {args.answer_path}.')
+        open(args.answer_path,'w').write(str(answer))
     else:
         print('Not saving answer. Answer Path was not set. This was probably example data.')
-
-
 """

@@ -7,7 +7,7 @@ logger = logging.getLogger(__file__)
 
 CreateUtilsContent = Callable[[], str]
 CreateExerciseContent = Callable[[], str]
-Executor = Callable[[str, str, Optional[str]], int]
+Executor = Callable[[str, str, Optional[str]], None]
 class Language():
     
     def __init__(self, name: str, filetype: str, utils: CreateUtilsContent, exercise: CreateExerciseContent, executor: Executor) -> None:
@@ -35,10 +35,10 @@ def get_language(language: Optional[str]) -> Language:
 
 def log_executor(executor: Executor):
     def wrapper(*args, **kwargs):
-        logger.info(messages.EXECTOR_RUN_CMD.format(execuctor=executor.__name__))
+        logger.info(messages.EXECUTOR_RUN_CMD.format(executor=executor.__name__))
         start_time = time()
-        output = executor(*args, **kwargs)
+        executor(*args, **kwargs)
         run_time = time() - start_time
-        logger.info(messages.EXECTUTOR_FINISHED_CMD.format(seoncds=run_time, output=output))
-        return output
+        logger.info(messages.EXECUTOR_FINISHED_CMD.format(seconds=run_time))
+
     return wrapper

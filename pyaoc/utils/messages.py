@@ -5,7 +5,7 @@ DEFAULT_LANGUAGE_MESSAGE = "Language parameter was not specified. Choosing defau
 LANGUAGE_NOT_FOUND_MESSAGE = "Template for language {language} does not exist. Supported languages are {supported}"
 
 INITIALIZE_DIRECTORY = "AOC Solution directory {directory} was not found. Initializing Directories and templates"
-INITIALIZED_SUCCESS = "The Solution directory {directory} was created and the exercise from advent of code along with templates has been put there.\n\nPlease solve exercise and run command to run and submit exercise: e.g. python -m pyaoc --year {year} --day {day} --exercise {exercise} --run --submit\n\nExercise 2 can be fetched by running: e.g. python -m pyaoc --year {year} --day {day} --fetch "
+INITIALIZED_SUCCESS = "The Solution directory {directory} was created and the exercise from advent of code along with templates has been put there.\n\nPlease solve exercise and run command to run and submit exercise: e.g. python -m pyaoc --year {year} --day {day} --exercise {exercise} --run --submit\n\nExercise 2 can be fetched after solving and submitting exercise 1 by running: e.g. python -m pyaoc --year {year} --day {day} --fetch "
 INITIALIZED_FAILED = ""
 
 ANSWER_TOO_LOW = ""
@@ -19,8 +19,8 @@ DEBUG_RAW_GET_RESPONSE =  "raw get response from advent of code:\n{response}"
 DEBUG_PARSED_AOC_FILES = "Sample from parsed {input_type}:\n{sample}"
 DEBUG_PARSED_SUBMIT_RESPONSE = "Recieved following response from Advent of Code:\n{response}"
 
-EXECTOR_RUN_CMD = "Running Executor: {executor}"
-EXECTUTOR_FINISHED_CMD = "Exectutor ran in {seconds} seconds\nResult from exercise: {output}"
+EXECUTOR_RUN_CMD = "Running Executor: {executor}"
+EXECUTOR_FINISHED_CMD = "Exectutor ran in {seconds} seconds."
 
 CANT_SUBMIT_EXAMPLE = 'You have specified input-type = "example" and cannot submit these results. Please rerun with input-type = "input"'
 

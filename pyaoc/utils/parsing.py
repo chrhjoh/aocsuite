@@ -17,7 +17,7 @@ class AocNamespace(Namespace):
 
 def parse_args():
     parser = ArgumentParser('Advent Of Code API')
-    parser.add_argument('-b', '--base-dir', type=str, action='store', default=os.getcwd(), help='Which day (1-25) are you working on?')
+    parser.add_argument('-b', '--base-dir', type=str, action='store', default=os.path.relpath(os.getcwd()), help='Which day (1-25) are you working on?')
     parser.add_argument('-d', '--day', type=int, action='store',  choices=range(1,26), help='Which day (1-25) are you working on?')
     parser.add_argument('-y', '--year', type=int, action='store', required=True, choices=range(2015, 2024), help='Which year (>=2015) are you working on?')
     parser.add_argument('-f', '--fetch', action='store_true', help='Fetch the question from Advent of code. ')

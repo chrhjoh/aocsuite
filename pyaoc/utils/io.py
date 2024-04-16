@@ -48,7 +48,7 @@ class AocDirectory(Path):
     def save_file_in_dir(self, file: File, skip_exists: bool) -> None:
         file.name = self.path_in_directory(file.name)
 
-        if not skip_exists and not os.path.exists(file.name):
+        if not skip_exists or not os.path.exists(file.name):
             file.save()
         else:
             logger.info(messages.FILE_NOT_SAVED_SKIPPED.format(file=file.name))
