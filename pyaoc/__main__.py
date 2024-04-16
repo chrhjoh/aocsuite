@@ -54,13 +54,19 @@ def main():
         exercise_path = DAY_DIRECTORY.path_in_directory(exercise_file)
         data_file = filenames.EXAMPLE_FILE if args.input == 'example' else filenames.INPUT_FILE
         data_path = DAY_DIRECTORY.path_in_directory(data_file)
-        answer_file = run_executor(language.executor, exercise_path, data_path)
-        DAY_DIRECTORY.save_file_in_dir(answer_file, skip_exists=False)
+        
+        if args.input != 'example':
+            answer_file = filenames.ANSWER_FILE.format(exercise=args.exercise)
+            answer_path = DAY_DIRECTORY.path_in_directory(answer_file)
+        else:
+            answer_path = None
+
+        run_executor(language.executor, exercise_path, data_path, answer_path)
 
     if args.submit and args.exercise:
         answer = DAY_DIRECTORY.load_file(filenames.ANSWER_FILE.format(exercise=1)).content
         response = submit(args.year, args.day, args.exercise, int(answer))
-        print(response)
+        print(f'Submission response from Advent of Code:\n{response}')
 
 if __name__ == '__main__':
     main()

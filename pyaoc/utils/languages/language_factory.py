@@ -7,7 +7,7 @@ logger = logging.getLogger(__file__)
 
 CreateUtilsContent = Callable[[], str]
 CreateExerciseContent = Callable[[], str]
-Executor = Callable[[str, str], int]
+Executor = Callable[[str, str, Optional[str]], int]
 class Language():
     
     def __init__(self, name: str, filetype: str, utils: CreateUtilsContent, exercise: CreateExerciseContent, executor: Executor) -> None:
