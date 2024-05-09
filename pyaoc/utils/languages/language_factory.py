@@ -1,39 +1,19 @@
-from pyaoc.utils import messages
-from time import time
 import logging
+from enum import StrEnum
+from time import time
 from typing import Callable, Optional
+
+from pyaoc.utils import messages
 
 logger = logging.getLogger(__file__)
 
-CreateUtilsContent = Callable[[], str]
-CreateExerciseContent = Callable[[], str]
-Executor = Callable[[str, str, Optional[str]], None]
-class Language():
-    
-    def __init__(self, name: str, filetype: str, utils: CreateUtilsContent, exercise: CreateExerciseContent, executor: Executor) -> None:
-        self.name = name
-        self.filetype = filetype
-        self.utils_content = utils
-        self.exercise_content = exercise
-        self.executor = executor
-        self.register_language()
 
-    def register_language(self):
-        LANGUAGES[self.name] = self
+class Language(StrEnum):
+    PYTHON = "python"
+    RUST = "rust"
 
-LANGUAGES: dict[str, Language] = {}
 
-def get_language(language: Optional[str]) -> Language:
-    if language is None:
-        logger.warning(messages.DEFAULT_LANGUAGE_MESSAGE)
-        return LANGUAGES['python']
-
-    if language not in LANGUAGES:
-        raise NotImplementedError(messages.LANGUAGE_NOT_FOUND_MESSAGE.format(language=language, 
-                                                                             supported=LANGUAGES.keys()))
-    return LANGUAGES[language]
-
-def log_executor(executor: Executor):
+def log_executor(executor: Callable):
     def wrapper(*args, **kwargs):
         logger.info(messages.EXECUTOR_RUN_CMD.format(executor=executor.__name__))
         start_time = time()
@@ -42,3 +22,40 @@ def log_executor(executor: Executor):
         logger.info(messages.EXECUTOR_FINISHED_CMD.format(seconds=run_time))
 
     return wrapper
+
+
+class LanguageAdapter:
+
+    def __init__(self, directory: str) -> None:
+        self.directory = directory
+
+    def initialize(self):
+        raise NotImplementedError("Should be implemented for each Language")
+
+    @log_executor
+    def execute(self, exercise: int, data_path: str, answer_path: Optional[str]) -> None:
+        raise NotImplementedError("Should be implemented for each Language")
+
+
+LANGUAGES = {}
+
+
+def register_language(language: Language):
+    def _wrapper(cls: LanguageAdapter):
+        LANGUAGES[language] = cls
+
+    return _wrapper
+
+
+def get_language(language: Optional[Language], **kwargs) -> LanguageAdapter:
+    if language is None:
+        logger.warning(messages.DEFAULT_LANGUAGE_MESSAGE)
+        return LANGUAGES[Language.PYTHON](**kwargs)
+
+    if language not in LANGUAGES:
+        raise NotImplementedError(
+            messages.LANGUAGE_NOT_FOUND_MESSAGE.format(
+                language=language, supported=LANGUAGES.keys()
+            )
+        )
+    return LANGUAGES[language](**kwargs)
