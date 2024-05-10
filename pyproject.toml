@@ -1,7 +1,14 @@
 [project]
 name = 'pyaoc'
 description = 'Python API for doing Advent of Code exercises with Python'
-version = "0.0.1"
+version = "0.1.1"
 authors = [
 	{ name = 'Christian Johansen', email = "christian.holm.johansen@gmail.com" }
 ]
+dependencies = [
+  "html2text",
+  "bs4"
+  ]
+
+[project.scripts]
+pyaoc = "pyaoc.main:main"

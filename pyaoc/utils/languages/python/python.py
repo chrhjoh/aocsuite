@@ -5,13 +5,14 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from pyaoc.utils.languages.language_factory import Language, LanguageAdapter, register_language
+from pyaoc.utils import enums
+from pyaoc.utils.languages import factory
 
 logger = logging.getLogger(__file__)
 
 
-@register_language(Language.PYTHON)
-class PythonAdapter(LanguageAdapter):
+@factory.register_language(enums.LanguageName.PYTHON)
+class PythonAdapter(factory.LanguageAdapter):
     def __init__(self, directory: str) -> None:
         super().__init__(directory)
         template_dir = Path(__file__).parent / "templates"
@@ -23,7 +24,7 @@ class PythonAdapter(LanguageAdapter):
     def execute(self, exercise: int, data_path: str, answer_path: Optional[str]) -> None:
 
         exercise_path = self.base_exercise_path.format(exercise=exercise)
-        cmd = ["python", exercise_path, "--data-path", data_path]
+        cmd = ["python3", exercise_path, "--data-path", data_path]
         if answer_path:
             cmd.extend(["--answer-path", answer_path])
         try:

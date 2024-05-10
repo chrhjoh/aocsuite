@@ -1,16 +1,11 @@
 import logging
-from enum import StrEnum
 from time import time
-from typing import Callable, Optional
+from typing import Callable, Optional, Type
 
 from pyaoc.utils import messages
+from pyaoc.utils.enums import LanguageName
 
 logger = logging.getLogger(__file__)
-
-
-class Language(StrEnum):
-    PYTHON = "python"
-    RUST = "rust"
 
 
 def log_executor(executor: Callable):
@@ -40,17 +35,17 @@ class LanguageAdapter:
 LANGUAGES = {}
 
 
-def register_language(language: Language):
-    def _wrapper(cls: LanguageAdapter):
+def register_language(language: LanguageName):
+    def _wrapper(cls: Type[LanguageAdapter]):
         LANGUAGES[language] = cls
 
     return _wrapper
 
 
-def get_language(language: Optional[Language], **kwargs) -> LanguageAdapter:
+def get_language(language: LanguageName, **kwargs) -> LanguageAdapter:
     if language is None:
         logger.warning(messages.DEFAULT_LANGUAGE_MESSAGE)
-        return LANGUAGES[Language.PYTHON](**kwargs)
+        return LANGUAGES[LanguageName.PYTHON](**kwargs)
 
     if language not in LANGUAGES:
         raise NotImplementedError(

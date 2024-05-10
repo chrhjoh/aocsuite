@@ -1,61 +1,78 @@
 import os
 import re
-from argparse import ArgumentParser, Namespace
-from enum import StrEnum
-from typing import List, Optional
+from argparse import Action, ArgumentParser, Namespace
+from enum import Enum
+from typing import List
 
 from bs4 import BeautifulSoup
 
-from pyaoc.utils.languages.language_factory import Language
-
-
-class InputType(StrEnum):
-    EXAMPLE = "example"
-    INPUT = "input"
+from pyaoc.utils import enums
 
 
 class AocNamespace(Namespace):
+    command: enums.Command
     base_dir: str
-    day: Optional[int]
+    day: int
     year: int
-    fetch: bool
-    calendar: bool
-    exercise: List[int]
-    input: InputType
-    run: bool
+    exercise: int
+    input: enums.InputType
     no_submit: bool
-    language: Language
+    language: enums.LanguageName
+
+
+class EnumAction(Action):
+    """
+    Argparse action for handling Enums
+    """
+
+    def __init__(self, **kwargs):
+        # Pop off the type value
+        enum_type = kwargs.pop("type", None)
+
+        # Ensure an Enum subclass is provided
+        if enum_type is None:
+            raise ValueError("type must be assigned an Enum when using EnumAction")
+        if not issubclass(enum_type, Enum):
+            raise TypeError("type must be an Enum when using EnumAction")
+
+        # Generate choices from the Enum
+        kwargs.setdefault("choices", tuple(e.value for e in enum_type))
+
+        super(EnumAction, self).__init__(**kwargs)
+
+        self._enum = enum_type
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        # Convert value back into an Enum
+        value = self._enum(values)
+        setattr(namespace, self.dest, value)
 
 
 def parse_args():
     parser = ArgumentParser("Advent Of Code API")
 
-    command_group = parser.add_mutually_exclusive_group(required=False)
+    parser.add_argument(
+        "command",
+        action=EnumAction,
+        type=enums.Command,
+        help="""
+        Possible commands:
+            init: Initialize a directory with the selected language template. Also fetches the exercise descriptions and data from AoC.
 
-    command_group.add_argument(
-        "--fetch",
-        action="store_true",
-        required=False,
-        help="Fetch the question from Advent of code. ",
-    )
-    command_group.add_argument(
-        "--calendar",
-        action="store_true",
-        required=False,
-        help="Fetch the Calender for selected year. ",
-    )
-    command_group.add_argument(
-        "--run",
-        action="store_true",
-        required=False,
-        help="Run exercises specified by exercises argument",
+            fetch: Fetches the exercise description and data to the directory. Useful when you want the second exercise of the day.
+
+            run: Runs the exercises and submits to AoC if not using experiment data. Can be disabled with --no-submit
+
+            calendar: Fetches the calendar for the specified year
+            
+        """,
     )
 
     parser.add_argument(
         "--language",
-        type=str,
-        action="store",
-        default="python",
+        type=enums.LanguageName,
+        action=EnumAction,
+        default=enums.LanguageName.PYTHON,
         help="What language should be used for initialize and run (default = python)",
     )
 
@@ -71,6 +88,7 @@ def parse_args():
         type=int,
         action="store",
         choices=range(1, 26),
+        default=None,
         help="Which day (1-25) are you working on?",
     )
     parser.add_argument(
@@ -84,20 +102,18 @@ def parse_args():
 
     parser.add_argument(
         "--input",
-        action="store",
-        default="input",
-        type=str,
-        choices=["input", "example"],
+        action=EnumAction,
+        default=enums.InputType.INPUT,
+        type=enums.InputType,
         help="What input data should be used for run. Input or example. (default = input)",
     )
     parser.add_argument(
         "--exercise",
         action="store",
         type=int,
-        nargs="*",
         choices=[1, 2],
         help="Exercise to run and submit (Depending on run and --no-submit). Multiple can be specified. Default is 1",
-        default=[1, 2],
+        default=1,
     )
     parser.add_argument(
         "--no-submit",
@@ -106,8 +122,9 @@ def parse_args():
     )
 
     config = parser.parse_args(namespace=AocNamespace())
-    config.input = InputType(config.input)
-    config.language = Language(config.language)
+    if not config.day and config.command != enums.Command.CALENDAR:
+        raise ValueError("Day must be specified unless fetching calendar")
+
     return config
 
 
