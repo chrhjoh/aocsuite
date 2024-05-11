@@ -1,8 +1,10 @@
+import datetime as dt
 import os
 import re
 from argparse import Action, ArgumentParser, Namespace
 from enum import Enum
-from typing import List
+from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
@@ -88,17 +90,15 @@ def parse_args():
         "--day",
         type=int,
         action="store",
-        choices=range(1, 26),
-        default=None,
-        help="Which day (1-25) are you working on?",
+        default=CURRENT_TIME.day,
+        help="Which day (1-25) are you working on? (default = current day)",
     )
     parser.add_argument(
         "--year",
         type=int,
         action="store",
-        required=True,
-        choices=range(2015, 2024),
-        help="Which year (>=2015) are you working on?",
+        default=CURRENT_TIME.year,
+        help="Which year (>=2015) are you working on? (default = current year)",
     )
 
     parser.add_argument(
@@ -119,7 +119,7 @@ def parse_args():
     parser.add_argument(
         "--no-submit",
         action="store_true",
-        help="Submit the exercises to Advent of Code. Also will not submit if input is example.",
+        help="Do not submit the exercises to Advent of Code when doing run. Also will not submit if input is example.",
     )
     parser.add_argument(
         "--force",
@@ -128,24 +128,38 @@ def parse_args():
     )
 
     config = parser.parse_args(namespace=AocNamespace())
-    if not config.day and config.command != enums.Command.CALENDAR:
-        raise ValueError("Day must be specified unless fetching calendar")
+    if config.command == enums.Command.CALENDAR and not _is_valid_year(config.year):
+        raise ValueError(f"Advent of Code has not started for year {config.year}")
+
+    if not _is_valid_date(config.day, config.year):
+        if config.command != enums.Command.CALENDAR:
+            raise ValueError(
+                "The specified date and year is not a valid exercise, Puzzles are released at midnight EST"
+            )
+        elif not _is_valid_year(config.year):
+            raise ValueError(f"Advent of Code has not started for year {config.year}")
 
     return config
 
 
-def parse_html_tag(html_string: str, tag_name: str | List[str], only_text: bool, **kwargs) -> str:
+def parse_html_tag(
+    html_string: str, tag_name: str | List[str], only_text: bool, **kwargs
+) -> str:
     soup = BeautifulSoup(html_string, "html.parser")
     tags = soup.find_all(tag_name, **kwargs)
     markdown_contents = []
     for tag in tags:
         html_content = tag.text if only_text else str(tag)
-        markdown_contents.append(html_content.strip())  # Strip any leading/trailing whitespace
+        markdown_contents.append(
+            html_content.strip()
+        )  # Strip any leading/trailing whitespace
     return "\n".join(markdown_contents)
 
 
 def parse_calendar(calendar: str) -> str:
-    calendar = parse_html_tag(calendar, ["span", "a"], False, class_=re.compile("calendar"))
+    calendar = parse_html_tag(
+        calendar, ["span", "a"], False, class_=re.compile("calendar")
+    )
     calendar = parse_calendar_stars(calendar)
     return calendar
 
@@ -167,3 +181,33 @@ def parse_calendar_stars(calendar: str) -> str:
         except KeyError:
             parsed_calendar_lines.append(str(day.text))
     return "\n".join(parsed_calendar_lines)
+
+
+# Puzzles are released at EST
+CURRENT_TIME = dt.datetime.now().astimezone(ZoneInfo("EST"))
+
+
+def _is_valid_year(year: int):
+    if not year >= 2015:
+        return False
+    if year < CURRENT_TIME.year:
+        return True
+    return CURRENT_TIME.month == 12
+
+
+def _is_valid_date(day: int, year: int) -> bool:
+    if 0 > day or day > 25:
+        return False
+    if not _is_valid_year(year):
+        return False
+    request_date = dt.datetime(
+        year=year,
+        month=12,
+        day=day,
+        hour=0,
+        minute=0,
+        second=1,
+        microsecond=0,
+        tzinfo=ZoneInfo("EST"),
+    )
+    return request_date <= CURRENT_TIME
