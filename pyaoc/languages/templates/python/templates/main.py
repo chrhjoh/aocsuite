@@ -1,10 +1,12 @@
 from argparse import ArgumentParser, Namespace
-from typing import Callable
+
+from exercise import exercise1, exercise2
 
 
 class AocNamespace(Namespace):
     data_path: str
     answer_path: str
+    exercise = int
 
 
 def parse_args():
@@ -22,6 +24,13 @@ def parse_args():
         action="store",
         help="Path to save return value from exercise to.",
     )
+    parser.add_argument(
+        "--exercise",
+        type=int,
+        action="store",
+        help="Exercise to run.",
+    )
+
     return parser.parse_args(namespace=AocNamespace())
 
 
@@ -33,13 +42,26 @@ def load_data(data_path: str) -> str:
     return open(data_path, "r").read().strip()
 
 
-def run_python_exercise(exercise_func: Callable[[str], int]):
+def main():
     args = parse_args()
     input_data = load_data(args.data_path)
-    answer = exercise_func(input_data)
-    print(f"Answer to exercise: {answer}")
+
+    if args.exercise == 1:
+        answer = exercise1(input_data)
+    elif args.exercise == 2:
+        answer = exercise2(input_data)
+    else:
+        raise NotImplementedError()
+
+    print(f"Answer to exercise {args.exercise}: {answer}")
     if args.answer_path:
         print(f"Saving answer to {args.answer_path}.")
         open(args.answer_path, "w").write(str(answer))
     else:
-        print("Not saving answer. Answer Path was not set. This was probably example data.")
+        print(
+            "Not saving answer. Answer Path was not set. This was probably example data."
+        )
+
+
+if __name__ == "__main__":
+    main()

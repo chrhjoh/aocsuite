@@ -6,9 +6,9 @@ from pathlib import Path
 from pyaoc.commands.calendar import calendar
 from pyaoc.commands.fetch import fetch
 from pyaoc.commands.submit import submit
+from pyaoc.languages import factory as language_factory
 from pyaoc.utils import enums, filenames, messages
-from pyaoc.utils.io import File
-from pyaoc.utils.languages import factory as language_factory
+from pyaoc.utils.io import File, verify_initialization
 from pyaoc.utils.parsing import parse_args
 
 logging.basicConfig(
@@ -21,16 +21,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__file__)
-
-
-def verify_initialization(directory: Path):
-    if not directory.exists():
-        return True
-
-    response = ""
-    while response.lower() not in ["y", "n"]:
-        response = input(f"{directory} already exists. Do you want to overwrite it? [y/n]")
-    return response.lower() == "y"
 
 
 def main():
@@ -49,13 +39,20 @@ def main():
 
     match args.command:
         case enums.Command.INIT:
-            if verify_initialization(EXERCISE_DIR):
-
-                logger.info(messages.INITIALIZE_DIRECTORY.format(directory=EXERCISE_DIR))
+            if (
+                verify_initialization(
+                    EXERCISE_DIR,
+                    f"Directory {EXERCISE_DIR} already exists. Do you want to overwrite it? [y/n]",
+                )
+                or args.force
+            ):
+                logger.info(
+                    messages.INITIALIZE_DIRECTORY.format(directory=EXERCISE_DIR)
+                )
                 os.makedirs(EXERCISE_DIR, exist_ok=True)
                 language.initialize()
 
-                fetch(args.year, args.day, str(EXERCISE_DIR))
+                fetch(args.year, args.day, str(EXERCISE_DIR), args.force)
                 logger.info(
                     messages.INITIALIZED_SUCCESS.format(
                         directory=EXERCISE_DIR,
@@ -64,13 +61,15 @@ def main():
                         exercise=(
                             args.exercise[0]
                             if isinstance(args.exercise, list)
-                            else 1 if args.exercise is None else args.exercise
+                            else 1
+                            if args.exercise is None
+                            else args.exercise
                         ),
                     )
                 )
 
         case enums.Command.FETCH:
-            fetch(args.year, args.day, str(EXERCISE_DIR))
+            fetch(args.year, args.day, str(EXERCISE_DIR), args.force)
 
         case enums.Command.RUN:
             data_file = (
@@ -86,7 +85,7 @@ def main():
             else:
                 answer_path = None
 
-            language.execute(args.exercise, data_path, answer_path)
+            language(args.exercise, data_path, answer_path)
 
             if not args.no_submit and args.input == enums.InputType.INPUT:
                 answer_path = str(
