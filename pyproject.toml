@@ -1,6 +1,6 @@
 [project]
-name = 'pyaoc'
-description = 'Python API for doing Advent of Code exercises with Python'
+name = 'aocli'
+description = 'Python API for doing Advent of Code exercises'
 version = "0.1.1"
 authors = [
 	{ name = 'Christian Johansen', email = "christian.holm.johansen@gmail.com" }
@@ -11,4 +11,4 @@ dependencies = [
   ]
 
 [project.scripts]
-pyaoc = "pyaoc.main:main"
+aocli = "pyaoc.main:main"

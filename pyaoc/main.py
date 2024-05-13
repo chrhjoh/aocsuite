@@ -1,15 +1,13 @@
 import logging
 import os
+import subprocess
 import sys
-from pathlib import Path
 
-from pyaoc.commands.calendar import calendar
-from pyaoc.commands.fetch import fetch
-from pyaoc.commands.submit import submit
+from pyaoc.aoc_client import AocClient
+from pyaoc.aoc_directory import AocDirectory
 from pyaoc.languages import factory as language_factory
-from pyaoc.utils import enums, filenames, messages
-from pyaoc.utils.io import File, verify_initialization
-from pyaoc.utils.parsing import parse_args
+from pyaoc.utils import enums
+from pyaoc.utils.parsing import parse_args, puzzle_has_released, valid_calendar_request
 
 logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
@@ -25,75 +23,85 @@ logger = logging.getLogger(__file__)
 
 def main():
     args = parse_args()
-    if args.command == enums.Command.CALENDAR:
-        calendar(args.year)
-        sys.exit(0)
+    aoc_client = AocClient(year=args.year, day=args.day)
 
-    EXERCISE_DIR = (Path(args.base_dir) / str(args.year) / str(args.day)).resolve()
-    if not EXERCISE_DIR.exists() and not args.command == enums.Command.INIT:
-        raise FileNotFoundError(
-            f"Directory {EXERCISE_DIR} was not found. You should run init to create the exercise directory?"
+    if args.command == enums.Command.CALENDAR:
+        if valid_calendar_request(year=args.year):
+            aoc_client.calendar()
+            sys.exit(0)
+        else:
+            raise ValueError(f"Advent of Code has not started for year {args.year}")
+
+    directory = AocDirectory(args.base_dir, args.year, args.day, force=args.force)
+    os.makedirs(directory.base_dir, exist_ok=True)
+
+    if not puzzle_has_released(year=args.year, day=args.day):
+        raise ValueError(
+            "The specified date and year is not a valid exercise, Puzzles are released at midnight EST"
         )
 
-    language = language_factory.get_language(args.language, directory=str(EXERCISE_DIR))
+    if not directory.exists():
+        directory.initialize()
+
+    language = language_factory.get_language(args.language, directory=directory)
 
     match args.command:
-        case enums.Command.INIT:
-            if (
-                verify_initialization(
-                    EXERCISE_DIR,
-                    f"Directory {EXERCISE_DIR} already exists. Do you want to overwrite it? [y/n]",
-                )
-                or args.force
-            ):
-                logger.info(
-                    messages.INITIALIZE_DIRECTORY.format(directory=EXERCISE_DIR)
-                )
-                os.makedirs(EXERCISE_DIR, exist_ok=True)
-                language.initialize()
+        case enums.Command.START:
+            language.fetch()
 
-                fetch(args.year, args.day, str(EXERCISE_DIR), args.force)
-                logger.info(
-                    messages.INITIALIZED_SUCCESS.format(
-                        directory=EXERCISE_DIR,
-                        year=args.year,
-                        day=args.day,
-                        exercise=(
-                            args.exercise[0]
-                            if isinstance(args.exercise, list)
-                            else 1
-                            if args.exercise is None
-                            else args.exercise
-                        ),
-                    )
-                )
+            aoc_client.fetch(directory=directory)
+            puzzle_path = directory / aoc_client.get_puzzle_name()
+            example_path = directory / aoc_client.get_example_name()
+            language_exercise_file = directory / language.get_exercise_name()
+
+            open_editor(
+                puzzle_file=str(puzzle_path),
+                example_file=str(example_path),
+                language_exercise_file=str(language_exercise_file),
+            )
+
+        case enums.Command.OPEN:
+            puzzle_path = directory / aoc_client.get_puzzle_name()
+            example_path = directory / aoc_client.get_example_name()
+            language_exercise_file = directory / language.get_exercise_name()
+            open_editor(
+                puzzle_file=str(puzzle_path),
+                example_file=str(example_path),
+                language_exercise_file=str(language_exercise_file),
+            )
 
         case enums.Command.FETCH:
-            fetch(args.year, args.day, str(EXERCISE_DIR), args.force)
+            aoc_client.fetch(directory=directory)
+            language.fetch()
 
         case enums.Command.RUN:
-            data_file = (
-                filenames.EXAMPLE_FILE
-                if args.input == enums.InputType.EXAMPLE
-                else filenames.INPUT_FILE
-            )
-            data_path = str(EXERCISE_DIR / data_file)
+            data_path = directory.data_path(input_type=args.input)
 
-            if args.input == enums.InputType.INPUT:
-                answer_file = filenames.ANSWER_FILE.format(exercise=args.exercise)
-                answer_path = str(EXERCISE_DIR / answer_file)
-            else:
-                answer_path = None
-
-            language(args.exercise, data_path, answer_path)
+            language(args.exercise, data_path)
 
             if not args.no_submit and args.input == enums.InputType.INPUT:
-                answer_path = str(
-                    EXERCISE_DIR / filenames.ANSWER_FILE.format(exercise=args.exercise)
-                )
-                answer = File.load(answer_path).content
-                response = submit(args.year, args.day, args.exercise, int(answer))
+                answer = int(input("Please input answer: "))
+                response = aoc_client.submit(args.exercise, answer)
                 print(f"Submission response from Advent of Code:\n{response}")
+
+
+def open_editor(
+    puzzle_file: str,
+    example_file: str,
+    language_exercise_file: str,
+    editor: str = os.environ.get("EDITOR", "NA"),
+) -> None:
+    if editor.lower() == "nvim":
+        subprocess.run(
+            [
+                "nvim",
+                language_exercise_file,
+                f"+vsplit {example_file}",
+                f"+split {puzzle_file}",
+            ]
+        )
+    else:
+        print("Open is not inplemented for you editor")
 
 
 if __name__ == "__main__":

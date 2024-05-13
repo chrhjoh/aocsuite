@@ -54,13 +54,6 @@ def main():
         raise NotImplementedError()
 
     print(f"Answer to exercise {args.exercise}: {answer}")
-    if args.answer_path:
-        print(f"Saving answer to {args.answer_path}.")
-        open(args.answer_path, "w").write(str(answer))
-    else:
-        print(
-            "Not saving answer. Answer Path was not set. This was probably example data."
-        )
 
 
 if __name__ == "__main__":

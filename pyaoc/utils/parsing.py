@@ -1,9 +1,8 @@
 import datetime as dt
 import os
-import re
-from argparse import Action, ArgumentParser, Namespace
+from argparse import Action, ArgumentError, ArgumentParser, Namespace
 from enum import Enum
-from typing import List, Optional
+from typing import List
 from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
@@ -58,11 +57,14 @@ def parse_args():
         "command",
         action=EnumAction,
         type=enums.Command,
+        default=enums.Command.START,
         help="""
-        Possible commands:
-            init: Initialize a directory with the selected language template. Also fetches the exercise descriptions and data from AoC.
+        Default: start. Possible commands:
+            start: Initialize a directory with the selected language template. Also fetches the exercise descriptions and data from AoC and opens the editor.
 
             fetch: Fetches the exercise description and data to the directory. Useful when you want the second exercise of the day.
+
+            open: Opens the editor on the specified day.
 
             run: Runs the exercises and submits to AoC if not using experiment data. Can be disabled with --no-submit
 
@@ -128,16 +130,6 @@ def parse_args():
     )
 
     config = parser.parse_args(namespace=AocNamespace())
-    if config.command == enums.Command.CALENDAR and not _is_valid_year(config.year):
-        raise ValueError(f"Advent of Code has not started for year {config.year}")
-
-    if not _is_valid_date(config.day, config.year):
-        if config.command != enums.Command.CALENDAR:
-            raise ValueError(
-                "The specified date and year is not a valid exercise, Puzzles are released at midnight EST"
-            )
-        elif not _is_valid_year(config.year):
-            raise ValueError(f"Advent of Code has not started for year {config.year}")
 
     return config
 
@@ -156,35 +148,12 @@ def parse_html_tag(
     return "\n".join(markdown_contents)
 
 
-def parse_calendar(calendar: str) -> str:
-    calendar = parse_html_tag(
-        calendar, ["span", "a"], False, class_=re.compile("calendar")
-    )
-    calendar = parse_calendar_stars(calendar)
-    return calendar
-
-
-def parse_calendar_stars(calendar: str) -> str:
-    soup = BeautifulSoup(calendar, "html.parser")
-    parsed_calendar_lines = []
-    for day in soup.find_all("a"):
-        try:
-            if not "two stars" in day["aria-label"].lower():
-                day.find("span", class_="calendar-mark-verycomplete").decompose()
-            if (
-                not "one star" in day["aria-label"].lower()
-                and not "two stars" in day["aria-label"].lower()
-            ):
-                day.find("span", class_="calendar-mark-complete").decompose()
-
-            parsed_calendar_lines.append(str(day.text))
-        except KeyError:
-            parsed_calendar_lines.append(str(day.text))
-    return "\n".join(parsed_calendar_lines)
-
-
 # Puzzles are released at EST
 CURRENT_TIME = dt.datetime.now().astimezone(ZoneInfo("EST"))
+
+
+def valid_calendar_request(year: int):
+    return _is_valid_year(year)
 
 
 def _is_valid_year(year: int):
@@ -195,7 +164,7 @@ def _is_valid_year(year: int):
     return CURRENT_TIME.month == 12
 
 
-def _is_valid_date(day: int, year: int) -> bool:
+def puzzle_has_released(day: int, year: int) -> bool:
     if 0 > day or day > 25:
         return False
     if not _is_valid_year(year):

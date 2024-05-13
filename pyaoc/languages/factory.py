@@ -3,8 +3,9 @@ import subprocess
 import sys
 from pathlib import Path
 from time import time
-from typing import Callable, List, Optional, Type
+from typing import Callable, List, Type
 
+from pyaoc.aoc_directory import AocDirectory
 from pyaoc.utils import messages
 from pyaoc.utils.enums import LanguageName
 
@@ -25,16 +26,17 @@ def log_run(runner: Callable):
 
 
 class LanguageAdapter:
-    def __init__(self, name: LanguageName, directory: str) -> None:
-        self.directory = directory
-        self.template_directory = str(Path(__file__).parent / "templates" / name)
+    def __init__(self, name: LanguageName, directory: AocDirectory) -> None:
+        self.template_directory = Path(__file__).parent / "templates" / name
+        self.working_directory = directory
 
-    def initialize(self):
+    def fetch(self):
         raise NotImplementedError("Should be implemented for each Language")
 
-    def command(
-        self, exercise: int, data_path: str, answer_path: Optional[str]
-    ) -> List[str]:
+    def command(self, exercise: int, data_path: str) -> List[str]:
+        raise NotImplementedError("Should be implemented for each Language")
+
+    def get_exercise_name(self):
         raise NotImplementedError("Should be implemented for each Language")
 
     @log_run

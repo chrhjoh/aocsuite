@@ -12,7 +12,8 @@ class InputType(StrEnum):
 
 
 class Command(StrEnum):
-    INIT = "init"
+    START = "start"
+    OPEN = "open"
     FETCH = "fetch"
     RUN = "run"
     CALENDAR = "calendar"
