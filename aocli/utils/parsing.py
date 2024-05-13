@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
-from pyaoc.utils import enums
+from aocli.utils import enums
 
 
 class AocNamespace(Namespace):

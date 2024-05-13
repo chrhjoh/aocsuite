@@ -2,8 +2,8 @@ import logging
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from pyaoc.utils import messages
-from pyaoc.utils.session import get_aoc_session
+from aocli.utils import messages
+from aocli.utils.session import get_aoc_session
 
 logger = logging.getLogger(__file__)
 

@@ -1,8 +1,8 @@
 import shutil
 
-from pyaoc.aoc_directory import AocDirectory
-from pyaoc.languages import factory
-from pyaoc.utils import enums
+from aocli.aoc_directory import AocDirectory
+from aocli.languages import factory
+from aocli.utils import enums
 
 
 @factory.register_language(enums.LanguageName.PYTHON)

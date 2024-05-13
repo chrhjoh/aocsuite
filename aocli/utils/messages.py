@@ -7,7 +7,7 @@ DEFAULT_LANGUAGE_MESSAGE = (
 LANGUAGE_NOT_FOUND_MESSAGE = "Template for language {language} does not exist. Supported languages are {supported}"
 
 INITIALIZE_DIRECTORY = "Initializing AOC Solution directory at {directory}"
-INITIALIZED_SUCCESS = "The Solution directory {directory} was created and the exercise from advent of code along with templates has been put there.\n\nPlease solve exercise and run command to run and submit exercise: e.g. pyaoc --run --year {year} --day {day} --exercise {exercise}  \n\nExercise 2 can be fetched after solving and submitting exercise 1 by running: e.g. pyaoc --fetch --year {year} --day {day}  "
+INITIALIZED_SUCCESS = "The Solution directory {directory} was created and the exercise from advent of code along with templates has been put there.\n\nPlease solve exercise and run command to run and submit exercise: e.g. aocli --run --year {year} --day {day} --exercise {exercise}  \n\nExercise 2 can be fetched after solving and submitting exercise 1 by running: e.g. aocli --fetch --year {year} --day {day}  "
 INITIALIZED_FAILED = ""
 
 ANSWER_TOO_LOW = ""

@@ -3,11 +3,11 @@ import os
 import subprocess
 import sys
 
-from pyaoc.aoc_client import AocClient
-from pyaoc.aoc_directory import AocDirectory
-from pyaoc.languages import factory as language_factory
-from pyaoc.utils import enums
-from pyaoc.utils.parsing import parse_args, puzzle_has_released, valid_calendar_request
+from aocli.aoc_client import AocClient
+from aocli.aoc_directory import AocDirectory
+from aocli.languages import factory as language_factory
+from aocli.utils import enums
+from aocli.utils.parsing import parse_args, puzzle_has_released, valid_calendar_request
 
 logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",

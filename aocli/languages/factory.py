@@ -5,9 +5,9 @@ from pathlib import Path
 from time import time
 from typing import Callable, List, Type
 
-from pyaoc.aoc_directory import AocDirectory
-from pyaoc.utils import messages
-from pyaoc.utils.enums import LanguageName
+from aocli.aoc_directory import AocDirectory
+from aocli.utils import messages
+from aocli.utils.enums import LanguageName
 
 LANGUAGES = {}
 

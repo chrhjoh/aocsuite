@@ -5,10 +5,10 @@ from typing import Tuple
 from bs4 import BeautifulSoup
 from html2text import html2text
 
-from pyaoc.aoc_directory import AocDirectory
-from pyaoc.utils import filenames, messages
-from pyaoc.utils.http import AocHttp
-from pyaoc.utils.parsing import parse_html_tag
+from aocli.aoc_directory import AocDirectory
+from aocli.utils import filenames, messages
+from aocli.utils.http import AocHttp
+from aocli.utils.parsing import parse_html_tag
 
 logger = logging.getLogger(__file__)
 
@@ -63,7 +63,8 @@ class AocParser:
 
     def _parse_puzzle_to_example(self, raw_puzzle: str) -> str:
         article = self.parse_article(raw_puzzle)
-        example = parse_html_tag(article, "code", True).strip()
+        example = parse_html_tag(article, "pre", False)
+        example = parse_html_tag(example, "code", True).strip()
         return example
 
     def parse_puzzle(self, raw_puzzle: str) -> Tuple[str, str]:

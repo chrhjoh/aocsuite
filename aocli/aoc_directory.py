@@ -4,8 +4,8 @@ import shutil
 from pathlib import Path
 from typing import List, Mapping
 
-from pyaoc.utils import filenames, messages
-from pyaoc.utils.enums import InputType
+from aocli.utils import filenames, messages
+from aocli.utils.enums import InputType
 
 logger = logging.getLogger(__file__)
 
@@ -69,6 +69,6 @@ class AocDirectory:
         response = ""
         while response.lower() not in ["y", "n"]:
             response = input(
-                f"File {path} already exists. Do you want to overwrite it? [y/n]."
+                f"File {path} already exists. Do you want to overwrite it? [y/n]"
             )
         return response.lower() == "y"
