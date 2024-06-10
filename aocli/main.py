@@ -43,7 +43,7 @@ def main():
     if not directory.exists():
         directory.initialize()
 
-    language = language_factory.get_language(args.language, directory=directory)
+    language = language_factory.get_language(args.language, working_directory=directory)
 
     match args.command:
         case enums.Command.START:

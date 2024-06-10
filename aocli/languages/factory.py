@@ -26,9 +26,9 @@ def log_run(runner: Callable):
 
 
 class LanguageAdapter:
-    def __init__(self, name: LanguageName, directory: AocDirectory) -> None:
+    def __init__(self, name: LanguageName, working_directory: AocDirectory) -> None:
         self.template_directory = Path(__file__).parent / "templates" / name
-        self.working_directory = directory
+        self.working_directory = working_directory
 
     def fetch(self):
         raise NotImplementedError("Should be implemented for each Language")
