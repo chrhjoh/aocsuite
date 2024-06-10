@@ -1,4 +1,6 @@
 import logging
+import sys
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -56,6 +58,11 @@ class AocHttp:
         return response
 
     def _send_request(self, request: Request) -> str:
-        with urlopen(request) as response:
-            response = response.read().decode("utf-8")
+        try:
+            with urlopen(request) as response:
+                response = response.read().decode("utf-8")
+        except HTTPError as err:
+            print("Failed connecting to AoC. is your session cookie updated?")
+            print("Error raised:", err)
+            response = "Failed"
         return response

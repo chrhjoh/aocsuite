@@ -1,6 +1,6 @@
 import datetime as dt
 import os
-from argparse import Action, ArgumentError, ArgumentParser, Namespace
+from argparse import Action, ArgumentParser, Namespace
 from enum import Enum
 from typing import List
 from zoneinfo import ZoneInfo
