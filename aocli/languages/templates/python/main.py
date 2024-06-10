@@ -19,15 +19,10 @@ def parse_args():
         help="Path to file input for exercise. Input or Example",
     )
     parser.add_argument(
-        "--answer-path",
-        type=str,
-        action="store",
-        help="Path to save return value from exercise to.",
-    )
-    parser.add_argument(
         "--exercise",
         type=int,
         action="store",
+        choices=[1, 2],
         help="Exercise to run.",
     )
 
