@@ -77,7 +77,7 @@ def parse_args():
         "--language",
         type=enums.LanguageName,
         action=EnumAction,
-        default=enums.LanguageName.PYTHON,
+        default=None,
         help="What language should be used for initialize and run (default = python)",
     )
 

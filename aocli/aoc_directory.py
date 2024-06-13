@@ -22,13 +22,13 @@ class AocDirectory:
         return self.base_dir / str(self.year) / str(self.day)
 
     def data_path(self, input_type: InputType) -> Path:
-        filname = (
+        filename = (
             filenames.INPUT_FILE
             if input_type == InputType.INPUT
             else filenames.EXAMPLE_FILE
         )
 
-        return self.directory / filname
+        return self.directory / filename
 
     def save_files(self, files: Mapping[str, str], **kwargs):
         for name, content in files.items():

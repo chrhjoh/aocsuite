@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 from time import time
-from typing import Callable, List, Type
+from typing import Callable, List, Optional, Type
 
 from aocli.aoc_directory import AocDirectory
 from aocli.utils import messages
@@ -60,10 +60,15 @@ def register_language(language: LanguageName):
     return _wrapper
 
 
-def get_language(language: LanguageName, **kwargs) -> LanguageAdapter:
+def get_language(
+    language: Optional[LanguageName], working_directory: AocDirectory, **kwargs
+) -> LanguageAdapter:
     if language is None:
+        language = auto_detect_language(working_directory)
+
+    if language is None:
+        language = LanguageName.PYTHON
         logger.warning(messages.DEFAULT_LANGUAGE_MESSAGE)
-        return LANGUAGES[LanguageName.PYTHON](**kwargs)
 
     if language not in LANGUAGES:
         raise NotImplementedError(
@@ -71,4 +76,15 @@ def get_language(language: LanguageName, **kwargs) -> LanguageAdapter:
                 language=language, supported=LANGUAGES.keys()
             )
         )
-    return LANGUAGES[language](name=language, **kwargs)
+    return LANGUAGES[language](
+        name=language, working_directory=working_directory, **kwargs
+    )
+
+
+def auto_detect_language(working_directory: AocDirectory) -> Optional[LanguageName]:
+    for file in working_directory.directory.glob("*"):
+        if file.suffix == ".rs":
+            return LanguageName.RUST
+        elif file.suffix == ".py":
+            return LanguageName.PYTHON
+    return None
