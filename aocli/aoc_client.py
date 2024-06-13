@@ -48,6 +48,16 @@ class AocClient:
             }
         )
 
+    def update_puzzle(self, directory: AocDirectory):
+        raw_puzzle = self.http.get_puzzle(year=self.year, day=self.day)
+        puzzle, _ = self.parser.parse_puzzle(raw_puzzle)
+        directory.save_files(
+            {
+                filenames.PUZZLE_FILE: puzzle,
+            },
+            force=True,
+        )
+
     def get_example_name(self):
         return filenames.EXAMPLE_FILE
 

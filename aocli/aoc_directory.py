@@ -30,7 +30,7 @@ class AocDirectory:
 
         return self.directory / filname
 
-    def save_files(self, files: Mapping[str, str]):
+    def save_files(self, files: Mapping[str, str], **kwargs):
         for name, content in files.items():
             path = self.directory / name
             logger.debug(
@@ -38,7 +38,7 @@ class AocDirectory:
                     input_type=path, sample=content[:200]
                 )
             )
-            self.save_file(path, content)
+            self.save_file(path, content, **kwargs)
 
     def copy_files(self, files: List[Path]) -> None:
         for from_file in files:
@@ -46,8 +46,8 @@ class AocDirectory:
             if self.verify_file_save(Path(to_file)) or self.force:
                 shutil.copy(from_file, to_file)
 
-    def save_file(self, name: Path, content: str) -> None:
-        if self.verify_file_save(name) or self.force:
+    def save_file(self, name: Path, content: str, force: bool = False) -> None:
+        if self.force or force or self.verify_file_save(name):
             open(name, "w").write(content)
 
     def exists(self):

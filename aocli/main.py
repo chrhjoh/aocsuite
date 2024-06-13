@@ -83,6 +83,9 @@ def main():
                 answer = int(input("Please input answer: "))
                 response = aoc_client.submit(args.exercise, answer)
                 print(f"Submission response from Advent of Code:\n{response}")
+                if args.exercise == 1 and "right answer" in response.lower():
+                    print("Fetching exercise 2 from Advent of Code")
+                    aoc_client.update_puzzle(directory)
 
 
 def open_editor(
