@@ -5,10 +5,10 @@ from typing import Tuple
 from bs4 import BeautifulSoup
 from html2text import html2text
 
-from aocli.aoc_directory import AocDirectory
-from aocli.utils import filenames, messages
-from aocli.utils.http import AocHttp
-from aocli.utils.parsing import parse_html_tag
+from aoctils.aoc_directory import AocDirectory
+from aoctils.utils import filenames, messages
+from aoctils.utils.http import AocHttp
+from aoctils.utils.parsing import parse_html_tag
 
 logger = logging.getLogger(__file__)
 

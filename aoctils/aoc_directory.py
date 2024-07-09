@@ -4,8 +4,7 @@ import shutil
 from pathlib import Path
 from typing import List, Mapping
 
-from aocli.utils import filenames, messages
-from aocli.utils.enums import InputType
+from aoctils.utils import messages
 
 logger = logging.getLogger(__file__)
 
@@ -21,15 +20,6 @@ class AocDirectory:
     def directory(self) -> Path:
         return self.base_dir / str(self.year) / str(self.day)
 
-    def data_path(self, input_type: InputType) -> Path:
-        filename = (
-            filenames.INPUT_FILE
-            if input_type == InputType.INPUT
-            else filenames.EXAMPLE_FILE
-        )
-
-        return self.directory / filename
-
     def save_files(self, files: Mapping[str, str], **kwargs):
         for name, content in files.items():
             path = self.directory / name
@@ -40,9 +30,15 @@ class AocDirectory:
             )
             self.save_file(path, content, **kwargs)
 
-    def copy_files(self, files: List[Path]) -> None:
+    def copy_to_workdir(self, files: List[Path]) -> None:
         for from_file in files:
             to_file = self.directory / from_file.name
+            if self.verify_file_save(Path(to_file)) or self.force:
+                shutil.copy(from_file, to_file)
+
+    def copy_to_basedir(self, files: List[Path]) -> None:
+        for from_file in files:
+            to_file = self.base_dir / from_file.name
             if self.verify_file_save(Path(to_file)) or self.force:
                 shutil.copy(from_file, to_file)
 

@@ -4,8 +4,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from aocli.utils import messages
-from aocli.utils.session import get_aoc_session
+from aoctils.utils import messages
+from aoctils.utils.session import get_aoc_session
 
 logger = logging.getLogger(__file__)
 

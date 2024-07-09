@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
-from aocli.utils import enums
+from aoctils.utils import enums
 
 
 class AocNamespace(Namespace):
@@ -15,11 +15,8 @@ class AocNamespace(Namespace):
     base_dir: str
     day: int
     year: int
-    exercise: int
-    input: enums.InputType
-    no_submit: bool
-    language: enums.LanguageName
     force: bool
+    extra_file: str
 
 
 class EnumAction(Action):
@@ -60,32 +57,24 @@ def parse_args():
         default=enums.Command.START,
         help="""
         Default: start. Possible commands:
-            start: Initialize a directory with the selected language template. Also fetches the exercise descriptions and data from AoC and opens the editor.
+            start: Initialize a directory. fetches the exercise descriptions and data from AoC and opens the editor.
 
             fetch: Fetches the exercise description and data to the directory. Useful when you want the second exercise of the day.
 
             open: Opens the editor on the specified day.
 
-            run: Runs the exercises and submits to AoC if not using experiment data. Can be disabled with --no-submit
-
             calendar: Fetches the calendar for the specified year
             
+            submit: Submits an answer to AoC
+            
         """,
-    )
-
-    parser.add_argument(
-        "--language",
-        type=enums.LanguageName,
-        action=EnumAction,
-        default=None,
-        help="What language should be used for initialize and run (default = python)",
     )
 
     parser.add_argument(
         "--base-dir",
         type=str,
         action="store",
-        default=os.path.relpath(os.getcwd()),
+        default=os.path.join(os.path.relpath(os.getcwd()), "aoctils"),
         help="What directory should be used as default directory (default = cwd)",
     )
     parser.add_argument(
@@ -104,13 +93,6 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--input",
-        action=EnumAction,
-        default=enums.InputType.INPUT,
-        type=enums.InputType,
-        help="What input data should be used for run. Input or example. (default = input)",
-    )
-    parser.add_argument(
         "--exercise",
         action="store",
         type=int,
@@ -118,10 +100,11 @@ def parse_args():
         help="Exercise to run and submit (Depending on run and --no-submit). Multiple can be specified. Default is 1",
         default=1,
     )
+
     parser.add_argument(
-        "--no-submit",
-        action="store_true",
-        help="Do not submit the exercises to Advent of Code when doing run. Also will not submit if input is example.",
+        "--exercise-path",
+        action="store",
+        help="Optional file to use for the open command for convenient opening of all files",
     )
     parser.add_argument(
         "--force",

@@ -1,5 +1,5 @@
 [project]
-name = 'aocli'
+name = 'aoctils'
 description = 'Python API for doing Advent of Code exercises'
 version = "0.1.1"
 authors = [
@@ -11,4 +11,4 @@ dependencies = [
   ]
 
 [project.scripts]
-aocli = "aocli.main:main"
+aoctils = "aoctils.main:main"

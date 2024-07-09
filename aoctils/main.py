@@ -3,11 +3,14 @@ import os
 import subprocess
 import sys
 
-from aocli.aoc_client import AocClient
-from aocli.aoc_directory import AocDirectory
-from aocli.languages import factory as language_factory
-from aocli.utils import enums
-from aocli.utils.parsing import parse_args, puzzle_has_released, valid_calendar_request
+from aoctils.aoc_client import AocClient
+from aoctils.aoc_directory import AocDirectory
+from aoctils.utils import enums
+from aoctils.utils.parsing import (
+    parse_args,
+    puzzle_has_released,
+    valid_calendar_request,
+)
 
 logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
@@ -43,62 +46,50 @@ def main():
     if not directory.exists():
         directory.initialize()
 
-    language = language_factory.get_language(args.language, working_directory=directory)
-
     match args.command:
         case enums.Command.START:
-            language.fetch()
-
             aoc_client.fetch(directory=directory)
             puzzle_path = directory / aoc_client.get_puzzle_name()
             example_path = directory / aoc_client.get_example_name()
-            language_exercise_file = directory / language.get_exercise_name()
 
             open_editor(
                 puzzle_file=str(puzzle_path),
                 example_file=str(example_path),
-                language_exercise_file=str(language_exercise_file),
+                exercise_file=str(args.exercise_path),
             )
 
         case enums.Command.OPEN:
             puzzle_path = directory / aoc_client.get_puzzle_name()
             example_path = directory / aoc_client.get_example_name()
-            language_exercise_file = directory / language.get_exercise_name()
             open_editor(
                 puzzle_file=str(puzzle_path),
                 example_file=str(example_path),
-                language_exercise_file=str(language_exercise_file),
+                exercise_file=str(args.exercise_path),
             )
 
         case enums.Command.FETCH:
             aoc_client.fetch(directory=directory)
-            language.fetch()
 
-        case enums.Command.RUN:
-            data_path = directory.data_path(input_type=args.input)
-
-            language(args.exercise, data_path)
-
-            if not args.no_submit and args.input == enums.InputType.INPUT:
-                answer = int(input("Please input answer: "))
-                response = aoc_client.submit(args.exercise, answer)
-                print(f"Submission response from Advent of Code:\n{response}")
-                if args.exercise == 1 and "right answer" in response.lower():
-                    print("Fetching exercise 2 from Advent of Code")
-                    aoc_client.update_puzzle(directory)
+        case enums.Command.SUBMIT:
+            answer = int(input("Please input answer: "))
+            response = aoc_client.submit(args.exercise, answer)
+            print(f"Submission response from Advent of Code:\n{response}")
+            if args.exercise == 1 and "right answer" in response.lower():
+                print("Fetching exercise 2 from Advent of Code")
+                aoc_client.update_puzzle(directory)
 
 
 def open_editor(
     puzzle_file: str,
     example_file: str,
-    language_exercise_file: str,
+    exercise_file: str,
     editor: str = os.environ.get("EDITOR", "NA"),
 ) -> None:
     if editor.lower() == "nvim":
         subprocess.run(
             [
                 "nvim",
-                language_exercise_file,
+                exercise_file,
                 f"+vsplit {example_file}",
                 f"+split {puzzle_file}",
             ]
