@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import List, Mapping
 
 from aoctils.utils import messages
+from aoctils.utils.filenames import EXAMPLE_FILE, INPUT_FILE, PUZZLE_FILE
 
 logger = logging.getLogger(__file__)
 
 
-class AocDirectory:
+class AocDataDirectory:
     def __init__(self, base_dir: str, year: int, day: int, force: bool) -> None:
         self.base_dir = Path(base_dir).resolve()
         self.force = force
@@ -33,24 +34,24 @@ class AocDirectory:
     def copy_to_workdir(self, files: List[Path]) -> None:
         for from_file in files:
             to_file = self.directory / from_file.name
-            if self.verify_file_save(Path(to_file)) or self.force:
+            if verify_file_save(Path(to_file)) or self.force:
                 shutil.copy(from_file, to_file)
 
     def copy_to_basedir(self, files: List[Path]) -> None:
         for from_file in files:
             to_file = self.base_dir / from_file.name
-            if self.verify_file_save(Path(to_file)) or self.force:
+            if verify_file_save(Path(to_file)) or self.force:
                 shutil.copy(from_file, to_file)
 
     def save_file(self, name: Path, content: str, force: bool = False) -> None:
-        if self.force or force or self.verify_file_save(name):
+        if self.force or force or verify_file_save(name):
             open(name, "w").write(content)
 
     def exists(self):
         return self.directory.exists()
 
-    def initialize(self):
-        os.makedirs(self.directory, exist_ok=True)
+    def is_initialized(self):
+        return (self.directory / INPUT_FILE).exists() and (self.directory / EXAMPLE_FILE).exists() and (self.directory / PUZZLE_FILE).exists()
 
     def __str__(self) -> str:
         return str(self.directory)
@@ -58,13 +59,13 @@ class AocDirectory:
     def __truediv__(self, path_part: str):
         return self.directory / path_part
 
-    def verify_file_save(self, path: Path) -> bool:
-        if not path.exists():
-            return True
+def verify_file_save(path: Path) -> bool:
+    if not path.exists():
+        return True
 
-        response = ""
-        while response.lower() not in ["y", "n"]:
-            response = input(
-                f"File {path} already exists. Do you want to overwrite it? [y/n]"
-            )
-        return response.lower() == "y"
+    response = ""
+    while response.lower() not in ["y", "n"]:
+        response = input(
+            f"File {path} already exists. Do you want to overwrite it? [y/n]"
+        )
+    return response.lower() == "y"

@@ -6,6 +6,7 @@ authors = [
 	{ name = 'Christian Johansen', email = "christian.holm.johansen@gmail.com" }
 ]
 dependencies = [
+  "toml",
   "html2text",
   "bs4"
   ]

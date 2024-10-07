@@ -5,7 +5,7 @@ from typing import Tuple
 from bs4 import BeautifulSoup
 from html2text import html2text
 
-from aoctils.aoc_directory import AocDirectory
+from aoctils.aoc_directory import AocDataDirectory
 from aoctils.utils import filenames, messages
 from aoctils.utils.http import AocHttp
 from aoctils.utils.parsing import parse_html_tag
@@ -36,11 +36,11 @@ class AocClient:
         calendar = self.parser.parse_calendar(calendar)
         print(calendar)
 
-    def fetch(self, directory: AocDirectory) -> None:
+    def download(self, data_directory: AocDataDirectory) -> None:
         input = self.http.get_input(year=self.year, day=self.day)
         raw_puzzle = self.http.get_puzzle(year=self.year, day=self.day)
         puzzle, example = self.parser.parse_puzzle(raw_puzzle)
-        directory.save_files(
+        data_directory.save_files(
             {
                 filenames.INPUT_FILE: input,
                 filenames.EXAMPLE_FILE: example,
@@ -48,7 +48,7 @@ class AocClient:
             }
         )
 
-    def update_puzzle(self, directory: AocDirectory):
+    def update_puzzle(self, directory: AocDataDirectory):
         raw_puzzle = self.http.get_puzzle(year=self.year, day=self.day)
         puzzle, _ = self.parser.parse_puzzle(raw_puzzle)
         directory.save_files(
@@ -57,12 +57,6 @@ class AocClient:
             },
             force=True,
         )
-
-    def get_example_name(self):
-        return filenames.EXAMPLE_FILE
-
-    def get_puzzle_name(self):
-        return filenames.PUZZLE_FILE
 
 
 class AocParser:
