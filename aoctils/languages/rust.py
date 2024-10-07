@@ -80,8 +80,5 @@ class RustAdapter(factory.LanguageAdapter):
                 ),
             }
         )
-        print(
-            str(self.language_base_dir / "src" / "bin" / self.exercise_file).split("/")
-        )
         toml.dump(cargo_toml, open(self.language_base_dir / self.cargo_file, "w"))
         return
