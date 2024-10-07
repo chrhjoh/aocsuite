@@ -136,12 +136,6 @@ def parse_args():
         help="What language should be used for initialize and run (default = python). Language can also be specified in a aocsuite.json file.",
     )
 
-    parser.add_argument(
-        "--no-submit",
-        action="store_true",
-        help="Do not submit the exercises to Advent of Code when doing run. Also will not submit if input is example.",
-    )
-
     config = parser.parse_args(namespace=AocNamespace())
 
     if os.path.exists("aocsuite.json") and not config.language:
