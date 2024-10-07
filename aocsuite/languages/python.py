@@ -1,5 +1,5 @@
-from aoctils.languages import factory
-from aoctils.utils import enums
+from aocsuite.languages import factory
+from aocsuite.utils import enums
 
 
 @factory.register_language(enums.LanguageName.PYTHON)

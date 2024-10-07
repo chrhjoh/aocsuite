@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
-from aoctils.utils import enums
+from aocsuite.utils import enums
 
 
 class AocNamespace(Namespace):
@@ -58,7 +58,7 @@ def parse_args():
         type=enums.Command,
         help="""
         Default: start. Possible commands:
-            init: Initialize a base directory structure for aoctils. Will create a data and language specific folder.
+            init: Initialize a base directory structure for aocsuite. Will create a data and language specific folder.
 
             new: Downloads exercise files and creates a solution directory for the specified language.
 
@@ -133,7 +133,7 @@ def parse_args():
         type=enums.LanguageName,
         action=EnumAction,
         default=None,
-        help="What language should be used for initialize and run (default = python). Language can also be specified in a aoctils.json file.",
+        help="What language should be used for initialize and run (default = python). Language can also be specified in a aocsuite.json file.",
     )
 
     parser.add_argument(
@@ -144,8 +144,8 @@ def parse_args():
 
     config = parser.parse_args(namespace=AocNamespace())
 
-    if os.path.exists("aoctils.json") and not config.language:
-        base_config = json.load(open("aoctils.json", "r"))
+    if os.path.exists("aocsuite.json") and not config.language:
+        base_config = json.load(open("aocsuite.json", "r"))
         if "language" in base_config:
             config.language = enums.LanguageName(base_config["language"])
 

@@ -3,11 +3,11 @@ import os
 import subprocess
 import sys
 
-from aoctils.aoc_client import AocClient
-from aoctils.aoc_directory import AocDataDirectory
-from aoctils.languages.factory import LanguageAdapter, get_language
-from aoctils.utils import enums, filenames
-from aoctils.utils.parsing import (
+from aocsuite.aoc_client import AocClient
+from aocsuite.aoc_directory import AocDataDirectory
+from aocsuite.languages.factory import LanguageAdapter, get_language
+from aocsuite.utils import enums, filenames
+from aocsuite.utils.parsing import (
     parse_args,
     puzzle_has_released,
     valid_calendar_request,

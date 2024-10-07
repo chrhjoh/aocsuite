@@ -7,9 +7,9 @@ from pathlib import Path
 from time import time
 from typing import Callable, List, Optional, Type
 
-from aoctils.aoc_directory import verify_file_save
-from aoctils.utils import messages
-from aoctils.utils.enums import LanguageName
+from aocsuite.aoc_directory import verify_file_save
+from aocsuite.utils import messages
+from aocsuite.utils.enums import LanguageName
 
 LANGUAGES = {}
 

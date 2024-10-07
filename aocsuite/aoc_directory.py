@@ -4,8 +4,8 @@ import shutil
 from pathlib import Path
 from typing import List, Mapping
 
-from aoctils.utils import messages
-from aoctils.utils.filenames import EXAMPLE_FILE, INPUT_FILE, PUZZLE_FILE
+from aocsuite.utils import messages
+from aocsuite.utils.filenames import EXAMPLE_FILE, INPUT_FILE, PUZZLE_FILE
 
 logger = logging.getLogger(__file__)
 

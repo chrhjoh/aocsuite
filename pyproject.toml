@@ -1,6 +1,6 @@
 [project]
-name = 'aoctils'
-description = 'Python API for doing Advent of Code exercises'
+name = 'aocsuite'
+description = 'Python implemented suite for doing Advent of Code exercises'
 version = "0.1.1"
 authors = [
 	{ name = 'Christian Johansen', email = "christian.holm.johansen@gmail.com" }
@@ -12,4 +12,4 @@ dependencies = [
   ]
 
 [project.scripts]
-aoctils = "aoctils.main:main"
+aocsuite = "aocsuite.main:main"

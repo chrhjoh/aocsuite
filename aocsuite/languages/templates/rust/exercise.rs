@@ -1,4 +1,4 @@
-use aoc::utils;
+use aocsuite::utils;
 fn exercise1(data: &str) -> i32 {
     return 0;
 }
