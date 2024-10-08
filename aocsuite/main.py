@@ -27,7 +27,6 @@ logger = logging.getLogger(__file__)
 
 def main():
     args = parse_args()
-    # TODO: Fix how the Language loads its template. init should use language and create the base template for each language. new command should create a new exercise. It should fail if init has not been run first. Open should fail if new has not been run. New should also run open. Fetch should only fetch from language.
     aoc_client = AocClient(year=args.year, day=args.day)
 
     if args.command == enums.Command.CALENDAR:
@@ -53,13 +52,9 @@ def main():
             "The specified date and year is not a valid exercise, Puzzles are released at midnight EST"
         )
 
-    if not data_directory.exists():
-        data_directory.initialize()
-
     should_update_puzzle = False
     match args.command:
         case enums.Command.INIT:
-            data_directory.initialize()
             language.apply_base_template()
 
         case enums.Command.OPEN:

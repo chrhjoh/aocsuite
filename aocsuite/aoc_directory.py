@@ -22,6 +22,7 @@ class AocDataDirectory:
         return self.base_dir / str(self.year) / str(self.day)
 
     def save_files(self, files: Mapping[str, str], **kwargs):
+        os.makedirs(self.directory, exist_ok=True)
         for name, content in files.items():
             path = self.directory / name
             logger.debug(
@@ -51,13 +52,18 @@ class AocDataDirectory:
         return self.directory.exists()
 
     def is_initialized(self):
-        return (self.directory / INPUT_FILE).exists() and (self.directory / EXAMPLE_FILE).exists() and (self.directory / PUZZLE_FILE).exists()
+        return (
+            (self.directory / INPUT_FILE).exists()
+            and (self.directory / EXAMPLE_FILE).exists()
+            and (self.directory / PUZZLE_FILE).exists()
+        )
 
     def __str__(self) -> str:
         return str(self.directory)
 
     def __truediv__(self, path_part: str):
         return self.directory / path_part
+
 
 def verify_file_save(path: Path) -> bool:
     if not path.exists():
