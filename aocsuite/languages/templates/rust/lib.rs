@@ -43,8 +43,8 @@ pub mod utils {
     /// Run function that matches the parsed exercise and executes the corresponding logic
     pub fn run<F1, F2>(exercise1: F1, exercise2: F2)
     where
-        F1: Fn(&str) -> i32,
-        F2: Fn(&str) -> i32,
+        F1: Fn(&str) -> i64,
+        F2: Fn(&str) -> i64,
     {
         let args = AocNamespace::parse(); // Use clap to parse the arguments
         let input_data = load_data(&args.data_path).unwrap_or_else(|err| {
@@ -65,3 +65,4 @@ pub mod utils {
         println!("Answer to exercise {:?}: {}", args.exercise, answer);
     }
 }
+
