@@ -119,6 +119,12 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--no-submit",
+        action="store_true",
+        help="Do no submit to Advent of Code site after running run",
+    )
+
+    parser.add_argument(
         "--input",
         "-i",
         action=EnumAction,

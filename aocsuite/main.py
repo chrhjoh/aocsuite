@@ -106,12 +106,15 @@ def main():
         aoc_client.update_puzzle(data_directory)
 
 
-def submit(aoc_client: AocClient, exercise: int):
+def submit(aoc_client: AocClient, exercise: int) -> bool:
     answer = int(input("Please input answer: "))
     response = aoc_client.submit(exercise, answer)
     print(f"Submission response from Advent of Code:\n{response}")
     if exercise == 1 and "right answer" in response.lower():
         print("Fetching exercise 2 from Advent of Code")
+        return True
+    else:
+        return False
 
 
 def get_files_for_editor(data_directory: AocDataDirectory, language: LanguageAdapter):
