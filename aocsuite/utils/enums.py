@@ -15,7 +15,7 @@ class Command(StrEnum):
     INIT = "init"
     NEW = "new"
     OPEN = "open"
-    DOWNLOAD = "dowload"
+    DOWNLOAD = "download"
     TEMPLATE = "template"
     RUN = "run"
     SUBMIT = "submit"

@@ -18,7 +18,7 @@ class AocNamespace(Namespace):
     year: int
     force: bool
     language: enums.LanguageName
-    input = enums.InputType
+    input: enums.InputType
 
 
 class EnumAction(Action):
@@ -57,7 +57,7 @@ def parse_args():
         action=EnumAction,
         type=enums.Command,
         help="""
-        Default: start. Possible commands:
+        Possible commands:
             init: Initialize a base directory structure for aocsuite. Will create a data and language specific folder.
 
             new: Downloads exercise files and creates a solution directory for the specified language.
