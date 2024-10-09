@@ -152,20 +152,6 @@ def parse_args():
     return config
 
 
-def parse_html_tag(
-    html_string: str, tag_name: str | List[str], only_text: bool, **kwargs
-) -> str:
-    soup = BeautifulSoup(html_string, "html.parser")
-    tags = soup.find_all(tag_name, **kwargs)
-    markdown_contents = []
-    for tag in tags:
-        html_content = tag.text if only_text else str(tag)
-        markdown_contents.append(
-            html_content.strip()
-        )  # Strip any leading/trailing whitespace
-    return "\n".join(markdown_contents)
-
-
 # Puzzles are released at EST
 CURRENT_TIME = dt.datetime.now().astimezone(ZoneInfo("EST"))
 

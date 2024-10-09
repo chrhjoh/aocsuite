@@ -7,7 +7,7 @@ authors = [
 ]
 dependencies = [
   "toml",
-  "html2text",
+  "markdownify",
   "bs4"
   ]
 
