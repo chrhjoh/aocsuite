@@ -66,11 +66,15 @@ def parse_submission_response(html: str):
 
 def parse_puzzle(html: str) -> Tuple[str, str]:
     soup = BeautifulSoup(html, "html.parser")
-    article = soup.find("article")
+    articles = soup.find_all("article")
     md_converter = MarkdownConverter()
-    puzzle = md_converter.convert_soup(article)
+    puzzle = "\n".join([md_converter.convert_soup(article) for article in articles])
     example = "\n".join(
-        [md_converter.convert_soup(tag) for tag in article.find_all("pre")]
+        [
+            md_converter.convert_soup(tag)
+            for article in articles
+            for tag in article.find_all("pre")
+        ]
     )
     return puzzle.strip(), example.strip()
 
