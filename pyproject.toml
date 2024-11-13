@@ -7,8 +7,7 @@ authors = [
 ]
 dependencies = [
   "toml",
-  "markdownify",
-  "bs4"
+  "beautifulsoup4"
   ]
 
 [project.scripts]
