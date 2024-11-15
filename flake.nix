@@ -40,5 +40,14 @@
           };
         };
       });
+      devShells = forAllSystems (pkgs: {
+        default = pkgs.mkShell {
+          packages = [
+            pkgs.cargo
+            pkgs.python3
+            self.packages.${pkgs.system}.default
+          ];
+        };
+      });
     };
 }
