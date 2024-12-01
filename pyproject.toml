@@ -12,3 +12,13 @@ dependencies = [
 
 [project.scripts]
 aocsuite = "aocsuite.main:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"aocsuite" = ["__assets__/**/*"]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

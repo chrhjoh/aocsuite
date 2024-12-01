@@ -31,7 +31,7 @@ class LanguageAdapter:
     def __init__(
         self, name: LanguageName, base_dir: str, year: int, day: int, force=bool
     ) -> None:
-        self.template_directory = Path(__file__).parent / "templates" / name
+        self.template_directory = Path(__file__).parent.parent / "__assets__" / name
         self.language_base_dir = Path(base_dir) / name
         self.force_files = force
 
