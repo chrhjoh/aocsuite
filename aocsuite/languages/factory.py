@@ -58,6 +58,7 @@ class LanguageAdapter:
         os.makedirs(to_file.parent, exist_ok=True)
         if verify_file_save(Path(to_file)) or self.force_files:
             shutil.copy(from_file, to_file)
+            os.chmod(to_file, 0o644)
 
     @log_run
     def __call__(self, *args, **kwargs) -> None:
