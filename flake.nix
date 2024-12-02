@@ -25,7 +25,10 @@
 
           src = ./.; # assuming the current directory has the Python package code (where setup.py or pyproject.toml is located)
 
-          buildInputs = [ pkgs.python3Packages.setuptools pkgs.python3Packages.wheel ];
+          buildInputs = [
+            pkgs.python3Packages.setuptools
+            pkgs.python3Packages.wheel
+          ];
 
           # Define the dependencies for the package
           dependencies = with pkgs.python3Packages; [
@@ -45,9 +48,11 @@
           name = "aocsuite";
           packages = [
             pkgs.cargo
+            pkgs.rustc
             pkgs.python3
             self.packages.${pkgs.system}.default
           ];
+          RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
         };
       });
     };
