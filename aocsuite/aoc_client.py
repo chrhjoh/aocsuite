@@ -163,7 +163,10 @@ def parse_calendar_stars(content) -> str:
 def hex_to_ansi(hex_color):
     # Convert hex color to RGB
     hex_color = hex_color.lstrip("#")
-    rgb = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    try:
+        rgb = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return 0
 
     # Approximate conversion to ANSI escape code (using 256 color mode)
     r, g, b = rgb
