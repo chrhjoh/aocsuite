@@ -47,7 +47,7 @@ class AocHttp:
         logger.debug(messages.DEBUG_RAW_GET_RESPONSE.format(response=response))
         return response
 
-    def post_answer(self, year: int, day: int, answer: int, exercise: int) -> str:
+    def post_answer(self, year: int, day: int, answer: str, exercise: int) -> str:
         data = urlencode({"level": exercise, "answer": answer}).encode()
         return self._post(self.url.submit(year=year, day=day), data=data)
 

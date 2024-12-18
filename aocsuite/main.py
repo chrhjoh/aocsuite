@@ -103,12 +103,12 @@ def main():
 
 def submit(aoc_client: AocClient, exercise: int) -> bool:
     try:
-        answer = int(input("Please input answer: "))
+        answer = input("Please input answer: ")
     except KeyboardInterrupt:
         sys.exit(0)
-    except ValueError:
-        print("Answer is not a valid integer: ")
-        sys.exit(1)
+    if answer == "":
+        print("No answer given")
+        sys.exit(0)
 
     response = aoc_client.submit(exercise, answer)
     print(f"Submission response from Advent of Code:\n{response}")

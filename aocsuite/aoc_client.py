@@ -1,9 +1,8 @@
 import logging
 import re
-import sys
-from typing import Dict, Tuple
+from typing import Optional, Tuple
 
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup, NavigableString, Tag
 from markdownify import MarkdownConverter
 
 from aocsuite.aoc_directory import AocDataDirectory
@@ -19,7 +18,7 @@ class AocClient:
         self.year = year
         self.day = day
 
-    def submit(self, exercise: int, answer: int) -> str:
+    def submit(self, exercise: int, answer: str) -> str:
         response = self.http.post_answer(
             year=self.year, day=self.day, answer=answer, exercise=exercise
         )
@@ -60,7 +59,10 @@ class AocClient:
 def parse_submission_response(html: str):
     soup = BeautifulSoup(html, "html.parser")
     article = soup.find("article")
-    article = article.text[: article.text.find(r"[")]
+    if article is not None:
+        article = article.text[: article.text.find(r"[")]
+    else:
+        article = ""
     return article
 
 
@@ -82,6 +84,8 @@ def parse_puzzle(html: str) -> Tuple[str, str]:
 def parse_calendar(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     content = soup.find("main")
+    if content is None or isinstance(content, NavigableString):
+        return ""
 
     color_mapper = parse_css_classes_to_colors(soup.find("style"))
 
@@ -103,6 +107,9 @@ def parse_calendar(html: str) -> str:
                 a.contents.remove(child)  # Remove the original text node
 
     content = parse_calendar_stars(content)
+    if content is None or isinstance(content, NavigableString):
+        return ""
+
     # Convert all colors into ANSI for terminals
     replace_css_with_ansi_colors(content.find_all("span"), color_mapper)
 
@@ -111,7 +118,7 @@ def parse_calendar(html: str) -> str:
     return text
 
 
-def parse_css_classes_to_colors(style_tags) -> Dict[str, str]:
+def parse_css_classes_to_colors(style_tags: Optional[list[Tag]]) -> dict[str, str]:
     # default styles
     class_color_mapping = {
         "calendar-default-text": "#666666",
@@ -140,7 +147,7 @@ def parse_css_classes_to_colors(style_tags) -> Dict[str, str]:
     return class_color_mapping
 
 
-def parse_calendar_stars(content) -> str:
+def parse_calendar_stars(content: Tag) -> Tag:
     for a_tag in content.find_all("a"):
         aria_label = a_tag.get("aria-label", "")
 
@@ -160,7 +167,7 @@ def parse_calendar_stars(content) -> str:
     return content
 
 
-def hex_to_ansi(hex_color):
+def hex_to_ansi(hex_color: str):
     # Convert hex color to RGB
     hex_color = hex_color.lstrip("#")
     try:
