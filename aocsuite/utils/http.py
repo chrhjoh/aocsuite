@@ -1,5 +1,6 @@
 import logging
 import sys
+from typing import Optional
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -28,7 +29,9 @@ class AocURL:
 
 
 class AocHttp:
-    def __init__(self, session: str = get_aoc_session()) -> None:
+    def __init__(self, session: Optional[str] = None) -> None:
+        if not session:
+            session = get_aoc_session()
         self.url = AocURL()
         self.headers = {"Cookie": f"session={session}"}
 

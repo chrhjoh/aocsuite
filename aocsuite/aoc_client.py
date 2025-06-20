@@ -115,6 +115,9 @@ def parse_calendar(html: str) -> str:
 
     # Extract text from the main content
     text = content.get_text()
+    text = text.replace(
+        "." * 11, "."
+    )  # HACK: removes the overlapping "." in 2024 day 14
     return text
 
 
