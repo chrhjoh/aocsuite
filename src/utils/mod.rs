@@ -1,3 +1,7 @@
+use std::io::Error;
+use std::path::PathBuf;
+use std::{fs, io};
+
 use chrono::{DateTime, Datelike, TimeZone, Utc};
 use chrono_tz::{Tz, US::Eastern};
 use clap::{Subcommand, ValueEnum};
@@ -82,4 +86,11 @@ pub fn is_year_released(day: PuzzleDay, year: PuzzleYear) -> bool {
 pub fn today() -> DateTime<Tz> {
     let now_utc = Utc::now();
     now_utc.with_timezone(&Eastern)
+}
+
+//TODO: Add option for templating later
+pub fn copy_file_from_template(template_file: &PathBuf, output_file: &PathBuf) -> io::Result<()> {
+    let content = fs::read_to_string(template_file)?;
+    fs::write(output_file, content)?;
+    Ok(())
 }

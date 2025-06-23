@@ -3,7 +3,7 @@ use clap::Parser;
 use std::process;
 
 use crate::{
-    Command,
+    AocCommand,
     utils::{PuzzleDay, PuzzleYear, today},
 };
 
@@ -12,7 +12,7 @@ use crate::{
 pub struct AocArgs {
     #[command(subcommand)]
     /// Command to execute
-    command: Command,
+    pub command: AocCommand,
 
     /// Specify day for exercises etc. (default: current)
     #[arg(long)]

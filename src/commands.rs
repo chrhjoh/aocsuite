@@ -1,8 +1,11 @@
-use crate::utils::{DownloadMode, Exercise};
+use crate::{
+    language::Language,
+    utils::{DownloadMode, Exercise},
+};
 use clap::Subcommand;
 
 #[derive(Subcommand, Debug)]
-pub enum Command {
+pub enum AocCommand {
     /// Show the Advent of Code calendar
     Calendar,
 
@@ -16,13 +19,20 @@ pub enum Command {
     },
 
     /// Generate new exercise files from template
-    New { template: Option<String> },
+    New {
+        template: Option<String>,
+        #[arg(long)]
+        language: Language,
+    },
 
     /// Open the puzzle in browser
     Open,
 
     /// Edit the exercise with your editor
-    Edit,
+    Edit {
+        #[arg(long)]
+        language: Language,
+    },
 
     /// Run the exercise
     Run {
@@ -30,6 +40,8 @@ pub enum Command {
         // all: bool,
         /// Input file to use instead of year{i}/day{j}/input.txt
         input_file: Option<String>,
+        #[arg(long)]
+        language: Language,
     },
 
     /// Submit answer to Advent of Code
