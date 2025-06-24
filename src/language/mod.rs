@@ -1,10 +1,13 @@
 mod rust;
-use std::{io, path::PathBuf, process::Output};
+use std::{path::PathBuf, process::Output};
 
 use clap::ValueEnum;
 use rust::RustLanguage;
 
-use crate::utils::{PuzzleDay, PuzzleYear};
+use crate::{
+    AocResult,
+    utils::{PuzzleDay, PuzzleYear},
+};
 
 #[derive(ValueEnum, Clone, Debug)]
 pub enum Language {
@@ -21,9 +24,14 @@ pub fn base_language_dir(language: &Language) -> PathBuf {
 }
 
 pub trait LanguageRunner {
-    fn scaffold(&self, day: PuzzleDay, year: PuzzleYear, template_dir: Option<String>);
-    fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> Option<io::Result<Output>>;
-    fn run(&self, day: PuzzleDay, year: PuzzleYear) -> io::Result<Output>;
+    fn scaffold(
+        &self,
+        day: PuzzleDay,
+        year: PuzzleYear,
+        template_dir: Option<String>,
+    ) -> AocResult<()>;
+    fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocResult<Option<Output>>;
+    fn run(&self, day: PuzzleDay, year: PuzzleYear) -> AocResult<Option<Output>>;
 }
 
 pub fn get_language_runner(language: &Language) -> impl LanguageRunner {

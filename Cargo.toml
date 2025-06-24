@@ -7,4 +7,6 @@ edition = "2024"
 chrono = "0.4.41"
 chrono-tz = "0.10.3"
 clap = { version = "4.5.40", features = ["derive"] }
+reqwest = { version = "0.12.20", features = ["blocking"] }
+thiserror = "2.0.12"
 toml_edit = "0.22.27"
