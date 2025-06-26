@@ -1,0 +1,98 @@
+mod rust;
+use aocsuite_utils::{PuzzleDay, PuzzleYear};
+use clap::ValueEnum;
+use rust::RustLanguage;
+use std::{path::Path, process::Output};
+use thiserror::Error;
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum Language {
+    Rust,
+    Python,
+}
+
+impl ToString for Language {
+    fn to_string(&self) -> String {
+        match self {
+            Language::Rust => "rust".to_owned(),
+            Language::Python => "python".to_owned(),
+        }
+    }
+}
+
+pub fn scaffold(
+    day: PuzzleDay,
+    year: PuzzleYear,
+    language: &Language,
+    template_dir: Option<&str>,
+) -> AocLanguageResult<()> {
+    let runner = get_language_runner(language);
+    runner.scaffold(day, year, template_dir)
+}
+
+pub fn compile(
+    day: PuzzleDay,
+    year: PuzzleYear,
+    language: &Language,
+) -> AocLanguageResult<Option<String>> {
+    let runner = get_language_runner(language);
+    let output = runner.compile(day, year)?;
+    match output {
+        Some(output) => handle_command_output(output),
+        None => Ok(None),
+    }
+}
+
+pub fn run(
+    day: PuzzleDay,
+    year: PuzzleYear,
+    language: &Language,
+) -> AocLanguageResult<Option<String>> {
+    let runner = get_language_runner(language);
+    let output = runner.run(day, year)?;
+    handle_command_output(output)
+}
+
+fn handle_command_output(output: Output) -> AocLanguageResult<Option<String>> {
+    if !output.status.success() {
+        // The compile command ran but failed
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AocLanguageError::Command(stderr.to_string()));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    if stdout == "" {
+        return Ok(None);
+    }
+    Ok(Some(stdout))
+}
+
+trait LanguageRunner {
+    fn scaffold(
+        &self,
+        day: PuzzleDay,
+        year: PuzzleYear,
+        template_dir: Option<&str>,
+    ) -> AocLanguageResult<()>;
+    fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Option<Output>>;
+    fn run(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Output>;
+}
+
+fn get_language_runner(language: &Language) -> impl LanguageRunner {
+    let language_root_dir = language.to_string();
+    let language_root_dir = Path::new(&language_root_dir).to_path_buf();
+    match language {
+        Language::Rust => RustLanguage::new(language_root_dir),
+        Language::Python => RustLanguage::new(language_root_dir),
+    }
+}
+#[derive(Error, Debug)]
+pub enum AocLanguageError {
+    #[error("error executing command: {0}")]
+    Command(String),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("TOML parsing error")]
+    Toml(#[from] toml_edit::TomlError),
+}
+
+pub type AocLanguageResult<T> = Result<T, AocLanguageError>;

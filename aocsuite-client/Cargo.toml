@@ -1,0 +1,12 @@
+[package]
+name = "aocsuite-client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aocsuite-utils = { version = "0.1.0", path = "../aocsuite-utils" }
+chrono.workspace = true
+chrono-tz.workspace = true
+clap = { workspace=true, features = ["derive"] }
+reqwest = { workspace = true, features = ["blocking"] }
+thiserror.workspace = true
