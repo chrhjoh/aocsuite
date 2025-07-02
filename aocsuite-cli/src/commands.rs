@@ -39,16 +39,22 @@ pub enum AocCommand {
         // Run All Puzzles
         // all: bool,
         #[arg(long)]
-        language: Language,
+        language: Option<Language>,
+
+        /// Puzzle part
+        part: Option<Exercise>,
     },
     /// Run the exercise
     Test {
-        // Run All Puzzles
-        // all: bool,
         /// Input file to use instead of year{i}/day{j}/input.txt
-        input_file: Option<String>,
         #[arg(long)]
-        language: Language,
+        input_file: Option<String>,
+
+        #[arg(long)]
+        language: Option<Language>,
+
+        /// Puzzle part
+        part: Option<Exercise>,
     },
 
     /// Submit answer to Advent of Code

@@ -2,7 +2,7 @@ use crate::{AocCliResult, AocCommand, ConfigCommand};
 use aocsuite_client::{AocHttp, AocPage, DownloadMode, ParserType, open_puzzle_page};
 use aocsuite_config::{AocConfig, ConfigOpt};
 use aocsuite_fs::{AocDataDir, AocDataFile};
-use aocsuite_lang::{run, scaffold};
+use aocsuite_lang::{compile, run, scaffold};
 use aocsuite_utils::{PuzzleDay, PuzzleYear, valid_puzzle_release, valid_year_release};
 
 pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> AocCliResult<()> {
@@ -12,8 +12,10 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             language,
         } => {
             valid_puzzle_release(day, year)?;
-            let default_lang = AocConfig::new().get(ConfigOpt::Language)?.parse()?;
-            let language = language.unwrap_or_else(|| default_lang);
+            let language = match language {
+                Some(lang) => lang,
+                None => AocConfig::new().get(ConfigOpt::Language)?.parse()?,
+            };
             scaffold(day, year, &language, template_directory.as_deref())?;
             run_download(day, year, DownloadMode::All)?;
             Ok(())
@@ -24,8 +26,10 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             language,
         } => {
             valid_puzzle_release(day, year)?;
-            let default_lang = AocConfig::new().get(ConfigOpt::Language)?.parse()?;
-            let language = language.unwrap_or_else(|| default_lang);
+            let language = match language {
+                Some(lang) => lang,
+                None => AocConfig::new().get(ConfigOpt::Language)?.parse()?,
+            };
             scaffold(day, year, &language, template_directory.as_deref())?;
             Ok(())
         }
@@ -60,18 +64,37 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             Ok(())
         }
 
-        AocCommand::Run { language } => {
+        AocCommand::Run { language, part } => {
             let path = AocDataFile::Input(day, year).to_string();
-            run(day, year, &language, path.as_ref())?;
+            let language = match language {
+                Some(lang) => lang,
+                None => AocConfig::new().get(ConfigOpt::Language)?.parse()?,
+            };
+            let part = match part {
+                Some(e) => e.to_string(),
+                None => "both".to_string(),
+            };
+            compile(day, year, &language)?;
+            run(day, year, &part, &language, path.as_ref())?;
             Ok(())
         }
 
         AocCommand::Test {
             language,
             input_file,
+            part,
         } => {
             let path = input_file.unwrap_or_else(|| AocDataFile::Example(day, year).to_string());
-            run(day, year, &language, path.as_ref())?;
+            let language = match language {
+                Some(lang) => lang,
+                None => AocConfig::new().get(ConfigOpt::Language)?.parse()?,
+            };
+            let part = match part {
+                Some(e) => e.to_string(),
+                None => "both".to_string(),
+            };
+            compile(day, year, &language)?;
+            run(day, year, &part, &language, path.as_ref())?;
             Ok(())
         }
     }

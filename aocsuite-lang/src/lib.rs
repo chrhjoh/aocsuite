@@ -58,11 +58,12 @@ pub fn compile(
 pub fn run(
     day: PuzzleDay,
     year: PuzzleYear,
+    part: &str,
     language: &Language,
     input: &Path,
 ) -> AocLanguageResult<Option<String>> {
     let runner = get_language_runner(language);
-    let output = runner.run(day, year, input)?;
+    let output = runner.run(day, year, part, input)?;
     handle_command_output(output)
 }
 
@@ -87,7 +88,13 @@ trait LanguageRunner {
         template_dir: Option<&str>,
     ) -> AocLanguageResult<()>;
     fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Option<Output>>;
-    fn run(&self, day: PuzzleDay, year: PuzzleYear, input: &Path) -> AocLanguageResult<Output>;
+    fn run(
+        &self,
+        day: PuzzleDay,
+        year: PuzzleYear,
+        part: &str,
+        input: &Path,
+    ) -> AocLanguageResult<Output>;
 }
 
 fn get_language_runner(language: &Language) -> impl LanguageRunner {

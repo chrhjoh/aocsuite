@@ -8,7 +8,9 @@ pub type PuzzleYear = i32;
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum Exercise {
+    #[clap(alias = "1")]
     One,
+    #[clap(alias = "2")]
     Two,
 }
 impl ToString for Exercise {
