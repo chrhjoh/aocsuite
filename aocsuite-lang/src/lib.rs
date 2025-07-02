@@ -2,7 +2,11 @@ mod rust;
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 use clap::ValueEnum;
 use rust::RustLanguage;
-use std::{path::Path, process::Output, str::FromStr};
+use std::{
+    path::{Path, PathBuf},
+    process::Output,
+    str::FromStr,
+};
 use thiserror::Error;
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -30,6 +34,16 @@ impl FromStr for Language {
             _ => Err(AocLanguageError::NotFound(s.to_owned())),
         }
     }
+}
+
+pub fn get_exercise_file(
+    day: PuzzleDay,
+    year: PuzzleYear,
+    language: &Language,
+    file: LanguageFile,
+) -> PathBuf {
+    let runner = get_language_runner(language);
+    runner.get_path(day, year, file)
 }
 
 pub fn scaffold(
@@ -95,6 +109,13 @@ trait LanguageRunner {
         part: &str,
         input: &Path,
     ) -> AocLanguageResult<Output>;
+
+    fn get_path(&self, day: PuzzleDay, year: PuzzleYear, file: LanguageFile) -> PathBuf;
+}
+
+pub enum LanguageFile {
+    Lib,
+    Main,
 }
 
 fn get_language_runner(language: &Language) -> impl LanguageRunner {

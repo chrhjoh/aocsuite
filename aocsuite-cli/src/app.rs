@@ -1,8 +1,9 @@
 use crate::{AocCliResult, AocCommand, ConfigCommand};
 use aocsuite_client::{AocHttp, AocPage, DownloadMode, ParserType, open_puzzle_page};
 use aocsuite_config::{AocConfig, ConfigOpt};
+use aocsuite_editor::get_editor;
 use aocsuite_fs::{AocDataDir, AocDataFile};
-use aocsuite_lang::{compile, run, scaffold};
+use aocsuite_lang::{LanguageFile, compile, get_exercise_file, run, scaffold};
 use aocsuite_utils::{PuzzleDay, PuzzleYear, valid_puzzle_release, valid_year_release};
 
 pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> AocCliResult<()> {
@@ -75,7 +76,10 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                 None => "both".to_string(),
             };
             compile(day, year, &language)?;
-            run(day, year, &part, &language, path.as_ref())?;
+            let result = run(day, year, &part, &language, path.as_ref())?;
+            if let Some(res) = result {
+                println!("{res}")
+            }
             Ok(())
         }
 
@@ -97,6 +101,26 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             run(day, year, &part, &language, path.as_ref())?;
             Ok(())
         }
+        AocCommand::Edit { language } => {
+            let language = match language {
+                Some(lang) => lang,
+                None => AocConfig::new().get(ConfigOpt::Language)?.parse()?,
+            };
+            let lib_file = get_exercise_file(day, year, &language, LanguageFile::Lib);
+
+            let puzzle_file = AocDataFile::Puzzle(day, year);
+            let example_file = AocDataFile::Example(day, year);
+            let input_file = AocDataFile::Input(day, year);
+            let editor_type = AocConfig::new().get(ConfigOpt::Editor)?;
+            get_editor(&editor_type).open(
+                &puzzle_file.to_string(),
+                &example_file.to_string(),
+                &lib_file.to_str().expect("Expect valid UTF-8"),
+                &input_file.to_string(),
+            )?;
+
+            Ok(())
+        }
     }
 }
 
@@ -112,7 +136,7 @@ fn run_download(day: PuzzleDay, year: PuzzleYear, mode: DownloadMode) -> AocCliR
     }
 
     if matches!(mode, DownloadMode::All | DownloadMode::Puzzle) {
-        let puzzle = client.get(AocPage::Puzzle(day, year))?;
+        let puzzle = client.get_cleaned(AocPage::Puzzle(day, year), ParserType::Markdown)?;
         std::fs::write(AocDataFile::Puzzle(day, year).to_string(), puzzle)?;
     }
 
@@ -137,6 +161,6 @@ fn run_config(command: ConfigCommand) -> AocCliResult<()> {
 fn get_http_client() -> AocCliResult<AocHttp> {
     let config = AocConfig::new();
     let session = config.get(ConfigOpt::Session)?;
-    let http = AocHttp::new(session)?;
+    let http = AocHttp::new(&session)?;
     Ok(http)
 }

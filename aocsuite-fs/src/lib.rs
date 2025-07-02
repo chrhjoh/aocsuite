@@ -15,7 +15,7 @@ impl ToString for AocDataFile {
     fn to_string(&self) -> String {
         let (day, year, file) = match self {
             AocDataFile::Input(day, year) => (day, year, "input.txt"),
-            AocDataFile::Puzzle(day, year) => (day, year, "puzzle.txt"),
+            AocDataFile::Puzzle(day, year) => (day, year, "puzzle.md"),
             AocDataFile::Example(day, year) => (day, year, "example.txt"),
         };
         let dir = AocDataDir::new(*day, *year);

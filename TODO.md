@@ -3,8 +3,8 @@
 ## Features
 
 - [x] Http: Implement Http commands
-- [ ] Run: Make Base template for rust run
-- [ ] Editor: Implement a simple neovim editor
+- [x] Run: Make Base template for rust run
+- [x] Editor: Implement a simple neovim editor
 - [ ] Benchmarking: Add simple benchmarking times
 - [ ] Template: Add options for user defined templates
 

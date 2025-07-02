@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env::VarError;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -42,11 +43,18 @@ impl AocConfig {
         }
     }
 
-    pub fn get(&self, key: ConfigOpt) -> AocConfigResult<&str> {
-        match self.data.get(&key.to_string()) {
-            Some(val) => Ok(val),
-            None => Err(AocConfigError::Get { key }),
+    pub fn get(&self, key: ConfigOpt) -> AocConfigResult<String> {
+        if let Some(val) = self.data.get(&key.to_string()) {
+            return Ok(val.to_owned());
         }
+        let env_var = match key {
+            ConfigOpt::Session => "AOC_SESSION",
+            ConfigOpt::Language => "AOC_LANGUAGE",
+            ConfigOpt::Year => "AOC_YEAR",
+            ConfigOpt::Editor => "EDITOR",
+        };
+        let val = std::env::var(env_var)?;
+        Ok(val)
     }
     pub fn get_or_default(&self, key: ConfigOpt, default: String) -> String {
         let val = self.data.get(&key.to_string());
@@ -91,6 +99,8 @@ pub enum AocConfigError {
     Parse(#[from] serde_json::Error),
     #[error("Failed to get config key: {key:?}")]
     Get { key: ConfigOpt },
+    #[error("Failed to get config key: {0}")]
+    GetEnv(#[from] VarError),
 }
 
 pub type AocConfigResult<T> = Result<T, AocConfigError>;

@@ -97,6 +97,7 @@ version = "0.1.0"
 dependencies = [
  "aocsuite-client",
  "aocsuite-config",
+ "aocsuite-editor",
  "aocsuite-fs",
  "aocsuite-lang",
  "aocsuite-utils",

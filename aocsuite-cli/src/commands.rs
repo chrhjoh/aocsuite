@@ -34,6 +34,12 @@ pub enum AocCommand {
     /// Open the puzzle in browser
     Open,
 
+    /// Open the exercises in editor
+    Edit {
+        #[arg(long)]
+        language: Option<Language>,
+    },
+
     /// Run the exercise
     Run {
         // Run All Puzzles
@@ -46,7 +52,7 @@ pub enum AocCommand {
     },
     /// Run the exercise
     Test {
-        /// Input file to use instead of year{i}/day{j}/input.txt
+        /// Input file to use instead of data/year{i}/day{j}/example.txt
         #[arg(long)]
         input_file: Option<String>,
 
