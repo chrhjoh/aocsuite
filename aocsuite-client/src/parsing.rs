@@ -83,20 +83,24 @@ fn process_calendar_content(
             scraper::Node::Element(elem) => {
                 if elem.name() == "span" {
                     let class = elem.attr("class").unwrap_or_default();
-                    match &current_stars {
-                        Some(CalendarStars::Two) => {}
-                        Some(CalendarStars::One) => {
-                            if class == "calendar-mark-verycomplete" {
-                                continue;
-                            }
-                        }
-                        None => continue,
-                    }
                     let content = node
                         .first_child()
                         .and_then(|child| child.value().as_text())
                         .map(|text| text.to_string())
                         .unwrap_or_default();
+                    match &current_stars {
+                        Some(CalendarStars::Two) => {}
+                        Some(CalendarStars::One) => {
+                            if (class == "calendar-mark-verycomplete") & (content.contains("*")) {
+                                continue;
+                            }
+                        }
+                        None => {
+                            if content.contains("*") {
+                                continue;
+                            }
+                        }
+                    }
 
                     let hex = match class_color_map.get(class) {
                         Some(val) => val,
