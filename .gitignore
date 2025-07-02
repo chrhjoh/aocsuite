@@ -1,1 +1,11 @@
 /target
+
+# Dirs generated when testing the commands quickly in root directory
+/data
+/rust
+/python
+
+# Config files
+.aocsuite
+.envrc
+
