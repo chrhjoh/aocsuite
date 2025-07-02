@@ -2,7 +2,7 @@ mod rust;
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 use clap::ValueEnum;
 use rust::RustLanguage;
-use std::{path::Path, process::Output};
+use std::{path::Path, process::Output, str::FromStr};
 use thiserror::Error;
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -16,6 +16,18 @@ impl ToString for Language {
         match self {
             Language::Rust => "rust".to_owned(),
             Language::Python => "python".to_owned(),
+        }
+    }
+}
+
+impl FromStr for Language {
+    type Err = AocLanguageError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "rust" => Ok(Language::Rust),
+            "python" => Ok(Language::Python),
+            _ => Err(AocLanguageError::NotFound(s.to_owned())),
         }
     }
 }
@@ -47,9 +59,10 @@ pub fn run(
     day: PuzzleDay,
     year: PuzzleYear,
     language: &Language,
+    input: &Path,
 ) -> AocLanguageResult<Option<String>> {
     let runner = get_language_runner(language);
-    let output = runner.run(day, year)?;
+    let output = runner.run(day, year, input)?;
     handle_command_output(output)
 }
 
@@ -74,7 +87,7 @@ trait LanguageRunner {
         template_dir: Option<&str>,
     ) -> AocLanguageResult<()>;
     fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Option<Output>>;
-    fn run(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Output>;
+    fn run(&self, day: PuzzleDay, year: PuzzleYear, input: &Path) -> AocLanguageResult<Output>;
 }
 
 fn get_language_runner(language: &Language) -> impl LanguageRunner {
@@ -93,6 +106,8 @@ pub enum AocLanguageError {
     Io(#[from] std::io::Error),
     #[error("TOML parsing error")]
     Toml(#[from] toml_edit::TomlError),
+    #[error("Language not found: {0}")]
+    NotFound(String),
 }
 
 pub type AocLanguageResult<T> = Result<T, AocLanguageError>;

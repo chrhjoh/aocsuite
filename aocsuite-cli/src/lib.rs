@@ -23,6 +23,9 @@ pub enum AocCliError {
 
     #[error(transparent)]
     Config(#[from] AocConfigError),
+
+    #[error(transparent)]
+    File(#[from] std::io::Error),
 }
 
 type AocCliResult<T> = Result<T, AocCliError>;

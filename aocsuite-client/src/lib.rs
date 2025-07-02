@@ -1,13 +1,15 @@
+mod parsing;
 mod requests;
 
 use clap::ValueEnum;
-pub use requests::{AocHttp, AocPage};
+pub use parsing::{HttpParser, ParserType, parse_html};
+pub use requests::{AocHttp, AocPage, open_puzzle_page};
 use std::io;
 use thiserror::Error;
 
 pub type AocClientResult<T> = Result<T, AocClientError>;
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
 pub enum DownloadMode {
     All,
     Input,

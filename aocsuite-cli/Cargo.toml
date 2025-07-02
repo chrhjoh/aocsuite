@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 aocsuite-client = { version = "0.1.0", path = "../aocsuite-client" }
 aocsuite-config = { version = "0.1.0", path = "../aocsuite-config" }
+aocsuite-fs = { version = "0.1.0", path = "../aocsuite-fs" }
 aocsuite-lang = { version = "0.1.0", path = "../aocsuite-lang" }
 aocsuite-utils = { version = "0.1.0", path = "../aocsuite-utils" }
 clap = { workspace = true, features = ["derive"] }

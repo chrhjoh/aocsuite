@@ -64,7 +64,7 @@ impl LanguageRunner for RustLanguage {
         Ok(Some(output))
     }
 
-    fn run(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Output> {
+    fn run(&self, day: PuzzleDay, year: PuzzleYear, input: &Path) -> AocLanguageResult<Output> {
         let package_name = package_path_from_root(day, year);
         let binary_path = self
             .root_dir

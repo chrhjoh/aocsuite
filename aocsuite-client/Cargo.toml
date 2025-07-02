@@ -8,5 +8,9 @@ aocsuite-utils = { version = "0.1.0", path = "../aocsuite-utils" }
 chrono.workspace = true
 chrono-tz.workspace = true
 clap = { workspace=true, features = ["derive"] }
+colored = "3.0.0"
+html2md = "0.2.15"
+regex = "1.11.1"
 reqwest = { workspace = true, features = ["blocking"] }
+scraper = "0.23.1"
 thiserror.workspace = true

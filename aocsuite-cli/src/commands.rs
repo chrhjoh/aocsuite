@@ -10,7 +10,12 @@ pub enum AocCommand {
     Calendar,
 
     /// Initialize a new day. Executes both Download and Template to download and create exericses
-    New,
+    New {
+        #[arg(long, short)]
+        template_directory: Option<String>,
+        #[arg(long)]
+        language: Option<Language>,
+    },
 
     /// Download files for given exercise (input, puzzle)
     Download {
@@ -20,10 +25,10 @@ pub enum AocCommand {
 
     /// Generate new exercise files from template
     Template {
+        #[arg(long, short)]
+        template_directory: Option<String>,
         #[arg(long)]
-        directory: Option<String>,
-        #[arg(long)]
-        language: Language,
+        language: Option<Language>,
     },
 
     /// Open the puzzle in browser
@@ -33,8 +38,15 @@ pub enum AocCommand {
     Run {
         // Run All Puzzles
         // all: bool,
+        #[arg(long)]
+        language: Language,
+    },
+    /// Run the exercise
+    Test {
+        // Run All Puzzles
+        // all: bool,
         /// Input file to use instead of year{i}/day{j}/input.txt
-        input_file: Option<String>, //TODO:: Add way to use a default example file. mutually exclustive with input file
+        input_file: Option<String>,
         #[arg(long)]
         language: Language,
     },

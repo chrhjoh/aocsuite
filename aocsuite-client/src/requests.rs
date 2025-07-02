@@ -1,5 +1,8 @@
-use crate::AocClientResult;
+use std::process::Command;
+
+use crate::{AocClientResult, ParserType, parse_html};
 use aocsuite_utils::{Exercise, PuzzleDay, PuzzleYear};
+use regex::Regex;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{COOKIE, HeaderMap};
 
@@ -47,8 +50,14 @@ impl AocHttp {
 
     pub fn get(&self, page: AocPage) -> AocClientResult<String> {
         let response: Response = self.client.get(&page.to_string()).send()?;
-        //TODO: Check string for error
+        //TODO: could improve error handling from the response
         Ok(response.text()?)
+    }
+
+    pub fn get_cleaned(&self, page: AocPage, parser: ParserType) -> AocClientResult<String> {
+        let calendar = self.get(page)?;
+        let calendar = parse_html(&calendar, parser);
+        Ok(calendar)
     }
 
     pub fn post_answer(
@@ -61,6 +70,31 @@ impl AocHttp {
         let params = [("level", level.to_string()), ("answer", answer.to_string())];
         let page = AocPage::Submit(day, year).to_string();
         let response: Response = self.client.post(&page).form(&params).send()?;
-        Ok(response.text()?)
+        let mut response = parse_html(&response.text()?, ParserType::Markdown);
+        response = remove_markdown_links(&response);
+        //TODO: could improve response handling via errors and custom enum
+
+        Ok(response)
     }
+}
+
+pub fn open_puzzle_page(day: PuzzleDay, year: PuzzleYear) -> AocClientResult<()> {
+    let url = AocPage::Puzzle(day, year).to_string();
+
+    #[cfg(target_os = "macos")]
+    let result = Command::new("open").arg(&url).status();
+
+    #[cfg(target_os = "linux")]
+    let result = Command::new("xdg-open").arg(&url).status();
+
+    #[cfg(target_os = "windows")]
+    let result = Command::new("cmd").args(["/C", "start", &url]).status();
+
+    result?;
+    Ok(())
+}
+
+fn remove_markdown_links(text: &str) -> String {
+    let re = Regex::new(r"\[\[?([^\[\]]+)\]?\]\([^)]+\)").unwrap();
+    re.replace_all(text, "$1").into_owned()
 }
