@@ -1,4 +1,4 @@
-use aocsuite_fs::{AocFileError, ensure_files_exist};
+use aocsuite_fs::{ensure_files_exist, AocFileError};
 use thiserror::Error;
 
 trait Editor {
@@ -12,7 +12,9 @@ trait Editor {
     ) -> std::io::Result<()>;
 }
 
-struct NeovimEditor;
+struct NeovimEditor {
+    command: String,
+}
 
 impl Editor for NeovimEditor {
     fn open(
@@ -24,7 +26,7 @@ impl Editor for NeovimEditor {
     ) -> std::io::Result<()> {
         use std::process::Command;
 
-        let status = Command::new("nvim")
+        let status = Command::new(&self.command)
             .arg(libfile)
             .arg(inputfile)
             .arg(format!("+vsplit {}", examplefile))
@@ -92,7 +94,9 @@ pub fn edit_files(
 ) -> AocEditorResult<()> {
     ensure_files_exist(vec![puzzlefile, libfile, inputfile])?; //example file not required to exist
     let editor: Box<dyn Editor> = match editor_name.to_lowercase().as_str() {
-        "nvim" | "neovim" => Box::new(NeovimEditor),
+        "nvim" | "vi" => Box::new(NeovimEditor {
+            command: editor_name.to_string(),
+        }),
         _ => Box::new(GenericEditor {
             command: editor_name.to_string(),
         }),
