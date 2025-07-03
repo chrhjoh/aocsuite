@@ -170,7 +170,7 @@ fn create_exercise_package(
 fn root_cargo_contents() -> String {
     let mut doc = DocumentMut::new();
     doc["workspace"] = table();
-    doc["workspace"]["resolver"] = value("3");
+    doc["workspace"]["resolver"] = value("2");
 
     doc.to_string()
 }
