@@ -3,16 +3,16 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use aocsuite_fs::write_with_confirmation;
+use toml_edit::table;
+use toml_edit::value;
 use toml_edit::Array;
 use toml_edit::DocumentMut;
 use toml_edit::Item;
 use toml_edit::Value;
-use toml_edit::table;
-use toml_edit::value;
 
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 
-use crate::{AocLanguageResult, LanguageFile, read_template_contents};
+use crate::{read_template_contents, AocLanguageResult, LanguageFile};
 
 use super::LanguageRunner;
 
@@ -181,7 +181,7 @@ fn default_exercise_cargo_contents(package_name: &str) -> String {
     doc["package"] = table();
     doc["package"]["name"] = value(package_name);
     doc["package"]["version"] = value("0.1.0");
-    doc["package"]["edition"] = value("2024");
+    doc["package"]["edition"] = value("2021");
     doc.to_string()
 }
 

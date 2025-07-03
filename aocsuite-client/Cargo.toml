@@ -1,7 +1,7 @@
 [package]
 name = "aocsuite-client"
 version = "0.2.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 aocsuite-utils = { version = "0.2.0", path = "../aocsuite-utils" }
