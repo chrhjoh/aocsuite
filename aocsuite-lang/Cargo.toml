@@ -1,0 +1,11 @@
+[package]
+name = "aocsuite-lang"
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+aocsuite-fs = { version = "0.2.0", path = "../aocsuite-fs" }
+aocsuite-utils = { version = "0.2.0", path = "../aocsuite-utils" }
+clap = { workspace=true, features = ["derive"] }
+thiserror.workspace = true
+toml_edit.workspace = true
