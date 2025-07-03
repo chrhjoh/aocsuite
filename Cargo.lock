@@ -93,7 +93,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aocsuite-client",
  "aocsuite-config",
@@ -107,7 +107,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aocsuite-utils",
  "chrono",
@@ -123,7 +123,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-config"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "serde",
@@ -133,18 +133,23 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-editor"
-version = "0.1.0"
+version = "0.2.0"
+dependencies = [
+ "aocsuite-fs",
+ "thiserror 2.0.12",
+]
 
 [[package]]
 name = "aocsuite-fs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aocsuite-utils",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
 name = "aocsuite-lang"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aocsuite-fs",
  "aocsuite-utils",
@@ -155,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-utils"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "chrono-tz",
