@@ -9,7 +9,7 @@
 - [x] Template: Add options for user defined templates
 - [x] File writes: Add confirmation
 - [x] File open: (edit and run) check if files exist before starting.
-- [ ] Github release
+- [x] Github release
 - [ ] Upload crates
 
 ## Bug Fixes
@@ -27,8 +27,8 @@
 
 ## Documentation
 
-- [ ] Write some documentation. At least figure out how to do that in rust.
-- [ ] Create a README.md
+- [ ] Write some documentation.
+- [x] Create a README.md
 
 ```
 
