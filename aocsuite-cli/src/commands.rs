@@ -11,24 +11,32 @@ pub enum AocCommand {
 
     /// Initialize a new day. Executes both Download and Template to download and create exericses
     New {
+        /// Copies files for exercises found at {template_dir}/{language} instead of default files
         #[arg(long, short)]
-        template_directory: Option<String>,
+        template_dir: Option<String>,
         #[arg(long)]
         language: Option<Language>,
+        #[arg(long)]
+        overwrite: bool,
     },
 
     /// Download files for given exercise (input, puzzle)
     Download {
         #[arg(long, value_enum, default_value_t=DownloadMode::All)]
         mode: DownloadMode,
+        #[arg(long)]
+        overwrite: bool,
     },
 
     /// Generate new exercise files from template
     Template {
+        /// Copies files for exercises found at {template_dir}/{language} instead of default files
         #[arg(long, short)]
-        template_directory: Option<String>,
+        template_dir: Option<String>,
         #[arg(long)]
         language: Option<Language>,
+        #[arg(long)]
+        overwrite: bool,
     },
 
     /// Open the puzzle in browser
@@ -105,5 +113,5 @@ pub struct ConfigSetArgs {
     pub key: ConfigOpt,
 
     /// The value to assign to the config key
-    pub value: String,
+    pub value: Option<String>,
 }

@@ -1,5 +1,7 @@
 use aocsuite_client::AocClientError;
 use aocsuite_config::AocConfigError;
+use aocsuite_editor::AocEditorError;
+use aocsuite_fs::AocFileError;
 use aocsuite_lang::AocLanguageError;
 use aocsuite_utils::PuzzleNotReleasedError;
 use thiserror::Error;
@@ -25,7 +27,13 @@ pub enum AocCliError {
     Config(#[from] AocConfigError),
 
     #[error(transparent)]
-    File(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Editor(#[from] AocEditorError),
+
+    #[error(transparent)]
+    File(#[from] AocFileError),
 }
 
 type AocCliResult<T> = Result<T, AocCliError>;

@@ -1,4 +1,5 @@
 mod rust;
+use aocsuite_fs::{AocFileError, ensure_files_exist};
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 use clap::ValueEnum;
 use rust::RustLanguage;
@@ -6,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
     process::Output,
     str::FromStr,
+    time::Instant,
 };
 use thiserror::Error;
 
@@ -31,12 +33,12 @@ impl FromStr for Language {
         match s.to_lowercase().as_str() {
             "rust" => Ok(Language::Rust),
             "python" => Ok(Language::Python),
-            _ => Err(AocLanguageError::NotFound(s.to_owned())),
+            _ => Err(AocLanguageError::LangNotFound(s.to_owned())),
         }
     }
 }
 
-pub fn get_exercise_file(
+pub fn get_language_file(
     day: PuzzleDay,
     year: PuzzleYear,
     language: &Language,
@@ -51,9 +53,10 @@ pub fn scaffold(
     year: PuzzleYear,
     language: &Language,
     template_dir: Option<&str>,
+    overwrite: bool,
 ) -> AocLanguageResult<()> {
     let runner = get_language_runner(language);
-    runner.scaffold(day, year, template_dir)
+    runner.scaffold(day, year, template_dir, overwrite)
 }
 
 pub fn compile(
@@ -75,10 +78,22 @@ pub fn run(
     part: &str,
     language: &Language,
     input: &Path,
-) -> AocLanguageResult<Option<String>> {
+) -> AocLanguageResult<Option<(String, u128)>> {
     let runner = get_language_runner(language);
+    let start = Instant::now();
+    ensure_files_exist(vec![
+        input,
+        runner
+            .get_path(day, year, LanguageFile::Executable)
+            .as_path(),
+    ])?;
     let output = runner.run(day, year, part, input)?;
-    handle_command_output(output)
+    let duration_ms = start.elapsed().as_millis();
+    let result = handle_command_output(output)?;
+    match result {
+        Some(res) => Ok(Some((res, duration_ms))),
+        None => Ok(None),
+    }
 }
 
 fn handle_command_output(output: Output) -> AocLanguageResult<Option<String>> {
@@ -100,6 +115,7 @@ trait LanguageRunner {
         day: PuzzleDay,
         year: PuzzleYear,
         template_dir: Option<&str>,
+        overwrite: bool,
     ) -> AocLanguageResult<()>;
     fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Option<Output>>;
     fn run(
@@ -116,6 +132,7 @@ trait LanguageRunner {
 pub enum LanguageFile {
     Lib,
     Main,
+    Executable,
 }
 
 fn get_language_runner(language: &Language) -> impl LanguageRunner {
@@ -130,12 +147,32 @@ fn get_language_runner(language: &Language) -> impl LanguageRunner {
 pub enum AocLanguageError {
     #[error("error executing command: {0}")]
     Command(String),
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
     #[error("TOML parsing error")]
     Toml(#[from] toml_edit::TomlError),
     #[error("Language not found: {0}")]
-    NotFound(String),
+    LangNotFound(String),
+    #[error("failed to read template '{path}': {source}")]
+    TemplateRead {
+        #[source]
+        source: std::io::Error,
+        path: String,
+    },
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    File(#[from] AocFileError),
 }
 
 pub type AocLanguageResult<T> = Result<T, AocLanguageError>;
+
+//TODO: Add option for custom template args
+pub fn read_template_contents(path: &Path) -> AocLanguageResult<String> {
+    let contents = std::fs::read_to_string(path).map_err(|e| AocLanguageError::TemplateRead {
+        source: e,
+        path: path.to_string_lossy().into_owned(),
+    })?;
+
+    Ok(contents)
+}

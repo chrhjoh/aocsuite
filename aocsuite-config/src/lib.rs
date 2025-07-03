@@ -43,18 +43,32 @@ impl AocConfig {
         }
     }
 
-    pub fn get(&self, key: ConfigOpt) -> AocConfigResult<String> {
+    pub fn get_ok(&self, key: ConfigOpt) -> AocConfigResult<String> {
+        match self._get(&key) {
+            Some(val) => Ok(val),
+            None => Err(AocConfigError::Get { key }),
+        }
+    }
+    pub fn get(&self, key: ConfigOpt) -> Option<String> {
+        self._get(&key)
+    }
+
+    fn _get(&self, key: &ConfigOpt) -> Option<String> {
         if let Some(val) = self.data.get(&key.to_string()) {
-            return Ok(val.to_owned());
+            return Some(val.to_owned());
         }
         let env_var = match key {
             ConfigOpt::Session => "AOC_SESSION",
             ConfigOpt::Language => "AOC_LANGUAGE",
             ConfigOpt::Year => "AOC_YEAR",
             ConfigOpt::Editor => "EDITOR",
+            ConfigOpt::TemplateDir => "AOC_TEMPLATE_DIR",
         };
-        let val = std::env::var(env_var)?;
-        Ok(val)
+        let val = std::env::var(env_var);
+        match val {
+            Ok(v) => Some(v),
+            Err(_) => None,
+        }
     }
     pub fn get_or_default(&self, key: ConfigOpt, default: String) -> String {
         let val = self.data.get(&key.to_string());
@@ -64,8 +78,11 @@ impl AocConfig {
         }
     }
 
-    pub fn set(&mut self, key: ConfigOpt, value: String) -> AocConfigResult<()> {
-        self.data.insert(key.to_string(), value);
+    pub fn set(&mut self, key: ConfigOpt, value: Option<String>) -> AocConfigResult<()> {
+        match value {
+            Some(val) => self.data.insert(key.to_string(), val),
+            None => self.data.remove(&key.to_string()),
+        };
         let serialized =
             serde_json::to_string_pretty(&self.data).expect("Failed to serialize config");
         fs::write(&self.path, serialized).expect("Failed to write config file");
@@ -79,6 +96,7 @@ pub enum ConfigOpt {
     Year,
     Editor,
     Session,
+    TemplateDir,
 }
 
 impl ToString for ConfigOpt {
@@ -88,6 +106,7 @@ impl ToString for ConfigOpt {
             ConfigOpt::Year => "year",
             ConfigOpt::Editor => "editor",
             ConfigOpt::Session => "session",
+            ConfigOpt::TemplateDir => "template_dir",
         }
         .to_string()
     }

@@ -1,4 +1,7 @@
-pub trait Editor {
+use aocsuite_fs::{AocFileError, ensure_files_exist};
+use thiserror::Error;
+
+trait Editor {
     /// Opens the editor with the three files
     fn open(
         &self,
@@ -9,7 +12,7 @@ pub trait Editor {
     ) -> std::io::Result<()>;
 }
 
-pub struct NeovimEditor;
+struct NeovimEditor;
 
 impl Editor for NeovimEditor {
     fn open(
@@ -39,8 +42,8 @@ impl Editor for NeovimEditor {
     }
 }
 
-pub struct GenericEditor {
-    pub command: String,
+struct GenericEditor {
+    command: String,
 }
 
 impl Editor for GenericEditor {
@@ -80,11 +83,32 @@ impl Editor for GenericEditor {
     }
 }
 
-pub fn get_editor(name: &str) -> Box<dyn Editor> {
-    match name.to_lowercase().as_str() {
+pub fn edit_files(
+    editor_name: &str,
+    puzzlefile: &str,
+    examplefile: &str,
+    libfile: &str,
+    inputfile: &str,
+) -> AocEditorResult<()> {
+    ensure_files_exist(vec![puzzlefile, libfile, inputfile])?; //example file not required to exist
+    let editor: Box<dyn Editor> = match editor_name.to_lowercase().as_str() {
         "nvim" | "neovim" => Box::new(NeovimEditor),
         _ => Box::new(GenericEditor {
-            command: name.to_string(),
+            command: editor_name.to_string(),
         }),
-    }
+    };
+
+    editor.open(puzzlefile, examplefile, libfile, inputfile)?;
+
+    Ok(())
 }
+
+#[derive(Error, Debug)]
+pub enum AocEditorError {
+    #[error(transparent)]
+    File(#[from] AocFileError),
+    #[error("editor io error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+pub type AocEditorResult<T> = Result<T, AocEditorError>;

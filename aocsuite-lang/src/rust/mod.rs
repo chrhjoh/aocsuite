@@ -1,7 +1,8 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::{fs, io};
 
+use aocsuite_fs::write_with_confirmation;
 use toml_edit::Array;
 use toml_edit::DocumentMut;
 use toml_edit::Item;
@@ -11,7 +12,7 @@ use toml_edit::value;
 
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 
-use crate::{AocLanguageResult, LanguageFile};
+use crate::{AocLanguageResult, LanguageFile, read_template_contents};
 
 use super::LanguageRunner;
 
@@ -41,6 +42,7 @@ impl LanguageRunner for RustLanguage {
         day: PuzzleDay,
         year: PuzzleYear,
         template_dir: Option<&str>,
+        overwrite: bool,
     ) -> AocLanguageResult<()> {
         fs::create_dir_all(&self.root_dir)?;
         let root_cargo_path = self.root_dir.join(CARGO_FILE);
@@ -50,10 +52,7 @@ impl LanguageRunner for RustLanguage {
 
         let package_path = self.root_dir.join(&package_dir);
 
-        match template_dir {
-            Some(_) => unimplemented!(),
-            None => create_default_exercise_package(&package_path, &package_name)?,
-        }
+        create_exercise_package(template_dir, &package_path, &package_name, overwrite)?;
         Ok(())
     }
     fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Option<Output>> {
@@ -100,6 +99,11 @@ impl LanguageRunner for RustLanguage {
                 .join(self.package_dir(day, year))
                 .join("src")
                 .join("main.rs"),
+            LanguageFile::Executable => self
+                .root_dir
+                .join("target")
+                .join("debug")
+                .join(self.package_name(day, year)),
         }
     }
 }
@@ -107,7 +111,8 @@ impl LanguageRunner for RustLanguage {
 fn update_root_cargo(root_cargo_path: &Path, package_path: &Path) -> AocLanguageResult<()> {
     // check if cargo.toml exists. if not create it, then add the member to it.
     if !root_cargo_path.exists() {
-        write_root_cargo(&root_cargo_path)?;
+        let contents = root_cargo_contents();
+        write_with_confirmation(root_cargo_path, contents, true)?
     }
     // read the root cargo file and add member to it.
     let contents = fs::read_to_string(&root_cargo_path)?;
@@ -129,40 +134,58 @@ fn update_root_cargo(root_cargo_path: &Path, package_path: &Path) -> AocLanguage
             }
         }
     }
-    fs::write(root_cargo_path, doc.to_string())?;
+    write_with_confirmation(root_cargo_path, doc.to_string(), true)?;
     Ok(())
 }
 
-fn create_default_exercise_package(package_path: &Path, package_name: &str) -> io::Result<()> {
+fn create_exercise_package(
+    template_dir: Option<&str>,
+    package_path: &Path,
+    package_name: &str,
+    overwrite: bool,
+) -> AocLanguageResult<()> {
     fs::create_dir_all(&package_path.join("src"))?;
-    write_default_exercise_cargo(&package_path.join(CARGO_FILE), package_name)?;
-    write_default_main_file(&package_path.join("src").join(MAIN_FILE), package_name)?;
-    write_default_lib_file(&package_path.join("src").join(LIB_FILE))?;
+    let cargo_contents = default_exercise_cargo_contents(&package_name);
+    let main_contents = default_main_contents(&package_name);
+    let lib_contents = match template_dir {
+        Some(dir) => {
+            let path = Path::new(&dir).join("rust").join(LIB_FILE);
+            read_template_contents(&path)?
+        }
+        None => default_lib_contents(),
+    };
+    let contents = vec![cargo_contents, main_contents, lib_contents];
+    let file_paths = vec![
+        package_path.join(CARGO_FILE),
+        package_path.join("src").join(MAIN_FILE),
+        package_path.join("src").join(LIB_FILE),
+    ];
+    for (path, content) in file_paths.iter().zip(contents) {
+        write_with_confirmation(path, content, overwrite)?;
+    }
 
     Ok(())
 }
 
-fn write_root_cargo(cargo_toml_path: &Path) -> io::Result<()> {
+fn root_cargo_contents() -> String {
     let mut doc = DocumentMut::new();
     doc["workspace"] = table();
     doc["workspace"]["resolver"] = value("3");
 
-    std::fs::write(cargo_toml_path, doc.to_string())
+    doc.to_string()
 }
 
 // only init if template doesnt exist.
-fn write_default_exercise_cargo(cargo_toml_path: &Path, package_name: &str) -> io::Result<()> {
+fn default_exercise_cargo_contents(package_name: &str) -> String {
     let mut doc = DocumentMut::new();
     doc["package"] = table();
     doc["package"]["name"] = value(package_name);
     doc["package"]["version"] = value("0.1.0");
     doc["package"]["edition"] = value("2024");
-
-    std::fs::write(cargo_toml_path, doc.to_string())?;
-    Ok(())
+    doc.to_string()
 }
 
-pub fn write_default_main_file(main_file_path: &Path, package_name: &str) -> io::Result<()> {
+pub fn default_main_contents(package_name: &str) -> String {
     let content = format!(
         r#"use std::{{env, fs, process}};
 use {package}::{{part1, part2}};
@@ -222,10 +245,10 @@ fn main() {{
         package = package_name
     );
 
-    std::fs::write(main_file_path, content)
+    content
 }
 
-pub fn write_default_lib_file(lib_file_path: &Path) -> io::Result<()> {
+pub fn default_lib_contents() -> String {
     let content = r#"/// Implement your solution here
 
 /// Solve part 1 of the puzzle
@@ -240,5 +263,5 @@ pub fn part2(input: &str) -> String {
     format!("Part 2 not implemented yet. Input length: {}", input.len())
 }
 "#;
-    std::fs::write(lib_file_path, content)
+    content.to_string()
 }
