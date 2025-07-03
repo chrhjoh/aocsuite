@@ -9,7 +9,7 @@
 - [x] Template: Add options for user defined templates
 - [x] File writes: Add confirmation
 - [x] File open: (edit and run) check if files exist before starting.
-- [x] Github release
+- [ ] Github release
 - [ ] Upload crates
 
 ## Bug Fixes

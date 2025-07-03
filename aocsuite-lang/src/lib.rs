@@ -1,13 +1,18 @@
+mod python;
 mod rust;
-use aocsuite_fs::{AocFileError, ensure_files_exist};
+use aocsuite_fs::{ensure_files_exist, AocFileError};
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 use clap::ValueEnum;
+use python::PythonLanguage;
 use rust::RustLanguage;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::{
+    fs::File,
+    io::BufReader,
     path::{Path, PathBuf},
     process::Output,
     str::FromStr,
-    time::Instant,
 };
 use thiserror::Error;
 
@@ -59,16 +64,49 @@ pub fn scaffold(
     runner.scaffold(day, year, template_dir, overwrite)
 }
 
-pub fn compile(
-    day: PuzzleDay,
-    year: PuzzleYear,
-    language: &Language,
-) -> AocLanguageResult<Option<String>> {
+pub fn compile(day: PuzzleDay, year: PuzzleYear, language: &Language) -> AocLanguageResult<()> {
     let runner = get_language_runner(language);
+    ensure_files_exist(vec![
+        runner.get_path(day, year, LanguageFile::Main).as_path(),
+        runner.get_path(day, year, LanguageFile::Lib).as_path(),
+    ])?;
     let output = runner.compile(day, year)?;
     match output {
         Some(output) => handle_command_output(output),
-        None => Ok(None),
+        None => Ok(()),
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct PartResult {
+    answer: String,
+    runtime_ms: u128,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ExerciseOutput {
+    part1: Option<PartResult>,
+    part2: Option<PartResult>,
+}
+
+impl fmt::Display for PartResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Answer: {}", self.answer)?;
+        writeln!(f, "Runtime: {} ms", self.runtime_ms)
+    }
+}
+
+impl fmt::Display for ExerciseOutput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(ref p1) = self.part1 {
+            writeln!(f, "=== Part 1 ===")?;
+            writeln!(f, "{}", p1)?;
+        }
+        if let Some(ref p2) = self.part2 {
+            writeln!(f, "=== Part 2 ===")?;
+            writeln!(f, "{}", p2)?;
+        }
+        Ok(())
     }
 }
 
@@ -78,9 +116,8 @@ pub fn run(
     part: &str,
     language: &Language,
     input: &Path,
-) -> AocLanguageResult<Option<(String, u128)>> {
+) -> AocLanguageResult<ExerciseOutput> {
     let runner = get_language_runner(language);
-    let start = Instant::now();
     ensure_files_exist(vec![
         input,
         runner
@@ -88,25 +125,25 @@ pub fn run(
             .as_path(),
     ])?;
     let output = runner.run(day, year, part, input)?;
-    let duration_ms = start.elapsed().as_millis();
-    let result = handle_command_output(output)?;
-    match result {
-        Some(res) => Ok(Some((res, duration_ms))),
-        None => Ok(None),
-    }
+    handle_command_output(output)?;
+    let result_file = result_filename(day, year);
+    let reader = BufReader::new(File::open(&result_file)?);
+    let result = serde_json::from_reader(reader)?;
+    std::fs::remove_file(result_file)?;
+    Ok(result)
 }
 
-fn handle_command_output(output: Output) -> AocLanguageResult<Option<String>> {
+fn handle_command_output(output: Output) -> AocLanguageResult<()> {
     if !output.status.success() {
         // The compile command ran but failed
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(AocLanguageError::Command(stderr.to_string()));
     }
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    if stdout == "" {
-        return Ok(None);
+    if stdout != "" {
+        println!("Standard out from exercise {}", stdout)
     }
-    Ok(Some(stdout))
+    Ok(())
 }
 
 trait LanguageRunner {
@@ -135,12 +172,12 @@ pub enum LanguageFile {
     Executable,
 }
 
-fn get_language_runner(language: &Language) -> impl LanguageRunner {
+fn get_language_runner(language: &Language) -> Box<dyn LanguageRunner> {
     let language_root_dir = language.to_string();
     let language_root_dir = Path::new(&language_root_dir).to_path_buf();
     match language {
-        Language::Rust => RustLanguage::new(language_root_dir),
-        Language::Python => RustLanguage::new(language_root_dir),
+        Language::Rust => Box::new(RustLanguage::new(language_root_dir)),
+        Language::Python => Box::new(PythonLanguage::new(language_root_dir)),
     }
 }
 #[derive(Error, Debug)]
@@ -161,6 +198,9 @@ pub enum AocLanguageError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("Error parsing result json file: {0}")]
+    ResultJson(#[from] serde_json::Error),
+
     #[error(transparent)]
     File(#[from] AocFileError),
 }
@@ -175,4 +215,12 @@ pub fn read_template_contents(path: &Path) -> AocLanguageResult<String> {
     })?;
 
     Ok(contents)
+}
+
+pub fn result_filename(day: PuzzleDay, year: PuzzleYear) -> String {
+    PathBuf::from(".aocsuite")
+        .join(format!("year{year}_day{day}_result.json"))
+        .to_str()
+        .unwrap()
+        .to_owned()
 }

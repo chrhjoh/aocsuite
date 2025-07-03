@@ -1,10 +1,10 @@
 use crate::{AocCliResult, AocCommand, ConfigCommand};
-use aocsuite_client::{AocHttp, AocPage, DownloadMode, ParserType, open_puzzle_page};
+use aocsuite_client::{open_puzzle_page, AocHttp, AocPage, DownloadMode, ParserType};
 use aocsuite_config::{AocConfig, AocConfigError, ConfigOpt};
 use aocsuite_editor::edit_files;
-use aocsuite_fs::{AocDataDir, AocDataFile, write_with_confirmation};
-use aocsuite_lang::{Language, LanguageFile, compile, get_language_file, run, scaffold};
-use aocsuite_utils::{Exercise, PuzzleDay, PuzzleYear, valid_puzzle_release, valid_year_release};
+use aocsuite_fs::{write_with_confirmation, AocDataDir, AocDataFile};
+use aocsuite_lang::{compile, get_language_file, run, scaffold, Language, LanguageFile};
+use aocsuite_utils::{valid_puzzle_release, valid_year_release, Exercise, PuzzleDay, PuzzleYear};
 
 pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> AocCliResult<()> {
     let config = AocConfig::new();
@@ -161,10 +161,7 @@ fn run_wrapped(
 
     compile(day, year, &language)?;
     let result = run(day, year, &part, &language, path.as_ref())?;
-    if let Some((res, duration_ms)) = result {
-        println!("{res}");
-        println!("Took {duration_ms} ms");
-    }
+    println!("{result}");
     Ok(())
 }
 fn resolve_language(language: Option<Language>, config: &AocConfig) -> AocCliResult<Language> {

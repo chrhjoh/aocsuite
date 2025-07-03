@@ -154,6 +154,8 @@ dependencies = [
  "aocsuite-fs",
  "aocsuite-utils",
  "clap",
+ "serde",
+ "serde_json",
  "thiserror 2.0.12",
  "toml_edit",
 ]
