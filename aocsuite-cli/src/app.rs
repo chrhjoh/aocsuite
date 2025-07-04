@@ -74,7 +74,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             let language = resolve_language(language, &config)?;
             let config = AocConfig::new();
             let editor_type = config.get_ok(ConfigOpt::Editor)?;
-            let lib_file = get_language_file(day, year, &language, LanguageFile::Lib);
+            let lib_file = get_language_file(day, year, &language, LanguageFile::Main);
 
             edit_files(
                 &editor_type,
@@ -165,5 +165,9 @@ fn run_wrapped(
     Ok(())
 }
 fn resolve_language(language: Option<Language>, config: &AocConfig) -> AocCliResult<Language> {
-    Ok(language.unwrap_or(config.get_ok(ConfigOpt::Language)?.parse()?))
+    let lang = match language {
+        Some(lang) => lang,
+        None => config.get_ok(ConfigOpt::Language)?.parse()?,
+    };
+    Ok(lang)
 }

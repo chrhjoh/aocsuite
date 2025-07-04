@@ -22,6 +22,10 @@ pub enum Language {
     Python,
 }
 
+pub fn result_file() -> PathBuf {
+    PathBuf::from(".aocsuite").join("result.json")
+}
+
 impl ToString for Language {
     fn to_string(&self) -> String {
         match self {
@@ -126,7 +130,7 @@ pub fn run(
     ])?;
     let output = runner.run(day, year, part, input)?;
     handle_command_output(output)?;
-    let result_file = result_filename(day, year);
+    let result_file = result_file();
     let reader = BufReader::new(File::open(&result_file)?);
     let result = serde_json::from_reader(reader)?;
     std::fs::remove_file(result_file)?;
@@ -217,10 +221,6 @@ pub fn read_template_contents(path: &Path) -> AocLanguageResult<String> {
     Ok(contents)
 }
 
-pub fn result_filename(day: PuzzleDay, year: PuzzleYear) -> String {
-    PathBuf::from(".aocsuite")
-        .join(format!("year{year}_day{day}_result.json"))
-        .to_str()
-        .unwrap()
-        .to_owned()
+pub fn template_filename(dir: &str, language: &Language) -> PathBuf {
+    PathBuf::from(dir).join(format!("{}.template", language.to_string()))
 }

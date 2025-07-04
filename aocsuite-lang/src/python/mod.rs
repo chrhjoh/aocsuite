@@ -8,11 +8,11 @@ use aocsuite_fs::write_with_confirmation;
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 
 use crate::{
-    read_template_contents, result_filename, AocLanguageResult, LanguageFile, LanguageRunner,
+    read_template_contents, result_file, template_filename, AocLanguageResult, Language,
+    LanguageFile, LanguageRunner,
 };
 
-const MAIN_FILE: &str = "main.py";
-const LIB_FILE: &str = "lib.py";
+const LIB_NAME: &str = "aocsuitelib";
 
 pub struct PythonLanguage {
     root_dir: PathBuf,
@@ -21,8 +21,11 @@ impl PythonLanguage {
     pub fn new(root_dir: PathBuf) -> PythonLanguage {
         PythonLanguage { root_dir }
     }
-    fn package_dir(&self, day: PuzzleDay, year: PuzzleYear) -> PathBuf {
-        PathBuf::from(format!("year{year}")).join(format!("day{day}"))
+    fn main_filepath(&self, day: PuzzleDay, year: PuzzleYear) -> PathBuf {
+        PathBuf::from(&self.root_dir).join(format!("year{year}_day{day}.py"))
+    }
+    fn lib_filepath(&self) -> PathBuf {
+        PathBuf::from(&self.root_dir).join(PathBuf::from(LIB_NAME).with_extension("py"))
     }
 }
 impl LanguageRunner for PythonLanguage {
@@ -33,12 +36,21 @@ impl LanguageRunner for PythonLanguage {
         template_dir: Option<&str>,
         overwrite: bool,
     ) -> AocLanguageResult<()> {
-        let package_dir = self.package_dir(day, year);
-        let package_path = self.root_dir.join(&package_dir);
-        fs::create_dir_all(&package_path)?;
-        let result_file = result_filename(day, year);
+        fs::create_dir_all(&self.root_dir)?;
 
-        create_exercise_package(template_dir, &package_path, &result_file, overwrite)?;
+        if !self.lib_filepath().exists() {
+            let lib_contents = default_lib_contents();
+            write_with_confirmation(self.lib_filepath(), lib_contents, false)?
+        }
+
+        let main_contents = match template_dir {
+            Some(dir) => {
+                let path = template_filename(dir, &Language::Python);
+                read_template_contents(&path)?
+            }
+            None => default_main_contents(),
+        };
+        write_with_confirmation(self.main_filepath(day, year), main_contents, overwrite)?;
         Ok(())
     }
     fn compile(&self, _: PuzzleDay, _: PuzzleYear) -> AocLanguageResult<Option<Output>> {
@@ -54,68 +66,52 @@ impl LanguageRunner for PythonLanguage {
     ) -> AocLanguageResult<Output> {
         let entry_point = self.get_path(day, year, LanguageFile::Main);
         let output = Command::new("python3")
-            .args([entry_point.to_str().unwrap(), input.to_str().unwrap(), part])
+            .args([
+                entry_point.to_str().unwrap(),
+                "-p",
+                part,
+                "-o",
+                result_file().to_str().unwrap(),
+                input.to_str().unwrap(),
+            ])
             .output()?;
 
         Ok(output)
     }
     fn get_path(&self, day: PuzzleDay, year: PuzzleYear, file: LanguageFile) -> PathBuf {
         match file {
-            LanguageFile::Lib => self
-                .root_dir
-                .join(self.package_dir(day, year))
-                .join(LIB_FILE),
-            LanguageFile::Main => self
-                .root_dir
-                .join(self.package_dir(day, year))
-                .join(MAIN_FILE),
+            LanguageFile::Lib => self.lib_filepath(),
+            LanguageFile::Main => self.main_filepath(day, year),
             LanguageFile::Executable => self.get_path(day, year, LanguageFile::Main),
         }
     }
 }
-fn create_exercise_package(
-    template_dir: Option<&str>,
-    package_path: &Path,
-    result_file: &str,
-    overwrite: bool,
-) -> AocLanguageResult<()> {
-    let main_contents = default_main_contents(result_file);
-    let lib_contents = match template_dir {
-        Some(dir) => {
-            let path = Path::new(&dir).join("python").join(LIB_FILE);
-            read_template_contents(&path)?
-        }
-        None => default_lib_contents(),
-    };
-    let contents = vec![main_contents, lib_contents];
-    let file_paths = vec![package_path.join(MAIN_FILE), package_path.join(LIB_FILE)];
-    for (path, content) in file_paths.iter().zip(contents) {
-        write_with_confirmation(path, content, overwrite)?;
-    }
 
-    pub fn default_main_contents(output_file: &str) -> String {
-        let content = format!(
-            r#"import sys
-import time
+pub fn default_lib_contents() -> String {
+    let content = format!(
+        r#"import argparse
 import json
+import sys
+import time
+from typing import Callable
 
-from lib import part1, part2
 
-def main():
-    args = sys.argv
+def run_exercises(
+    part1: Callable[[str], str],
+    part2: Callable[[str], str],
+):
+    parser = argparse.ArgumentParser(description="Run AoC parts with input and save results.")
+    parser.add_argument("input", type=str, help="Path to input file")
+    parser.add_argument("--part", "-p", choices=["1", "2", "both"], default="both", help="Which part to run")
+    parser.add_argument("--output", "-o", type=str, required=True, help="Path to output result JSON file")
 
-    if len(args) < 2 or len(args) > 3:
-        print_usage(args[0])
-        sys.exit(1)
-
-    input_path = args[1]
-    part_to_run = args[2].lower() if len(args) == 3 else "both"
+    args = parser.parse_args()
 
     try:
-        with open(input_path, "r") as f:
+        with open(args.input, "r") as f:
             input_data = f.read()
     except Exception as e:
-        print(f"Failed to read file '{{input_path}}': {{e}}", file=sys.stderr)
+        print(f"Failed to read file '{{args.input}}': {{e}}", file=sys.stderr)
         sys.exit(1)
 
     output = {{
@@ -123,55 +119,55 @@ def main():
         "part2": None,
     }}
 
-    if part_to_run in ("1", "both"):
+    if args.part in ("1", "both"):
         start = time.perf_counter()
         result1 = part1(input_data)
-        runtime1 = (time.perf_counter() - start) * 1000  # ms
+        runtime1 = (time.perf_counter() - start) * 1000
         output["part1"] = {{
             "answer": str(result1),
             "runtime_ms": round(runtime1),
         }}
 
-    if part_to_run in ("2", "both"):
+    if args.part in ("2", "both"):
         start = time.perf_counter()
         result2 = part2(input_data)
-        runtime2 = (time.perf_counter() - start) * 1000  # ms
+        runtime2 = (time.perf_counter() - start) * 1000
         output["part2"] = {{
             "answer": str(result2),
             "runtime_ms": round(runtime2),
         }}
 
-    output_file = "{output_file}"
-
     try:
-        with open(output_file, "w") as f:
+        with open(args.output, "w") as f:
             json.dump(output, f, indent=2)
     except Exception as e:
-        print(f"Failed to write result file '{{output_file}}': {{e}}", file=sys.stderr)
+        print(f"Failed to write result file '{{args.output}}': {{e}}", file=sys.stderr)
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
 "#,
-        );
+    );
 
-        content.to_string()
-    }
-    pub fn default_lib_contents() -> String {
-        let content = r#""""Implement your solution here"""
+    content.to_string()
+}
+pub fn default_main_contents() -> String {
+    let content = format!(
+        r#"from {} import run_exercises
+
+"""Implement your solution here"""
 
 def part1(input: str) -> str:
     # Replace this stub with actual implementation
-    return f"Part 1 not implemented yet. Input length: {len(input)}"
+    return f"Part 1 not implemented yet. Input length: {{len(input)}}"
 
 def part2(input: str) -> str:
     # Replace this stub with actual implementation
-    return f"Part 2 not implemented yet. Input length: {len(input)}"
-"#;
+    return f"Part 2 not implemented yet. Input length: {{len(input)}}"
 
-        content.to_string()
-    }
 
-    Ok(())
+if __name__ == "__main__":
+    run_exercises(part1, part2)
+"#,
+        LIB_NAME
+    );
+
+    content.to_string()
 }

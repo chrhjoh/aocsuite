@@ -11,7 +11,7 @@ pub enum AocCommand {
 
     /// Initialize a new day. Executes both Download and Template to download and create exericses
     New {
-        /// Copies files for exercises found at {template_dir}/{language} instead of default files
+        /// Copies file found at {template_dir}/{language}.template instead of default file
         #[arg(long, short)]
         template_dir: Option<String>,
         #[arg(long)]
@@ -20,7 +20,7 @@ pub enum AocCommand {
         overwrite: bool,
     },
 
-    /// Download files for given exercise (input, puzzle)
+    /// Download files for given day (input, puzzle)
     Download {
         #[arg(long, value_enum, default_value_t=DownloadMode::All)]
         mode: DownloadMode,
@@ -28,9 +28,9 @@ pub enum AocCommand {
         overwrite: bool,
     },
 
-    /// Generate new exercise files from template
+    /// Generate new files from template
     Template {
-        /// Copies files for exercises found at {template_dir}/{language} instead of default files
+        /// Copies file found at {template_dir}/{language}.template instead of default file
         #[arg(long, short)]
         template_dir: Option<String>,
         #[arg(long)]
@@ -42,13 +42,13 @@ pub enum AocCommand {
     /// Open the puzzle in browser
     Open,
 
-    /// Open the exercises in editor
+    /// Open the day in editor
     Edit {
         #[arg(long)]
         language: Option<Language>,
     },
 
-    /// Run the exercise
+    /// Run the day
     Run {
         // Run All Puzzles
         // all: bool,
@@ -58,7 +58,7 @@ pub enum AocCommand {
         /// Puzzle part
         part: Option<Exercise>,
     },
-    /// Run the exercise
+    /// Run the day with other input
     Test {
         /// Input file to use instead of data/year{i}/day{j}/example.txt
         #[arg(long)]
