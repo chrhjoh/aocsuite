@@ -55,7 +55,8 @@ To get your input and submit answers to Advent of Code website, you'll need your
 2. Open browser developer tools
 3. Go to Application/Storage → Cookies
 4. Find the `session` cookie value
-5. Configure it: `aocsuite-cli config set session_token YOUR_TOKEN`
+5. Configure it: `aocsuite-cli config set session`
+6. Paste your session token into the prompt.
 
 ## Commands
 
@@ -72,7 +73,7 @@ Most commands require day and year and can be specified as --day and --year
 
 ### Configuration Commands
 
-- `aocsuite-cli config set KEY VALUE` - Set configuration value
+- `aocsuite-cli config set KEY` - Set configuration value from a prompt
 - `aocsuite-cli config get KEY` - Get configuration value
 
 Configurations can also be managed through enviroment variables:

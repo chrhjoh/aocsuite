@@ -132,11 +132,11 @@ fn run_template(
 fn run_config(command: ConfigCommand) -> AocCliResult<()> {
     let mut config = AocConfig::new();
     match command {
-        ConfigCommand::Get(opts) => {
-            let val = config.get_ok(opts.key)?;
+        ConfigCommand::Get { key } => {
+            let val = config.get_ok(key)?;
             println!("{val}");
         }
-        ConfigCommand::Set(opts) => config.set(opts.key, opts.value)?,
+        ConfigCommand::Set { key } => config.set(key)?,
     }
     Ok(())
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::env::VarError;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
 use clap::ValueEnum;
@@ -78,14 +78,34 @@ impl AocConfig {
         }
     }
 
-    pub fn set(&mut self, key: ConfigOpt, value: Option<String>) -> AocConfigResult<()> {
-        match value {
-            Some(val) => self.data.insert(key.to_string(), val),
-            None => self.data.remove(&key.to_string()),
-        };
+    pub fn set(&mut self, key: ConfigOpt) -> AocConfigResult<()> {
+        let current_value = self.get(key.clone());
+
+        match current_value {
+            Some(ref val) => print!("Enter value for {} [{}]: ", key.to_string(), val),
+            None => print!("Enter value for {}: ", key.to_string()),
+        }
+
+        io::stdout().flush().expect("Failed to flush stdout");
+
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .expect("Failed to read input");
+
+        let trimmed_input = input.trim();
+
+        if trimmed_input.is_empty() {
+            self.data.remove(&key.to_string());
+        } else {
+            self.data.insert(key.to_string(), trimmed_input.to_string());
+        }
+
+        // Save to file
         let serialized =
             serde_json::to_string_pretty(&self.data).expect("Failed to serialize config");
         fs::write(&self.path, serialized).expect("Failed to write config file");
+
         Ok(())
     }
 }

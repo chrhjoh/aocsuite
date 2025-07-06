@@ -95,23 +95,13 @@ pub enum AocCommand {
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
     /// Get a configuration value
-    Get(ConfigGetArgs),
-
+    Get {
+        #[arg(value_enum)]
+        key: ConfigOpt,
+    },
     /// Set a configuration value
-    Set(ConfigSetArgs),
-}
-
-#[derive(Debug, Args)]
-pub struct ConfigGetArgs {
-    #[arg(value_enum)]
-    pub key: ConfigOpt,
-}
-
-#[derive(Debug, Args)]
-pub struct ConfigSetArgs {
-    #[arg(value_enum)]
-    pub key: ConfigOpt,
-
-    /// The value to assign to the config key
-    pub value: Option<String>,
+    Set {
+        #[arg(value_enum)]
+        key: ConfigOpt,
+    },
 }
