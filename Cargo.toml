@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-"aocsuite-cli",
-"aocsuite-client", "aocsuite-config",
+"aocsuite-cli", "aocsuite-client",
+"aocsuite-config",
 "aocsuite-editor"
-, "aocsuite-fs", "aocsuite-lang", "aocsuite-utils"]
+, "aocsuite-fs", "aocsuite-lang", "aocsuite-parser", "aocsuite-utils"]
 
 [workspace.dependencies]
 chrono = "0.4.41"

@@ -1,4 +1,3 @@
-use aocsuite_fs::{ensure_files_exist, AocFileError};
 use thiserror::Error;
 
 trait Editor {
@@ -92,7 +91,7 @@ pub fn edit_files(
     libfile: &str,
     inputfile: &str,
 ) -> AocEditorResult<()> {
-    ensure_files_exist(vec![puzzlefile, libfile, inputfile])?; //example file not required to exist
+    // ensure_files_exist(vec![puzzlefile, libfile, inputfile])?; //example file not required to exist
     let editor: Box<dyn Editor> = match editor_name.to_lowercase().as_str() {
         "nvim" | "vi" => Box::new(NeovimEditor {
             command: editor_name.to_string(),
@@ -109,8 +108,6 @@ pub fn edit_files(
 
 #[derive(Error, Debug)]
 pub enum AocEditorError {
-    #[error(transparent)]
-    File(#[from] AocFileError),
     #[error("editor io error: {0}")]
     Io(#[from] std::io::Error),
 }

@@ -1,17 +1,13 @@
-use colored::*;
-use regex::Regex;
-use scraper::{Html, Selector};
 use std::collections::HashMap;
 
-pub trait HttpParser {
-    fn parse(&self, html: &str) -> String;
-}
+use colored::Colorize;
+use regex::Regex;
+use scraper::{Html, Selector};
 
-pub struct AnsiCalandarParser;
-pub struct ArticleMarkdownParser;
-pub struct DummyParser;
+use crate::HttpParser;
 
-impl HttpParser for AnsiCalandarParser {
+pub struct AnsiCalendarParser;
+impl HttpParser for AnsiCalendarParser {
     fn parse(&self, html: &str) -> String {
         let class_color_map = build_color_map(html);
 
@@ -171,32 +167,6 @@ enum CalendarStars {
     Two,
 }
 
-impl HttpParser for ArticleMarkdownParser {
-    fn parse(&self, html: &str) -> String {
-        let document = Html::parse_document(html);
-
-        let main_selector = Selector::parse("main").unwrap();
-        let article_selector = Selector::parse("article").unwrap();
-
-        let mut articles_html = String::new();
-        for main in document.select(&main_selector) {
-            for article in main.select(&article_selector) {
-                let html_fragment = article.html(); // includes outer tag
-                articles_html.push_str(&html_fragment);
-            }
-        }
-
-        html2md::parse_html(&articles_html)
-    }
-}
-
-impl HttpParser for DummyParser {
-    fn parse(&self, html: &str) -> String {
-        html.to_string()
-    }
-}
-
-// Helper: convert "#RRGGBB" to (r, g, b)
 fn parse_hex_color(hex: &str) -> Option<(u8, u8, u8)> {
     if hex.len() == 7 && hex.starts_with('#') {
         let r = u8::from_str_radix(&hex[1..3], 16).ok()?;
@@ -205,80 +175,5 @@ fn parse_hex_color(hex: &str) -> Option<(u8, u8, u8)> {
         Some((r, g, b))
     } else {
         None
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ParserType {
-    Colored,
-    Markdown,
-    Raw,
-}
-
-fn get_parser(parser_type: ParserType) -> Box<dyn HttpParser> {
-    match parser_type {
-        ParserType::Colored => Box::new(AnsiCalandarParser),
-        ParserType::Markdown => Box::new(ArticleMarkdownParser),
-        ParserType::Raw => Box::new(DummyParser),
-    }
-}
-
-pub fn parse_html(html: &str, parser_type: ParserType) -> String {
-    let parser = get_parser(parser_type);
-    parser.parse(html)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parser_selection() {
-        let html = r#"<div><strong>Bold text</strong></div>"#;
-
-        let markdown_result = parse_html(html, ParserType::Markdown);
-        let raw_result = parse_html(html, ParserType::Raw);
-
-        assert_eq!(raw_result, html);
-        assert!(markdown_result.contains("**Bold text**"));
-    }
-
-    #[test]
-    fn test_markdown_parser() {
-        let html = r#"<div><strong>Bold text</strong> and <em>italic text</em></div>"#;
-        let parser = ArticleMarkdownParser;
-        let result = parser.parse(html);
-        assert!(result.contains("**Bold text**"));
-        assert!(result.contains("*italic text*"));
-    }
-
-    #[test]
-    fn test_raw_html_parser() {
-        let html = r#"<div>Test content</div>"#;
-        let parser = DummyParser;
-        let result = parser.parse(html);
-        assert_eq!(result, html);
-    }
-
-    #[test]
-    fn test_colored_html_parser() {
-        let html = r#"
-    <style>
-    .calendar .calendar-color-g0 { color:#488813; }
-    .calendar .calendar-color-g1 { color:#4d8b03; }
-    .calendar .calendar-color-c { color:#eeeeee; }
-    </style>
-    <pre class="calendar">
-        <span class="calendar-color-g0">Item A</span>
-        <span class="calendar-color-g1">Item B</span>
-        <span class="calendar-color-c">Item C</span>
-    </pre>
-    "#;
-
-        let parser = AnsiCalandarParser;
-        let result = parser.parse(html);
-        assert!(result.contains("Item A"));
-        assert!(result.contains("Item B"));
-        assert!(result.contains("Item C"));
     }
 }

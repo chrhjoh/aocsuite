@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AocConfig {
+struct AocConfig {
     data: HashMap<String, String>,
     path: PathBuf,
 }
@@ -42,18 +42,7 @@ impl AocConfig {
             path: config_path,
         }
     }
-
-    pub fn get_ok(&self, key: ConfigOpt) -> AocConfigResult<String> {
-        match self._get(&key) {
-            Some(val) => Ok(val),
-            None => Err(AocConfigError::Get { key }),
-        }
-    }
-    pub fn get(&self, key: ConfigOpt) -> Option<String> {
-        self._get(&key)
-    }
-
-    fn _get(&self, key: &ConfigOpt) -> Option<String> {
+    pub fn get(&self, key: &ConfigOpt) -> Option<String> {
         if let Some(val) = self.data.get(&key.to_string()) {
             return Some(val.to_owned());
         }
@@ -70,16 +59,8 @@ impl AocConfig {
             Err(_) => None,
         }
     }
-    pub fn get_or_default(&self, key: ConfigOpt, default: String) -> String {
-        let val = self.data.get(&key.to_string());
-        match val {
-            Some(val) => val.to_owned(),
-            None => default,
-        }
-    }
-
-    pub fn set(&mut self, key: ConfigOpt) -> AocConfigResult<()> {
-        let current_value = self.get(key.clone());
+    pub fn set(&mut self, key: &ConfigOpt) -> AocConfigResult<()> {
+        let current_value = self.get(key);
 
         match current_value {
             Some(ref val) => print!("Enter value for {} [{}]: ", key.to_string(), val),
@@ -108,6 +89,37 @@ impl AocConfig {
 
         Ok(())
     }
+}
+
+pub fn get_config_val<T>(
+    key: &ConfigOpt,
+    default: Option<T>,
+    overwrite: Option<T>,
+) -> AocConfigResult<T>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    if let Some(val) = overwrite {
+        return Ok(val);
+    }
+
+    let config = AocConfig::new();
+    if let Some(val) = config.get(key) {
+        return Ok(val
+            .parse()
+            .map_err(|_| AocConfigError::Get { key: key.clone() })?);
+    }
+
+    if let Some(val) = default {
+        return Ok(val);
+    }
+    Err(AocConfigError::Get { key: key.clone() })
+}
+
+pub fn set_config_val(key: &ConfigOpt) -> AocConfigResult<()> {
+    let mut config = AocConfig::new();
+    config.set(key)
 }
 
 #[derive(Debug, Clone, ValueEnum)]

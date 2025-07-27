@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use chrono::{DateTime, Datelike, TimeZone, Utc};
 use chrono_tz::{Tz, US::Eastern};
 use clap::ValueEnum;
@@ -6,7 +8,7 @@ use thiserror::Error;
 pub type PuzzleDay = u32;
 pub type PuzzleYear = i32;
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
 pub enum Exercise {
     #[clap(alias = "1")]
     One,
@@ -75,4 +77,15 @@ pub fn today_day() -> PuzzleDay {
 pub fn today_year() -> PuzzleYear {
     let now_utc = Utc::now();
     now_utc.with_timezone(&Eastern).year()
+}
+
+pub fn resolve_aocsuite_dir() -> PathBuf {
+    let base = if let Ok(xdg_data_home) = std::env::var("XDG_DATA_HOME") {
+        PathBuf::from(xdg_data_home)
+    } else if let Ok(home) = std::env::var("HOME") {
+        PathBuf::from(home).join(".local").join("share")
+    } else {
+        panic!("Neither XDG_DATA_HOME nor HOME environment variables are set")
+    };
+    base.join("aocsuite")
 }

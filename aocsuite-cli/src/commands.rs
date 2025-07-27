@@ -1,74 +1,55 @@
-use aocsuite_client::DownloadMode;
 use aocsuite_config::ConfigOpt;
-use aocsuite_lang::Language;
+use aocsuite_lang::LanguageType;
 use aocsuite_utils::Exercise;
-use clap::{Args, Subcommand};
+use clap::Subcommand;
 
 #[derive(Subcommand, Debug)]
 pub enum AocCommand {
     /// Show the Advent of Code calendar
     Calendar,
 
-    /// Initialize a new day. Executes both Download and Template to download and create exericses
-    New {
-        /// Copies file found at {template_dir}/{language}.template instead of default file
-        #[arg(long, short)]
-        template_dir: Option<String>,
-        #[arg(long)]
-        language: Option<Language>,
-        #[arg(long)]
-        overwrite: bool,
-    },
-
-    /// Download files for given day (input, puzzle)
-    Download {
-        #[arg(long, value_enum, default_value_t=DownloadMode::All)]
-        mode: DownloadMode,
-        #[arg(long)]
-        overwrite: bool,
-    },
-
-    /// Generate new files from template
-    Template {
-        /// Copies file found at {template_dir}/{language}.template instead of default file
-        #[arg(long, short)]
-        template_dir: Option<String>,
-        #[arg(long)]
-        language: Option<Language>,
-        #[arg(long)]
-        overwrite: bool,
-    },
-
-    /// Open the puzzle in browser
-    Open,
+    /// view the puzzle in browser
+    View,
 
     /// Open the day in editor
-    Edit {
+    Open {
         #[arg(long)]
-        language: Option<Language>,
+        language: Option<LanguageType>,
+    },
+    /// Manage library files
+    Dep {
+        #[command(subcommand)]
+        action: DepAction,
+
+        #[arg(long)]
+        language: Option<LanguageType>,
+    },
+    /// Manage library files
+    Lib {
+        #[command(subcommand)]
+        action: LibAction,
+
+        #[arg(long)]
+        language: Option<LanguageType>,
+    },
+    /// Edit template file
+    Template {
+        #[arg(long)]
+        language: Option<LanguageType>,
     },
 
     /// Run the day
     Run {
-        // Run All Puzzles
-        // all: bool,
         #[arg(long)]
-        language: Option<Language>,
+        language: Option<LanguageType>,
 
         /// Puzzle part
         part: Option<Exercise>,
-    },
-    /// Run the day with other input
-    Test {
-        /// Input file to use instead of data/year{i}/day{j}/example.txt
-        #[arg(long)]
-        input_file: Option<String>,
 
-        #[arg(long)]
-        language: Option<Language>,
-
-        /// Puzzle part
-        part: Option<Exercise>,
+        /// Input file to use instead of AoC input. Provided example file can be used by supplying
+        /// --test with no arg
+        #[arg(long, default_missing_value = "", num_args=0..=1)]
+        test: Option<String>,
     },
 
     /// Submit answer to Advent of Code
@@ -90,6 +71,7 @@ pub enum AocCommand {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    //TODO: Need a clean command
 }
 
 #[derive(Debug, Subcommand)]
@@ -104,4 +86,25 @@ pub enum ConfigCommand {
         #[arg(value_enum)]
         key: ConfigOpt,
     },
+}
+
+//TODO: Implement Lib and Dep
+#[derive(Debug, Subcommand)]
+pub enum LibAction {
+    /// Add a library file
+    Edit,
+    /// Remove a library file
+    Remove,
+    /// List library files
+    List,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DepAction {
+    /// Add a new library file
+    Add,
+    /// Remove a library file
+    Remove,
+    /// List library files
+    List,
 }

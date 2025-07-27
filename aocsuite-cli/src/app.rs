@@ -1,173 +1,93 @@
+use std::path::PathBuf;
+
 use crate::{AocCliResult, AocCommand, ConfigCommand};
-use aocsuite_client::{open_puzzle_page, AocHttp, AocPage, DownloadMode, ParserType};
-use aocsuite_config::{AocConfig, AocConfigError, ConfigOpt};
+use aocsuite_client::{open_puzzle_page, post_answer};
+use aocsuite_config::{get_config_val, set_config_val, ConfigOpt};
 use aocsuite_editor::edit_files;
-use aocsuite_fs::{write_with_confirmation, AocDataDir, AocDataFile};
-use aocsuite_lang::{compile, get_language_file, run, scaffold, Language, LanguageFile};
+use aocsuite_fs::{update_cache_status, AocContentFile};
+use aocsuite_lang::{compile, get_path, run, SolveFile};
+use aocsuite_parser::{parse, parse_submission_result, ParserType};
 use aocsuite_utils::{valid_puzzle_release, valid_year_release, Exercise, PuzzleDay, PuzzleYear};
 
 pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> AocCliResult<()> {
-    let config = AocConfig::new();
     match command {
-        AocCommand::New {
-            template_dir,
-            language,
-            overwrite,
-        } => {
-            valid_puzzle_release(day, year)?;
-            run_template(day, year, language, template_dir, overwrite, &config)?;
-            download_files(day, year, DownloadMode::All, overwrite)?
-        }
-
-        AocCommand::Template {
-            template_dir,
-            language,
-            overwrite,
-        } => {
-            valid_puzzle_release(day, year)?;
-            run_template(day, year, language, template_dir, overwrite, &config)?;
-        }
-
-        AocCommand::Download { mode, overwrite } => {
-            valid_puzzle_release(day, year)?;
-            download_files(day, year, mode, overwrite)?
-        }
-
-        AocCommand::Config { command } => run_config(command)?,
+        AocCommand::Config { command } => match command {
+            ConfigCommand::Get { key } => {
+                let val: String = get_config_val(&key, None, None)?;
+                println!("{}: {val}", key.to_string());
+            }
+            ConfigCommand::Set { key } => set_config_val(&key)?,
+        },
 
         AocCommand::Calendar => {
             valid_year_release(day, year)?;
-            let client = get_http_client()?;
-            let calendar = client.get_cleaned(AocPage::Calendar(year), ParserType::Colored)?;
-            println!("{calendar}");
+            let calendar = AocContentFile::calendar(year).load()?;
+            let parsed_calendar = parse(&calendar, ParserType::Colored);
+            println!("{parsed_calendar}");
         }
 
-        AocCommand::Open => {
+        AocCommand::View => {
             valid_puzzle_release(day, year)?;
             open_puzzle_page(day, year)?;
         }
 
         AocCommand::Submit { part, answer } => {
             valid_puzzle_release(day, year)?;
-            let client = get_http_client()?;
-            let output = client.post_answer(&answer, part, day, year)?;
-            println!("{output}");
+            let output = post_answer(&answer, &part, day, year)?;
+            let result = parse_submission_result(&output);
+            update_cache_status(&result, day, year, part == Exercise::One);
+            println!("{result}");
         }
 
-        AocCommand::Run { language, part } => {
-            valid_puzzle_release(day, year)?;
-            let language = resolve_language(language, &config)?;
-            run_wrapped(day, year, language, part, None)?
-        }
-
-        AocCommand::Test {
+        AocCommand::Run {
             language,
-            input_file,
             part,
+            test,
         } => {
-            let language = resolve_language(language, &config)?;
-            let input = input_file.or_else(|| Some(AocDataFile::Example(day, year).to_string()));
-            run_wrapped(day, year, language, part, input)?
+            valid_puzzle_release(day, year)?;
+            let part = part.map_or("both".to_string(), |exercise| exercise.to_string());
+            let path = match test {
+                Some(file) => {
+                    if file == "" {
+                        AocContentFile::example(day, year).to_path()?
+                    } else {
+                        PathBuf::from(file)
+                    }
+                }
+                None => AocContentFile::input(day, year).to_path()?,
+            };
+
+            compile(day, year, &language)?;
+            let result = run(day, year, &part, path.as_ref(), &language)?;
+            println!("{result}");
         }
 
-        AocCommand::Edit { language } => {
-            let language = resolve_language(language, &config)?;
-            let config = AocConfig::new();
-            let editor_type = config.get_ok(ConfigOpt::Editor)?;
-            let lib_file = get_language_file(day, year, &language, LanguageFile::Main);
+        AocCommand::Open { language } => {
+            valid_puzzle_release(day, year)?;
+            let editor_type: String = get_config_val(&ConfigOpt::Editor, None, None)?;
+            let solve_path = get_path(
+                &SolveFile::LinkedSolution(Box::new(SolveFile::Solution(day, year))),
+                &language,
+            )?;
 
             edit_files(
                 &editor_type,
-                &AocDataFile::Puzzle(day, year).to_string(),
-                &AocDataFile::Example(day, year).to_string(),
-                lib_file.to_str().expect("Valid UTF-8"),
-                &AocDataFile::Input(day, year).to_string(),
+                &AocContentFile::puzzle(day, year)
+                    .to_path()?
+                    .to_str()
+                    .unwrap(),
+                &AocContentFile::example(day, year)
+                    .to_path()?
+                    .to_str()
+                    .unwrap(),
+                solve_path.to_str().expect("Valid UTF-8"),
+                &AocContentFile::input(day, year)
+                    .to_path()?
+                    .to_str()
+                    .unwrap(),
             )?;
         }
+        _ => unimplemented!(),
     }
     Ok(())
-}
-
-fn download_files(
-    day: PuzzleDay,
-    year: PuzzleYear,
-    mode: DownloadMode,
-    overwrite: bool,
-) -> AocCliResult<()> {
-    valid_puzzle_release(day, year)?;
-    let client = get_http_client()?;
-    std::fs::create_dir_all(AocDataDir::new(day, year).to_string())?;
-
-    if matches!(mode, DownloadMode::All | DownloadMode::Input) {
-        let input = client.get(AocPage::Input(day, year))?;
-        write_with_confirmation(AocDataFile::Input(day, year).to_string(), input, overwrite)?;
-    }
-
-    if matches!(mode, DownloadMode::All | DownloadMode::Puzzle) {
-        let puzzle = client.get_cleaned(AocPage::Puzzle(day, year), ParserType::Markdown)?;
-        write_with_confirmation(
-            AocDataFile::Puzzle(day, year).to_string(),
-            puzzle,
-            overwrite,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn run_template(
-    day: PuzzleDay,
-    year: PuzzleYear,
-    language: Option<Language>,
-    template_dir: Option<String>,
-    overwrite: bool,
-    config: &AocConfig,
-) -> AocCliResult<()> {
-    let language = resolve_language(language, config)?;
-    let template_dir = template_dir.or(config.get(ConfigOpt::TemplateDir));
-    scaffold(day, year, &language, template_dir.as_deref(), overwrite)?;
-    Ok(())
-}
-
-fn run_config(command: ConfigCommand) -> AocCliResult<()> {
-    let mut config = AocConfig::new();
-    match command {
-        ConfigCommand::Get { key } => {
-            let val = config.get_ok(key)?;
-            println!("{val}");
-        }
-        ConfigCommand::Set { key } => config.set(key)?,
-    }
-    Ok(())
-}
-
-fn get_http_client() -> AocCliResult<AocHttp> {
-    let config = AocConfig::new();
-    let session = config.get(ConfigOpt::Session).ok_or(AocConfigError::Get {
-        key: ConfigOpt::Session,
-    })?;
-    AocHttp::new(&session).map_err(Into::into)
-}
-
-fn run_wrapped(
-    day: PuzzleDay,
-    year: PuzzleYear,
-    language: Language,
-    part: Option<Exercise>,
-    input_path: Option<String>,
-) -> AocCliResult<()> {
-    let part = part.map_or("both".to_string(), |exercise| exercise.to_string());
-    let path = input_path.unwrap_or_else(|| AocDataFile::Input(day, year).to_string());
-
-    compile(day, year, &language)?;
-    let result = run(day, year, &part, &language, path.as_ref())?;
-    println!("{result}");
-    Ok(())
-}
-fn resolve_language(language: Option<Language>, config: &AocConfig) -> AocCliResult<Language> {
-    let lang = match language {
-        Some(lang) => lang,
-        None => config.get_ok(ConfigOpt::Language)?.parse()?,
-    };
-    Ok(lang)
 }

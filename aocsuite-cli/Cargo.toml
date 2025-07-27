@@ -9,6 +9,7 @@ aocsuite-config = { version = "0.2.0", path = "../aocsuite-config" }
 aocsuite-editor = { version = "0.2.0", path = "../aocsuite-editor" }
 aocsuite-fs = { version = "0.2.0", path = "../aocsuite-fs" }
 aocsuite-lang = { version = "0.2.0", path = "../aocsuite-lang" }
+aocsuite-parser = { version = "0.2.0", path = "../aocsuite-parser" }
 aocsuite-utils = { version = "0.2.0", path = "../aocsuite-utils" }
 clap = { workspace = true, features = ["derive"] }
 thiserror.workspace = true

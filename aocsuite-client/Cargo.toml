@@ -1,16 +1,11 @@
 [package]
 name = "aocsuite-client"
 version = "0.2.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
+aocsuite-config = { version = "0.2.0", path = "../aocsuite-config" }
 aocsuite-utils = { version = "0.2.0", path = "../aocsuite-utils" }
-chrono.workspace = true
-chrono-tz.workspace = true
-clap = { workspace=true, features = ["derive"] }
-colored.workspace = true
-html2md.workspace = true
 regex.workspace = true
 reqwest = { workspace = true, features = ["blocking"] }
-scraper.workspace = true
 thiserror.workspace = true

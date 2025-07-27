@@ -4,7 +4,8 @@ A set of libraries used to generate a command-line toolkit for Advent of Code (A
 
 ## Features
 
-- Download puzzle descriptions and input data automatically
+- Download and caches puzzle descriptions and input data automatically
+- See your progress from the calendar
 - Templating for new days
 - Open files in editor
 - Submit solutions directly from the command line
@@ -21,10 +22,12 @@ cargo install --path aocsuite-cli
 
 ## Quick Start
 
-1. **Configure your session token (Preferably through env variables to avoid leaking tokens)**:
+1. **Configure your session token**:
+   Either by environment variables or set via the config command
 
    ```bash
    export AOC_SESSION="<MY-TOKEN>"
+   aocsuite-cli config set session
    ```
 
 2. **Generate a new set of files**:
@@ -84,31 +87,11 @@ Configurations can also be managed through enviroment variables:
 - `AOC_TEMPLATE_DIR`
 - `EDITOR`
 
-## Project Structure
+### Git tracking
 
-```
-aoc/
-├── .aocsuite/
-│   └── config.json          # Workspace configuration
-├── data/                    # Downloaded puzzle descriptions and inputs
-│   └── year2024/
-│       └── day1/
-│           ├── puzzle.md    # Puzzle description
-│           ├── example.txt  # Puzzle Example input
-│           └── input.txt    # Puzzle input
-├── templates/               # Language-specific templates
-│   └── rust/
-│       └── lib.rs          # Rust solution template
-└─── rust/                   # Rust solutions
-    └── year2024/
-        └── day1/
-            ├── Cargo.toml
-            └─── src/
-                ├── main.rs
-                └── lib.rs
+`aocsuite-cli git` - wraps around git to enable version control of the solution directory. A basic .gitignore is supplied to avoid tracking aocsuite specific files.
 
-
-```
+Files are stored at `$XDG_DATA_HOME/aocsuite` or `$HOME/.local/data/aocsuite` and can also be managed manually from there.
 
 ## License
 
@@ -117,9 +100,6 @@ This project is licensed under the [MIT License](LICENSE).
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. Especially if you want to add support for your favorite editor or language.
-
-- Adding support for new programming languages
-- Adding new editor integrations
 
 ## Acknowledgments
 

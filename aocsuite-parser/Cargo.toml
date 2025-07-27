@@ -1,0 +1,10 @@
+[package]
+name = "aocsuite-parser"
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+colored.workspace = true
+html2md.workspace = true
+regex.workspace = true
+scraper.workspace = true
