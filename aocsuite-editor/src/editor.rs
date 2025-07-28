@@ -2,16 +2,16 @@ use std::process::Command;
 
 use crate::{arg_builder::ArgsBuilder, editor_types::EditorType, AocEditorError, AocEditorResult};
 
-pub struct EditorCommand {
+pub struct Editor {
     program: String,
     args_builder: ArgsBuilder,
 }
 
-impl EditorCommand {
+impl Editor {
     pub fn new(editor_type: &EditorType) -> AocEditorResult<Self> {
         let program = editor_type.to_program()?;
         let args_builder = editor_type.to_args_builder();
-        Ok(EditorCommand {
+        Ok(Editor {
             program,
             args_builder,
         })
@@ -37,6 +37,11 @@ impl EditorCommand {
         let args = self
             .args_builder
             .solution_command(puzzlefile, examplefile, libfile, inputfile);
+        self.run(args)?;
+        Ok(())
+    }
+    pub fn open(&self, file: &str) -> AocEditorResult<()> {
+        let args = vec![file.to_string()];
         self.run(args)?;
         Ok(())
     }

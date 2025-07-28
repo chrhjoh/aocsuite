@@ -1,11 +1,11 @@
 mod arg_builder;
-mod editor_command;
+mod editor;
 mod editor_types;
 
 use std::path::Path;
 
 use aocsuite_config::{get_config_val, ConfigOpt};
-use editor_command::EditorCommand;
+use editor::Editor;
 use editor_types::EditorType;
 use thiserror::Error;
 
@@ -46,12 +46,18 @@ pub fn open_solution_files(
     inputfile: &Path,
 ) -> AocEditorResult<()> {
     let editor_type = resolve_editor_type()?;
-    let editor = EditorCommand::new(&editor_type)?;
+    let editor = Editor::new(&editor_type)?;
     editor.open_solution(
         puzzlefile.to_str().unwrap(),
         examplefile.to_str().unwrap(),
         libfile.to_str().unwrap(),
         inputfile.to_str().unwrap(),
     )?;
+    Ok(())
+}
+pub fn open(file: &Path) -> AocEditorResult<()> {
+    let editor_type = resolve_editor_type()?;
+    let editor = Editor::new(&editor_type)?;
+    editor.open(file.to_str().unwrap())?;
     Ok(())
 }

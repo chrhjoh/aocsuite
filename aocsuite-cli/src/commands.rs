@@ -36,6 +36,9 @@ pub enum AocCommand {
     Template {
         #[arg(long)]
         language: Option<LanguageType>,
+
+        #[arg(long)]
+        reset: bool,
     },
 
     /// Run the day

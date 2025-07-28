@@ -7,7 +7,6 @@ pub trait EditArgsBuilder {
         libfile: &str,
         inputfile: &str,
     ) -> Vec<String>;
-    fn files_command(&self, files: Vec<&str>) -> Vec<String>;
 }
 
 pub struct VimArgs {}
@@ -27,9 +26,6 @@ impl EditArgsBuilder for VimArgs {
         args.push(format!("+split {}", puzzlefile));
         args
     }
-    fn files_command(&self, files: Vec<&str>) -> Vec<String> {
-        files.iter().map(|file| file.to_string()).collect()
-    }
 }
 
 pub struct GenericArgs {}
@@ -42,9 +38,7 @@ impl EditArgsBuilder for GenericArgs {
         libfile: &str,
         inputfile: &str,
     ) -> Vec<String> {
-        self.files_command(vec![puzzlefile, examplefile, libfile, inputfile])
-    }
-    fn files_command(&self, files: Vec<&str>) -> Vec<String> {
+        let files = vec![puzzlefile, examplefile, libfile, inputfile];
         files.iter().map(|file| file.to_string()).collect()
     }
 }

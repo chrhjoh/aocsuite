@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 use crate::{AocCliResult, AocCommand, ConfigCommand};
 use aocsuite_client::{open_puzzle_page, post_answer};
@@ -76,7 +76,29 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                 &AocContentFile::input(day, year).to_path()?,
             )?;
         }
+        AocCommand::Template { language, reset } => {
+            if reset {
+                let template_path = get_path(&SolveFile::TemplateSolution, &language)?;
+                let prompt = format!("Are you sure you want to delete template file? (Y/n):",);
+                if user_confirm(&prompt)? {
+                    std::fs::remove_file(template_path)?;
+                }
+            }
+            let edit_file = SolveFile::LinkedSolution(Box::new(SolveFile::TemplateSolution));
+            let path = get_path(&edit_file, &language)?;
+            aocsuite_editor::open(&path)?;
+        }
         _ => unimplemented!(),
     }
     Ok(())
+}
+fn user_confirm(prompt: &str) -> std::io::Result<bool> {
+    print!("{prompt}");
+    std::io::stdout().flush()?;
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+
+    let trimmed = input.trim().to_lowercase();
+    Ok(trimmed.is_empty() || trimmed == "y" || trimmed == "yes")
 }
