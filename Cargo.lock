@@ -121,6 +121,7 @@ dependencies = [
 name = "aocsuite-config"
 version = "0.2.0"
 dependencies = [
+ "aocsuite-utils",
  "clap",
  "serde",
  "serde_json",

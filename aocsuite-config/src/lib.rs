@@ -4,6 +4,7 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
+use aocsuite_utils::resolve_aocsuite_dir;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -16,7 +17,7 @@ struct AocConfig {
 
 impl AocConfig {
     pub fn new() -> AocConfig {
-        let config_dir = PathBuf::from(".aocsuite");
+        let config_dir = resolve_aocsuite_dir();
 
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir).expect("Could not create config directory");
@@ -50,7 +51,7 @@ impl AocConfig {
             ConfigOpt::Session => "AOC_SESSION",
             ConfigOpt::Language => "AOC_LANGUAGE",
             ConfigOpt::Year => "AOC_YEAR",
-            ConfigOpt::Editor => "EDITOR",
+            ConfigOpt::Editor => "AOC_EDITOR",
             ConfigOpt::TemplateDir => "AOC_TEMPLATE_DIR",
         };
         let val = std::env::var(env_var);
@@ -106,15 +107,19 @@ where
 
     let config = AocConfig::new();
     if let Some(val) = config.get(key) {
-        return Ok(val
-            .parse()
-            .map_err(|_| AocConfigError::Get { key: key.clone() })?);
+        return Ok(val.parse().map_err(|_| AocConfigError::Get {
+            key: key.clone(),
+            val,
+        })?);
     }
 
     if let Some(val) = default {
         return Ok(val);
     }
-    Err(AocConfigError::Get { key: key.clone() })
+    Err(AocConfigError::Get {
+        key: key.clone(),
+        val: "NotFound".to_string(),
+    })
 }
 
 pub fn set_config_val(key: &ConfigOpt) -> AocConfigResult<()> {
@@ -148,8 +153,8 @@ impl ToString for ConfigOpt {
 pub enum AocConfigError {
     #[error("Parse error: {0}")]
     Parse(#[from] serde_json::Error),
-    #[error("Failed to get config key: {key:?}")]
-    Get { key: ConfigOpt },
+    #[error("Failed to get config key: {key:?} ({val})")]
+    Get { key: ConfigOpt, val: String },
     #[error("Failed to get config key: {0}")]
     GetEnv(#[from] VarError),
 }
