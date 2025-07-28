@@ -1,12 +1,4 @@
 /target
 
-# Dirs generated when testing the commands quickly in root directory
-/data
-/rust
-/python
-/templates
-
-# Config files
-.aocsuite
 .envrc
 

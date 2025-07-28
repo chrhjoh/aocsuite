@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use crate::{AocCliResult, AocCommand, ConfigCommand};
 use aocsuite_client::{open_puzzle_page, post_answer};
-use aocsuite_config::{get_config_val, set_config_val, ConfigOpt};
-use aocsuite_editor::edit_files;
+use aocsuite_config::{get_config_val, set_config_val};
+use aocsuite_editor::open_solution_files;
 use aocsuite_fs::{update_cache_status, AocContentFile};
 use aocsuite_lang::{compile, get_path, run, SolveFile};
 use aocsuite_parser::{parse, parse_submission_result, ParserType};
@@ -64,27 +64,16 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
 
         AocCommand::Open { language } => {
             valid_puzzle_release(day, year)?;
-            let editor_type: String = get_config_val(&ConfigOpt::Editor, None, None)?;
             let solve_path = get_path(
                 &SolveFile::LinkedSolution(Box::new(SolveFile::Solution(day, year))),
                 &language,
             )?;
 
-            edit_files(
-                &editor_type,
-                &AocContentFile::puzzle(day, year)
-                    .to_path()?
-                    .to_str()
-                    .unwrap(),
-                &AocContentFile::example(day, year)
-                    .to_path()?
-                    .to_str()
-                    .unwrap(),
-                solve_path.to_str().expect("Valid UTF-8"),
-                &AocContentFile::input(day, year)
-                    .to_path()?
-                    .to_str()
-                    .unwrap(),
+            open_solution_files(
+                &AocContentFile::puzzle(day, year).to_path()?,
+                &AocContentFile::example(day, year).to_path()?,
+                &solve_path,
+                &AocContentFile::input(day, year).to_path()?,
             )?;
         }
         _ => unimplemented!(),
