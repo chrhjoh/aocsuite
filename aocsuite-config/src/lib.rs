@@ -107,7 +107,7 @@ where
 
     let config = AocConfig::new();
     if let Some(val) = config.get(key) {
-        return Ok(val.parse().map_err(|_| AocConfigError::Get {
+        return Ok(val.parse().map_err(|_| AocConfigError::Invalid {
             key: key.clone(),
             val,
         })?);
@@ -116,10 +116,7 @@ where
     if let Some(val) = default {
         return Ok(val);
     }
-    Err(AocConfigError::Get {
-        key: key.clone(),
-        val: "NotFound".to_string(),
-    })
+    Err(AocConfigError::NotFound { key: key.clone() })
 }
 
 pub fn set_config_val(key: &ConfigOpt) -> AocConfigResult<()> {
@@ -153,8 +150,10 @@ impl ToString for ConfigOpt {
 pub enum AocConfigError {
     #[error("Parse error: {0}")]
     Parse(#[from] serde_json::Error),
-    #[error("Failed to get config key: {key:?} ({val})")]
-    Get { key: ConfigOpt, val: String },
+    #[error("Failed to get config key: {key:?}. Invalid value: {val})")]
+    Invalid { key: ConfigOpt, val: String },
+    #[error("Failed to get config key: {key:?} Not Found")]
+    NotFound { key: ConfigOpt },
     #[error("Failed to get config key: {0}")]
     GetEnv(#[from] VarError),
 }
