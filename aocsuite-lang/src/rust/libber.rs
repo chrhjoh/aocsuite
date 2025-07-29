@@ -1,15 +1,21 @@
-use crate::traits::LibManager;
-
 use super::RustRunner;
+use crate::traits::LibManager;
+use std::path::PathBuf;
 
 impl LibManager for RustRunner {
-    fn get_lib_path(&self, lib_name: &str) -> std::path::PathBuf {
-        unimplemented!()
+    fn get_lib_path(&self, lib_name: &str) -> PathBuf {
+        self.src_dir()
+            .join(format!("{}.{}", lib_name, self.file_extention()))
     }
-    fn list_lib_files(&self) -> crate::AocLanguageResult<Vec<String>> {
-        unimplemented!()
+
+    fn lib_dir(&self) -> PathBuf {
+        self.src_dir()
     }
-    fn remove_lib_file(&self, lib_name: &str) -> crate::AocLanguageResult<()> {
-        unimplemented!()
+    fn file_extention(&self) -> String {
+        "rs".to_string()
+    }
+
+    fn invalid_lib_names(&self) -> Vec<&str> {
+        return vec!["main", "solution"];
     }
 }

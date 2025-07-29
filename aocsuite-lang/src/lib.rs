@@ -104,3 +104,99 @@ pub fn editor_enviroment_vars(
     let runner = resolve_runner(language)?;
     runner.editor_environment_vars()
 }
+
+pub fn get_lib_filepath(
+    lib_name: &str,
+    language: &Option<LanguageType>,
+) -> AocLanguageResult<PathBuf> {
+    let runner = resolve_runner(language)?;
+    let unallowed_names = runner.invalid_lib_names();
+    validate_user_lib(lib_name, &unallowed_names)?;
+    let lib_path = runner.get_lib_path(lib_name);
+
+    if !lib_path.exists() {
+        std::fs::create_dir_all(lib_path.parent().expect("is not root"))?;
+    }
+
+    Ok(lib_path)
+}
+
+pub fn remove_lib_file(lib_name: &str, language: &Option<LanguageType>) -> AocLanguageResult<()> {
+    let runner = resolve_runner(language)?;
+    let unallowed_names = runner.invalid_lib_names();
+    validate_user_lib(lib_name, &unallowed_names)?;
+    let lib_path = runner.get_lib_path(lib_name);
+    if lib_path.exists() {
+        std::fs::remove_file(lib_path)?;
+    }
+    Ok(())
+}
+
+pub fn list_lib_files(language: &Option<LanguageType>) -> AocLanguageResult<Vec<String>> {
+    let runner = resolve_runner(language)?;
+    let file_extention = runner.file_extention();
+    let dir = runner.lib_dir();
+    let files = scan_lib_directory(&dir, &file_extention)?;
+    let unallowed_names = runner.invalid_lib_names();
+    let filtered_files = files
+        .iter()
+        .filter(|f| match validate_user_lib(*f, &unallowed_names) {
+            Ok(_) => true,
+            Err(_) => false,
+        })
+        .map(|f| f.clone())
+        .collect();
+    Ok(filtered_files)
+}
+
+fn validate_user_lib(lib_name: &str, unallowed_names: &Vec<&str>) -> AocLanguageResult<()> {
+    if lib_name.trim().is_empty() {
+        return Err(AocLanguageError::LibInvalid(
+            "Library name cannot be empty".to_string(),
+        ));
+    }
+
+    if !lib_name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(AocLanguageError::LibInvalid(
+            "Library name can only contain letters, numbers, underscores, and hyphens".to_string(),
+        ));
+    }
+
+    if let Some(first_char) = lib_name.chars().next() {
+        if !first_char.is_alphabetic() && first_char != '_' {
+            return Err(AocLanguageError::LibInvalid(
+                "Library name must start with a letter or underscore".to_string(),
+            ));
+        }
+    }
+
+    if unallowed_names.contains(&lib_name) {
+        return Err(AocLanguageError::LibInvalid(format!(
+            "'{}' is a reserved name for this language",
+            lib_name
+        )));
+    }
+
+    Ok(())
+}
+fn scan_lib_directory(dir: &Path, file_extention: &str) -> crate::AocLanguageResult<Vec<String>> {
+    let mut lib_files = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(file_name) = path.file_stem() {
+                if let Some(extension) = path.extension() {
+                    if extension == file_extention {
+                        let name = file_name.to_string_lossy();
+                        lib_files.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    Ok(lib_files)
+}

@@ -1,10 +1,4 @@
-use std::{
-    fmt,
-    fs::File,
-    io::BufReader,
-    path::{Path, PathBuf},
-    process::Output,
-};
+use std::{fmt, fs::File, io::BufReader, path::Path, process::Output};
 
 use aocsuite_config::AocConfigError;
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
@@ -141,6 +135,9 @@ pub enum AocLanguageError {
 
     #[error("Dependency {0:?} could not be removed: {1:?}")]
     DepRemove(String, String),
+
+    #[error("Lib name not valid: {0:?}")]
+    LibInvalid(String),
 }
 
 pub type AocLanguageResult<T> = Result<T, AocLanguageError>;

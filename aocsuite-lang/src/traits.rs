@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     process::Output,
 };
@@ -29,8 +30,9 @@ pub trait Solver {
 
 pub trait LibManager {
     fn get_lib_path(&self, lib_name: &str) -> PathBuf;
-    fn list_lib_files(&self) -> AocLanguageResult<Vec<String>>;
-    fn remove_lib_file(&self, lib_name: &str) -> AocLanguageResult<()>;
+    fn lib_dir(&self) -> PathBuf;
+    fn file_extention(&self) -> String;
+    fn invalid_lib_names(&self) -> Vec<&str>;
 }
 
 pub trait DepManager {

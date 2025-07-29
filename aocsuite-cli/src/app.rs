@@ -1,7 +1,7 @@
 use std::{io::Write, path::PathBuf};
 
 use crate::{
-    commands::DepAction,
+    commands::{DepAction, LibAction},
     git::{get_gitignore_path, run_git_command},
     AocCliResult, AocCommand, ConfigCommand,
 };
@@ -126,7 +126,35 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                 }
             }
         },
-        _ => unimplemented!(),
+        AocCommand::Lib { action, language } => match action {
+            LibAction::Edit { lib } => {
+                let path = aocsuite_lang::get_lib_filepath(&lib, &language)?;
+                let env_vars = editor_enviroment_vars(&language)?;
+                println!("{env_vars:?}");
+                aocsuite_editor::open(&path, Some(env_vars))?;
+            }
+            LibAction::Remove { lib } => {
+                aocsuite_lang::remove_lib_file(&lib, &language)?;
+                println!("Removed library: {}", lib);
+            }
+            LibAction::List => {
+                let files = aocsuite_lang::list_lib_files(&language)?;
+                if files.is_empty() {
+                    println!("No library files found");
+                } else {
+                    println!("Current library names:");
+                    for package in files {
+                        println!("  {}", package);
+                    }
+                }
+            }
+        },
+        AocCommand::Leaderboard { id } => {
+            valid_year_release(day, year)?;
+            open_page(&AocPage::Leaderboard(year, id))?;
+        }
+        //TODO: properly implement this
+        AocCommand::Clean {} => {}
     }
     Ok(())
 }

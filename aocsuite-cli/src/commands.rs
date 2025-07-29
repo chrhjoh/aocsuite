@@ -63,13 +63,11 @@ pub enum AocCommand {
         /// Puzzle answer. Will prompt if not specified
         answer: String,
     },
-    //TODO: implement leaderboard
-    //
-    // /// Display Leaderboard
-    // Leaderboard {
-    //     /// Leaderboard ID for private leaderboard
-    //     leaderboard_id: Option<u32>,
-    // },
+    /// Open Leaderboard in browser
+    Leaderboard {
+        /// Leaderboard ID for private leaderboard
+        id: Option<u32>,
+    },
     /// Change a configuration (year, language, and session )
     Config {
         #[command(subcommand)]
@@ -81,7 +79,8 @@ pub enum AocCommand {
         args: Vec<String>,
     },
     GitIgnore,
-    //TODO: Need a clean command
+
+    Clean,
 }
 
 #[derive(Debug, Subcommand)]
@@ -98,13 +97,18 @@ pub enum ConfigCommand {
     },
 }
 
-//TODO: Implement Lib
 #[derive(Debug, Subcommand)]
 pub enum LibAction {
-    /// Add a library file
-    Edit,
+    /// Edit or create a library file
+    Edit {
+        /// Library name (without file extention)
+        lib: String,
+    },
     /// Remove a library file
-    Remove,
+    Remove {
+        /// Library name (without file extention)
+        lib: String,
+    },
     /// List library files
     List,
 }

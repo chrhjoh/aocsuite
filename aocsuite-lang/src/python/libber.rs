@@ -1,15 +1,21 @@
+use std::path::PathBuf;
+
 use crate::traits::LibManager;
 
 use super::PythonRunner;
 
 impl LibManager for PythonRunner {
-    fn get_lib_path(&self, lib_name: &str) -> std::path::PathBuf {
-        unimplemented!()
+    fn get_lib_path(&self, lib_name: &str) -> PathBuf {
+        self.root_dir
+            .join(format!("{}.{}", lib_name, self.file_extention()))
     }
-    fn remove_lib_file(&self, lib_name: &str) -> crate::AocLanguageResult<()> {
-        unimplemented!()
+    fn lib_dir(&self) -> PathBuf {
+        self.root_dir.clone()
     }
-    fn list_lib_files(&self) -> crate::AocLanguageResult<Vec<String>> {
-        unimplemented!()
+    fn file_extention(&self) -> String {
+        "py".to_string()
+    }
+    fn invalid_lib_names(&self) -> Vec<&str> {
+        vec!["main", "solution"]
     }
 }

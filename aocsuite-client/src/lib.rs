@@ -14,6 +14,7 @@ pub enum AocPage {
     Input(PuzzleDay, PuzzleYear),
     Submit(PuzzleDay, PuzzleYear),
     Calendar(PuzzleYear),
+    Leaderboard(PuzzleYear, Option<u32>),
 }
 
 impl ToString for AocPage {
@@ -21,12 +22,16 @@ impl ToString for AocPage {
         match self {
             AocPage::Puzzle(day, year) => format!("{}/{}/day/{}", BASE_URL, year, day),
             AocPage::Input(day, year) => {
-                format!("https://adventofcode.com/{}/day/{}/input", year, day)
+                format!("{}/{}/day/{}/input", BASE_URL, year, day)
             }
             AocPage::Submit(day, year) => {
-                format!("https://adventofcode.com/{}/day/{}/answer", year, day)
+                format!("{}/{}/day/{}/answer", BASE_URL, year, day)
             }
-            AocPage::Calendar(year) => format!("https://adventofcode.com/{}", year),
+            AocPage::Calendar(year) => format!("{}/{}", BASE_URL, year),
+            AocPage::Leaderboard(year, id) => match id {
+                Some(id) => format!("{}/{}/leaderboard/private/view/{}", BASE_URL, year, id),
+                None => format!("{}/{}/leaderboard", BASE_URL, year),
+            },
         }
     }
 }
