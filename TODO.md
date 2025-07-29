@@ -10,7 +10,7 @@
 - [x] File writes: Add confirmation
 - [x] File open: (edit and run) check if files exist before starting.
 - [x] Move the actual running into temporary files inside .aocsuite (symlink lib file, both for running and editing).
-- [ ] Make a system that allows adding, editing, and removing (not template), lib and template files.
+- [x] Make a system that allows adding, editing, and removing (not template), lib and template files.
 - [x] Dependencies for run environments (add and remove)
 - [x] Add git support (create basic .gitignore to remove caches etc)
 - [x] Move everything to $XDG_DATA_HOME dir. (needs to move languages in some way)
