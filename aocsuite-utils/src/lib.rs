@@ -24,18 +24,19 @@ impl ToString for Exercise {
     }
 }
 
-type AocReleaseResult<T> = Result<T, PuzzleNotReleasedError>;
+type AocReleaseResult<T> = Result<T, ReleaseError>;
 
 #[derive(Debug, Error)]
-#[error("Puzzle for {day} {year} has not been released yet.")]
-pub struct PuzzleNotReleasedError {
-    pub day: PuzzleDay,
-    pub year: PuzzleYear,
+pub enum ReleaseError {
+    #[error("Puzzle for {0} {1} has not been released yet.")]
+    Puzzle(PuzzleDay, PuzzleYear),
+    #[error("Advent of code has not started yet for {0}")]
+    Year(PuzzleYear),
 }
 
 pub fn valid_puzzle_release(day: PuzzleDay, year: PuzzleYear) -> AocReleaseResult<()> {
     if day < 1 || day > 25 || year < 2015 {
-        return Err(PuzzleNotReleasedError { day, year });
+        return Err(ReleaseError::Puzzle(day, year));
     }
     let now_utc = Utc::now();
     let now_eastern = now_utc.with_timezone(&Eastern);
@@ -46,7 +47,7 @@ pub fn valid_puzzle_release(day: PuzzleDay, year: PuzzleYear) -> AocReleaseResul
     if now_eastern >= release_date {
         Ok(())
     } else {
-        return Err(PuzzleNotReleasedError { day, year });
+        return Err(ReleaseError::Puzzle(day, year));
     }
 }
 pub fn valid_year_release(day: PuzzleDay, year: PuzzleYear) -> AocReleaseResult<()> {
@@ -55,12 +56,12 @@ pub fn valid_year_release(day: PuzzleDay, year: PuzzleYear) -> AocReleaseResult<
     let now_year = now_eastern.year();
 
     if year < 2015 || year > now_year {
-        return Err(PuzzleNotReleasedError { day, year });
+        return Err(ReleaseError::Year(year));
     } else if year == now_year {
         // save to unwrap. all days 1 to 25 dec are valid
         let release_date = Eastern.with_ymd_and_hms(year, 12, day, 0, 0, 0).unwrap();
         if now_eastern < release_date {
-            return Err(PuzzleNotReleasedError { day, year });
+            return Err(ReleaseError::Year(year));
         }
     }
     Ok(())
