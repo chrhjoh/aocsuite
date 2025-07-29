@@ -4,7 +4,7 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
-use aocsuite_utils::resolve_aocsuite_dir;
+use aocsuite_utils::get_aocsuite_dir;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -17,7 +17,7 @@ struct AocConfig {
 
 impl AocConfig {
     pub fn new() -> AocConfig {
-        let config_dir = resolve_aocsuite_dir();
+        let config_dir = get_aocsuite_dir();
 
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir).expect("Could not create config directory");

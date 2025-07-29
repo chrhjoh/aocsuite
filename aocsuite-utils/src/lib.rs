@@ -79,7 +79,7 @@ pub fn today_year() -> PuzzleYear {
     now_utc.with_timezone(&Eastern).year()
 }
 
-pub fn resolve_aocsuite_dir() -> PathBuf {
+pub fn get_aocsuite_dir() -> PathBuf {
     let base = if let Ok(xdg_data_home) = std::env::var("XDG_DATA_HOME") {
         PathBuf::from(xdg_data_home)
     } else if let Ok(home) = std::env::var("HOME") {

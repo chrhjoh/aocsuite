@@ -8,7 +8,7 @@ mod utils;
 use std::path::{Path, PathBuf};
 
 use aocsuite_config::{get_config_val, ConfigOpt};
-use aocsuite_utils::{resolve_aocsuite_dir, PuzzleDay, PuzzleYear};
+use aocsuite_utils::{get_aocsuite_dir, PuzzleDay, PuzzleYear};
 pub use languages::LanguageType;
 use utils::{handle_command_output, read_result, symlink_file, ExerciseOutput, LanguageRunner};
 pub use utils::{AocLanguageError, AocLanguageResult, SolveFile};
@@ -21,7 +21,7 @@ pub fn run(
     language: &Option<LanguageType>,
 ) -> AocLanguageResult<ExerciseOutput> {
     let runner = resolve_runner(&language)?;
-    let output_file = resolve_aocsuite_dir().join("result.json");
+    let output_file = get_aocsuite_dir().join("result.json");
 
     let output = runner.run(day, year, part, input, &output_file)?;
     handle_command_output(output)?;

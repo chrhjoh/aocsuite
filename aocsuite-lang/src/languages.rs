@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use aocsuite_utils::resolve_aocsuite_dir;
+use aocsuite_utils::get_aocsuite_dir;
 use clap::ValueEnum;
 
 use crate::{
@@ -27,7 +27,7 @@ impl ToString for LanguageType {
 
 impl LanguageType {
     pub fn to_runner(&self) -> AocLanguageResult<LanguageRunner> {
-        let root_dir = resolve_aocsuite_dir().join(self.to_string());
+        let root_dir = get_aocsuite_dir().join(self.to_string());
         std::fs::create_dir_all(&root_dir)?;
         let runner: LanguageRunner = match self {
             LanguageType::Rust => Box::new(RustRunner::new(root_dir)),

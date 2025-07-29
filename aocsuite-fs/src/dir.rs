@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use aocsuite_utils::{resolve_aocsuite_dir, PuzzleDay, PuzzleYear};
+use aocsuite_utils::{get_aocsuite_dir, PuzzleDay, PuzzleYear};
 
 pub struct AocContentDir {
     base: PathBuf,
@@ -8,7 +8,7 @@ pub struct AocContentDir {
 impl AocContentDir {
     pub fn new() -> AocContentDir {
         AocContentDir {
-            base: resolve_aocsuite_dir().join("data"),
+            base: get_aocsuite_dir().join("data"),
         }
     }
 
