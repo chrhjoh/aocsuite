@@ -41,21 +41,16 @@ impl Solver for RustRunner {
         Ok(output)
     }
 
-    fn ensure_files(&self) -> AocLanguageResult<()> {
-        let cargo_path = self.root_dir.join("Cargo.toml");
-        if !cargo_path.exists() {
-            std::fs::write(&cargo_path, cargo_contents())?
-        }
-
+    fn setup_solver(&self) -> AocLanguageResult<()> {
         // Need main always for editing files
-        let main_path = self._get_path(&SolveFile::Main);
+        let main_path = self.get_solvefile_path(&SolveFile::Main);
         if !main_path.exists() {
             std::fs::write(&main_path, self.main_contents())?
         }
         Ok(())
     }
 
-    fn _get_path(&self, file: &SolveFile) -> std::path::PathBuf {
+    fn get_solvefile_path(&self, file: &SolveFile) -> std::path::PathBuf {
         match file {
             SolveFile::Main => self.src_dir().join("main.rs"),
             SolveFile::TemplateSolution => self.root_dir.join("template.rs"),
@@ -183,17 +178,4 @@ fn main() {
 "#
         .to_string()
     }
-}
-
-fn cargo_contents() -> String {
-    r#"[package]
-name = "aocsuite-solution-rust"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-serde_json="1.0.140"
-serde = { version = "1.0.219", features = ["derive"]}
-"#
-    .to_string()
 }

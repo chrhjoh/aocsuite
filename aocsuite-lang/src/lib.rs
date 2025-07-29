@@ -1,6 +1,5 @@
 mod languages;
 mod python;
-mod runner;
 mod rust;
 mod traits;
 mod utils;
@@ -44,7 +43,7 @@ pub fn compile(
 
 pub fn get_path(file: &SolveFile, language: &Option<LanguageType>) -> AocLanguageResult<PathBuf> {
     let runner = resolve_runner(language)?;
-    let path = runner._get_path(file);
+    let path = runner.get_solvefile_path(file);
     match file {
         SolveFile::Solution(_, _) => {
             if !&path.exists() {
@@ -76,6 +75,22 @@ pub fn get_path(file: &SolveFile, language: &Option<LanguageType>) -> AocLanguag
 fn resolve_runner(language: &Option<LanguageType>) -> AocLanguageResult<LanguageRunner> {
     let language = get_config_val(&ConfigOpt::Language, None, language.clone())?;
     let runner = language.to_runner()?;
-    runner.ensure_files()?;
+    runner.setup_solver()?;
+    runner.setup_env()?;
     Ok(runner)
+}
+
+pub fn add_package(package: &str, language: &Option<LanguageType>) -> AocLanguageResult<()> {
+    let runner = resolve_runner(language)?;
+    runner.add_package(package)
+}
+
+pub fn remove_package(package: &str, language: &Option<LanguageType>) -> AocLanguageResult<()> {
+    let runner = resolve_runner(language)?;
+    runner.remove_packages(package)
+}
+
+pub fn list_packages(language: &Option<LanguageType>) -> AocLanguageResult<Vec<String>> {
+    let runner = resolve_runner(language)?;
+    runner.list_packages()
 }

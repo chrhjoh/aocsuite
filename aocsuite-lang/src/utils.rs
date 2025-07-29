@@ -1,11 +1,17 @@
-use std::{fmt, fs::File, io::BufReader, path::Path, process::Output};
+use std::{
+    fmt,
+    fs::File,
+    io::BufReader,
+    path::{Path, PathBuf},
+    process::Output,
+};
 
 use aocsuite_config::AocConfigError;
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::traits::Solver;
+use crate::traits::LanguageHandler;
 
 #[derive(Debug, Clone)]
 pub enum SolveFile {
@@ -126,7 +132,16 @@ pub enum AocLanguageError {
 
     #[error("file not found: {0:?}")]
     FileNotFound(SolveFile),
+
+    #[error("environment error: {0:?}")]
+    Env(String),
+
+    #[error("Dependency {0:?} could not be added: {1:?}")]
+    DepAdd(String, String),
+
+    #[error("Dependency {0:?} could not be removed: {1:?}")]
+    DepRemove(String, String),
 }
 
 pub type AocLanguageResult<T> = Result<T, AocLanguageError>;
-pub type LanguageRunner = Box<dyn Solver>;
+pub type LanguageRunner = Box<dyn LanguageHandler>;

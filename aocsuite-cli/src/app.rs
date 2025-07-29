@@ -1,6 +1,7 @@
 use std::{io::Write, path::PathBuf};
 
 use crate::{
+    commands::DepAction,
     git::{get_gitignore_path, run_git_command},
     AocCliResult, AocCommand, ConfigCommand,
 };
@@ -101,6 +102,27 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             let path = get_gitignore_path()?;
             aocsuite_editor::open(&path)?;
         }
+        AocCommand::Dep { action, language } => match action {
+            DepAction::Add { package } => {
+                aocsuite_lang::add_package(&package, &language)?;
+                println!("Added package: {}", package);
+            }
+            DepAction::Remove { package } => {
+                aocsuite_lang::remove_package(&package, &language)?;
+                println!("Removed package: {}", package);
+            }
+            DepAction::List => {
+                let packages = aocsuite_lang::list_packages(&language)?;
+                if packages.is_empty() {
+                    println!("No packages installed");
+                } else {
+                    println!("Installed packages:");
+                    for package in packages {
+                        println!("  {}", package);
+                    }
+                }
+            }
+        },
         _ => unimplemented!(),
     }
     Ok(())

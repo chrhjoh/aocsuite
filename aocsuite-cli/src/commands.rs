@@ -98,7 +98,7 @@ pub enum ConfigCommand {
     },
 }
 
-//TODO: Implement Lib and Dep
+//TODO: Implement Lib
 #[derive(Debug, Subcommand)]
 pub enum LibAction {
     /// Add a library file
@@ -111,10 +111,16 @@ pub enum LibAction {
 
 #[derive(Debug, Subcommand)]
 pub enum DepAction {
-    /// Add a new library file
-    Add,
-    /// Remove a library file
-    Remove,
-    /// List library files
+    /// Add a new package
+    Add {
+        /// Package name to add (e.g., "requests" or "serde=1.0")
+        package: String,
+    },
+    /// Remove a package
+    Remove {
+        /// Package name to remove
+        package: String,
+    },
+    /// List installed packages
     List,
 }

@@ -25,7 +25,7 @@ impl Solver for PythonRunner {
         //TODO: Activate env
 
         let output = std::process::Command::new("python")
-            .arg(self._get_path(&SolveFile::Main))
+            .arg(self.get_solvefile_path(&SolveFile::Main))
             .arg(input)
             .arg(output)
             .arg(part)
@@ -35,11 +35,11 @@ impl Solver for PythonRunner {
         Ok(output)
     }
 
-    fn ensure_files(&self) -> AocLanguageResult<()> {
+    fn setup_solver(&self) -> AocLanguageResult<()> {
         Ok(())
     }
 
-    fn _get_path(&self, file: &SolveFile) -> std::path::PathBuf {
+    fn get_solvefile_path(&self, file: &SolveFile) -> std::path::PathBuf {
         match file {
             SolveFile::Main => self.root_dir.join("main.py"),
             SolveFile::TemplateSolution => self.root_dir.join("template.py"),
@@ -139,4 +139,3 @@ if __name__ == "__main__":
         .to_string()
     }
 }
-
