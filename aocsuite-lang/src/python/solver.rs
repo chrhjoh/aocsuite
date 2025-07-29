@@ -22,9 +22,9 @@ impl Solver for PythonRunner {
         input: &std::path::Path,
         output: &std::path::Path,
     ) -> AocLanguageResult<std::process::Output> {
-        //TODO: Activate env
+        let python_path = self.get_python_path();
 
-        let output = std::process::Command::new("python")
+        let output = std::process::Command::new(python_path)
             .arg(self.get_solvefile_path(&SolveFile::Main))
             .arg(input)
             .arg(output)
