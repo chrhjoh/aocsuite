@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{collections::HashMap, process::Command};
 
 use crate::{arg_builder::ArgsBuilder, editor_types::EditorType, AocEditorError, AocEditorResult};
 
@@ -16,8 +16,17 @@ impl Editor {
             args_builder,
         })
     }
-    fn run(&self, args: Vec<String>) -> AocEditorResult<()> {
+    fn run(
+        &self,
+        args: Vec<String>,
+        env_vars: Option<HashMap<String, String>>,
+    ) -> AocEditorResult<()> {
         let mut command = Command::new(&self.program);
+        if let Some(vars) = env_vars {
+            for (key, val) in vars.iter() {
+                command.env(key, val);
+            }
+        }
         command.args(args);
 
         let status = command.status()?;
@@ -33,16 +42,21 @@ impl Editor {
         examplefile: &str,
         libfile: &str,
         inputfile: &str,
+        env_vars: Option<HashMap<String, String>>,
     ) -> AocEditorResult<()> {
         let args = self
             .args_builder
             .solution_command(puzzlefile, examplefile, libfile, inputfile);
-        self.run(args)?;
+        self.run(args, env_vars)?;
         Ok(())
     }
-    pub fn open(&self, file: &str) -> AocEditorResult<()> {
+    pub fn open(
+        &self,
+        file: &str,
+        env_vars: Option<HashMap<String, String>>,
+    ) -> AocEditorResult<()> {
         let args = vec![file.to_string()];
-        self.run(args)?;
+        self.run(args, env_vars)?;
         Ok(())
     }
 }

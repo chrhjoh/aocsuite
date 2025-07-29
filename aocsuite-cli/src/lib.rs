@@ -3,7 +3,7 @@ use aocsuite_config::AocConfigError;
 use aocsuite_editor::AocEditorError;
 use aocsuite_fs::AocFileError;
 use aocsuite_lang::AocLanguageError;
-use aocsuite_utils::PuzzleNotReleasedError;
+use aocsuite_utils::ReleaseError;
 use git::AocGitError;
 use thiserror::Error;
 mod app;
@@ -23,7 +23,7 @@ pub enum AocCliError {
     Language(#[from] AocLanguageError),
 
     #[error(transparent)]
-    Unreleased(#[from] PuzzleNotReleasedError),
+    Unreleased(#[from] ReleaseError),
 
     #[error(transparent)]
     Config(#[from] AocConfigError),

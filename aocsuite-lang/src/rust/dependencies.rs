@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{collections::HashMap, process::Command};
 
 use crate::{traits::DepManager, AocLanguageResult};
 
@@ -85,5 +85,8 @@ serde = { version = "1.0.219", features = ["derive"]}
         }
 
         Ok(())
+    }
+    fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<String, String>> {
+        Ok(HashMap::new())
     }
 }

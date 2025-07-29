@@ -54,8 +54,8 @@ pub fn download_file(page: &AocPage) -> AocClientResult<String> {
     Ok(response.text().map_err(|e| AocClientError::Http(e))?)
 }
 
-pub fn open_puzzle_page(day: PuzzleDay, year: PuzzleYear) -> AocClientResult<()> {
-    let url = AocPage::Puzzle(day, year).to_string();
+pub fn open_page(page: &AocPage) -> AocClientResult<()> {
+    let url = page.to_string();
 
     #[cfg(target_os = "macos")]
     let result = Command::new("open").arg(&url).status();
@@ -91,7 +91,7 @@ pub enum AocClientError {
     Http(#[from] reqwest::Error),
 
     #[error("UnreleasedError: {0}")]
-    Unreleased(#[from] aocsuite_utils::PuzzleNotReleasedError),
+    Unreleased(#[from] aocsuite_utils::ReleaseError),
 
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),

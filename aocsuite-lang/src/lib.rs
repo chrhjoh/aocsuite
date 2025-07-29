@@ -4,7 +4,10 @@ mod rust;
 mod traits;
 mod utils;
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use aocsuite_config::{get_config_val, ConfigOpt};
 use aocsuite_utils::{get_aocsuite_dir, PuzzleDay, PuzzleYear};
@@ -93,4 +96,11 @@ pub fn remove_package(package: &str, language: &Option<LanguageType>) -> AocLang
 pub fn list_packages(language: &Option<LanguageType>) -> AocLanguageResult<Vec<String>> {
     let runner = resolve_runner(language)?;
     runner.list_packages()
+}
+
+pub fn editor_enviroment_vars(
+    language: &Option<LanguageType>,
+) -> AocLanguageResult<HashMap<String, String>> {
+    let runner = resolve_runner(language)?;
+    runner.editor_environment_vars()
 }

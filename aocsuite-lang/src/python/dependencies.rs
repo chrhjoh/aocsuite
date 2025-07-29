@@ -1,5 +1,6 @@
 use crate::AocLanguageError;
 use crate::{traits::DepManager, AocLanguageResult};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -93,6 +94,17 @@ impl DepManager for PythonRunner {
         }
 
         Ok(())
+    }
+    fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<String, String>> {
+        let mut vars = HashMap::new();
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let new_path = format!(
+            "{}:{}",
+            self.get_python_path().parent().unwrap().to_string_lossy(),
+            current_path
+        );
+        vars.insert("PATH".to_string(), new_path);
+        return Ok(vars);
     }
 }
 

@@ -2,7 +2,7 @@ mod arg_builder;
 mod editor;
 mod editor_types;
 
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use aocsuite_config::{get_config_val, ConfigOpt};
 use editor::Editor;
@@ -44,6 +44,7 @@ pub fn open_solution_files(
     examplefile: &Path,
     libfile: &Path,
     inputfile: &Path,
+    env_vars: Option<HashMap<String, String>>,
 ) -> AocEditorResult<()> {
     let editor_type = resolve_editor_type()?;
     let editor = Editor::new(&editor_type)?;
@@ -52,12 +53,13 @@ pub fn open_solution_files(
         examplefile.to_str().unwrap(),
         libfile.to_str().unwrap(),
         inputfile.to_str().unwrap(),
+        env_vars,
     )?;
     Ok(())
 }
-pub fn open(file: &Path) -> AocEditorResult<()> {
+pub fn open(file: &Path, env_vars: Option<HashMap<String, String>>) -> AocEditorResult<()> {
     let editor_type = resolve_editor_type()?;
     let editor = Editor::new(&editor_type)?;
-    editor.open(file.to_str().unwrap())?;
+    editor.open(file.to_str().unwrap(), env_vars)?;
     Ok(())
 }

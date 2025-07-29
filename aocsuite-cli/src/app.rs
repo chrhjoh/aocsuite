@@ -5,11 +5,11 @@ use crate::{
     git::{get_gitignore_path, run_git_command},
     AocCliResult, AocCommand, ConfigCommand,
 };
-use aocsuite_client::{open_puzzle_page, post_answer};
+use aocsuite_client::{open_page, post_answer, AocPage};
 use aocsuite_config::{get_config_val, set_config_val};
 use aocsuite_editor::open_solution_files;
 use aocsuite_fs::{update_cache_status, AocContentFile};
-use aocsuite_lang::{compile, get_path, run, SolveFile};
+use aocsuite_lang::{compile, editor_enviroment_vars, get_path, run, SolveFile};
 use aocsuite_parser::{parse, parse_submission_result, ParserType};
 use aocsuite_utils::{valid_puzzle_release, valid_year_release, Exercise, PuzzleDay, PuzzleYear};
 
@@ -32,7 +32,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
 
         AocCommand::View => {
             valid_puzzle_release(day, year)?;
-            open_puzzle_page(day, year)?;
+            open_page(&AocPage::Puzzle(day, year))?;
         }
 
         AocCommand::Submit { part, answer } => {
@@ -72,12 +72,14 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                 &SolveFile::LinkedSolution(Box::new(SolveFile::Solution(day, year))),
                 &language,
             )?;
+            let env_vars = editor_enviroment_vars(&language)?;
 
             open_solution_files(
                 &AocContentFile::puzzle(day, year).to_path()?,
                 &AocContentFile::example(day, year).to_path()?,
                 &solve_path,
                 &AocContentFile::input(day, year).to_path()?,
+                Some(env_vars),
             )?;
         }
         AocCommand::Template { language, reset } => {
@@ -90,7 +92,8 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             }
             let edit_file = SolveFile::LinkedSolution(Box::new(SolveFile::TemplateSolution));
             let path = get_path(&edit_file, &language)?;
-            aocsuite_editor::open(&path)?;
+            let env_vars = editor_enviroment_vars(&language)?;
+            aocsuite_editor::open(&path, Some(env_vars))?;
         }
         AocCommand::Git { args } => {
             let output = run_git_command(&args)?;
@@ -100,7 +103,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
         }
         AocCommand::GitIgnore {} => {
             let path = get_gitignore_path()?;
-            aocsuite_editor::open(&path)?;
+            aocsuite_editor::open(&path, None)?;
         }
         AocCommand::Dep { action, language } => match action {
             DepAction::Add { package } => {
