@@ -4,9 +4,11 @@ use aocsuite_editor::AocEditorError;
 use aocsuite_fs::AocFileError;
 use aocsuite_lang::AocLanguageError;
 use aocsuite_utils::PuzzleNotReleasedError;
+use git::AocGitError;
 use thiserror::Error;
 mod app;
 mod commands;
+mod git;
 
 pub use app::run_aocsuite;
 
@@ -34,6 +36,9 @@ pub enum AocCliError {
 
     #[error(transparent)]
     File(#[from] AocFileError),
+
+    #[error(transparent)]
+    Git(#[from] AocGitError),
 }
 
 type AocCliResult<T> = Result<T, AocCliError>;

@@ -1,6 +1,9 @@
 use std::{io::Write, path::PathBuf};
 
-use crate::{AocCliResult, AocCommand, ConfigCommand};
+use crate::{
+    git::{get_gitignore_path, run_git_command},
+    AocCliResult, AocCommand, ConfigCommand,
+};
 use aocsuite_client::{open_puzzle_page, post_answer};
 use aocsuite_config::{get_config_val, set_config_val};
 use aocsuite_editor::open_solution_files;
@@ -86,6 +89,16 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             }
             let edit_file = SolveFile::LinkedSolution(Box::new(SolveFile::TemplateSolution));
             let path = get_path(&edit_file, &language)?;
+            aocsuite_editor::open(&path)?;
+        }
+        AocCommand::Git { args } => {
+            let output = run_git_command(&args)?;
+            if !output.is_empty() {
+                println!("{}", output);
+            }
+        }
+        AocCommand::GitIgnore {} => {
+            let path = get_gitignore_path()?;
             aocsuite_editor::open(&path)?;
         }
         _ => unimplemented!(),

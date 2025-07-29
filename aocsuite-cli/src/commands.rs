@@ -63,7 +63,8 @@ pub enum AocCommand {
         /// Puzzle answer. Will prompt if not specified
         answer: String,
     },
-
+    //TODO: implement leaderboard
+    //
     // /// Display Leaderboard
     // Leaderboard {
     //     /// Leaderboard ID for private leaderboard
@@ -74,6 +75,12 @@ pub enum AocCommand {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    Git {
+        /// Git arguments to pass through
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    GitIgnore,
     //TODO: Need a clean command
 }
 

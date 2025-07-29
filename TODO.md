@@ -12,7 +12,7 @@
 - [x] Move the actual running into temporary files inside .aocsuite (symlink lib file, both for running and editing).
 - [ ] Make a system that allows adding, editing, and removing (not template), lib and template files.
 - [ ] Dependencies for run environments (add and remove)
-- [ ] Add git support (create basic .gitignore to remove caches etc)
+- [x] Add git support (create basic .gitignore to remove caches etc)
 - [x] Move everything to $XDG_DATA_HOME dir. (needs to move languages in some way)
 - [x] config as prompt
 - [x] Add cache support into the runner if answer is correct.
