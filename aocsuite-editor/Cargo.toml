@@ -1,10 +1,10 @@
 [package]
 name = "aocsuite-editor"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
-aocsuite-config = { version = "0.2.0", path = "../aocsuite-config" }
+aocsuite-config = { version = "0.3.0", path = "../aocsuite-config" }
 clap = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 which = "8.0.0"

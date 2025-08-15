@@ -1,12 +1,12 @@
 [package]
 name = "aocsuite-fs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
-aocsuite-client = { version = "0.2.0", path = "../aocsuite-client" }
-aocsuite-parser = { version = "0.2.0", path = "../aocsuite-parser" }
-aocsuite-utils = { version = "0.2.0", path = "../aocsuite-utils" }
+aocsuite-client = { version = "0.3.0", path = "../aocsuite-client" }
+aocsuite-parser = { version = "0.3.0", path = "../aocsuite-parser" }
+aocsuite-utils = { version = "0.3.0", path = "../aocsuite-utils" }
 serde = { workspace = true, features = ["derive"]}
 serde_json.workspace = true
 thiserror.workspace = true

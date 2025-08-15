@@ -93,7 +93,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aocsuite-client",
  "aocsuite-config",
@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-client"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aocsuite-config",
  "aocsuite-utils",
@@ -119,7 +119,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-config"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aocsuite-utils",
  "clap",
@@ -130,7 +130,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-editor"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aocsuite-config",
  "clap",
@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-fs"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aocsuite-client",
  "aocsuite-parser",
@@ -152,7 +152,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-lang"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aocsuite-config",
  "aocsuite-utils",
@@ -164,7 +164,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-parser"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "colored",
  "html2md",
@@ -174,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-utils"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "chrono-tz",

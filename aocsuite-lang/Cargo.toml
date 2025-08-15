@@ -1,11 +1,11 @@
 [package]
 name = "aocsuite-lang"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
-aocsuite-config = { version = "0.2.0", path = "../aocsuite-config" }
-aocsuite-utils = { version = "0.2.0", path = "../aocsuite-utils" }
+aocsuite-config = { version = "0.3.0", path = "../aocsuite-config" }
+aocsuite-utils = { version = "0.3.0", path = "../aocsuite-utils" }
 clap = { workspace=true, features = ["derive"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

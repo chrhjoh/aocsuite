@@ -1,11 +1,11 @@
 [package]
 name = "aocsuite-client"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
-aocsuite-config = { version = "0.2.0", path = "../aocsuite-config" }
-aocsuite-utils = { version = "0.2.0", path = "../aocsuite-utils" }
+aocsuite-config = { version = "0.3.0", path = "../aocsuite-config" }
+aocsuite-utils = { version = "0.3.0", path = "../aocsuite-utils" }
 regex.workspace = true
 reqwest = { workspace = true, features = ["blocking"] }
 thiserror.workspace = true
