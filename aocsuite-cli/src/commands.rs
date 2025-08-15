@@ -49,7 +49,7 @@ pub enum AocCommand {
         /// Puzzle part
         part: Option<Exercise>,
 
-        /// Input file to use instead of AoC input. Provided example file can be used by supplying
+        /// Input file to use instead of AoC input. AocSuite Example file can be used by supplying
         /// --test with no arg
         #[arg(long, default_missing_value = "", num_args=0..=1)]
         test: Option<String>,

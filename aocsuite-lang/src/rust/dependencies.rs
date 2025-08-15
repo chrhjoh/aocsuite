@@ -1,6 +1,6 @@
 use std::{collections::HashMap, process::Command};
 
-use crate::{traits::DepManager, AocLanguageResult};
+use crate::{traits::DepManager, AocLanguageError, AocLanguageResult};
 
 use super::RustRunner;
 
@@ -76,6 +76,12 @@ serde = { version = "1.0.219", features = ["derive"]}
         Ok(packages)
     }
     fn remove_packages(&self, package: &str) -> AocLanguageResult<()> {
+        if vec!["serde", "serde_json"].contains(&package) {
+            return Err(AocLanguageError::DepRemove(
+                package.to_string(),
+                "Is required by AocSuite".to_string(),
+            ));
+        }
         let output = Command::new("cargo")
             .arg("remove")
             .arg(package)
