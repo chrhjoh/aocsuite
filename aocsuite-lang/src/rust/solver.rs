@@ -50,8 +50,11 @@ impl Solver for RustRunner {
         Ok(())
     }
     fn clean_cache(&self) -> AocLanguageResult<()> {
-        let target_dir = self.root_dir.join("targets");
-        std::fs::remove_dir_all(target_dir)?;
+        std::process::Command::new("cargo")
+            .arg("clean")
+            .current_dir(&self.root_dir)
+            .status()?;
+
         Ok(())
     }
 
