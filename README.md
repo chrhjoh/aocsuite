@@ -10,6 +10,15 @@ A set of libraries used to generate a command-line toolkit for Advent of Code (A
 - Open files in editor
 - Submit solutions directly from the command line
 
+### Language support
+
+Generally language implementations are made with the fewest tools possible for simplicity. However, few tools are required for each language
+
+- Python3
+  - pip
+- Rust
+  - cargo
+
 ## Installation
 
 ### From Source
@@ -67,12 +76,32 @@ To get your input and submit answers to Advent of Code website, you'll need your
 
 Most commands require day and year and can be specified as --day and --year
 
-- `aocsuite-cli new ` - Download and create exercise files
-- `aocsuite-cli download` - Download puzzle and input
+- `aocsuite-cli open ` - Will open the puzzle and a file for your soloutions. Also opens the input along with a file for potential examples
+- `aocsuite-cli run` - Run your solution on the AoC input. specify --test for your own examples
 - `aocsuite-cli submit --part PART ANSWER` - Submit an answer
-- `aocsuite-cli edit` - Open solution in editor
-- `aocsuite-cli run` - Run your solution with input.txt as input
-- `aocsuite-cli test <INPUT FILE>` - Run your solution with example.txt or specified input file
+
+### Dependencies
+
+All languages support simple adding, listing and removing of dependencies from external libraries. see `aocsuite-cli env`
+
+### Libraries and templates
+
+Local library code can be added via `aocsuite-cli lib`.
+
+After adding library you may want those to always be imported in your template.
+Use `aocsuite-cli template` to edit your template
+
+### Caches
+
+All data downloaded from Advent of code is cached locally to avoid multiple look ups and spare his servers. In case you want to remove these caches `aocsuite-cli clean cache` allows this.
+
+Some languages also caches large files during building of a program. These can be cleaned through `aocsuite-cli clean lang`
+
+### AoC interaction commands
+
+- `aocsuite-cli view` - Opens the puzzle of the day in the browser
+- `aocsuite-cli calendar` - Render your AoC calendar colored in the terminal
+- `aocsuite-cli leaderboard` - Opens the global leaderboard. Or a private if id is given.
 
 ### Configuration Commands
 
@@ -85,7 +114,7 @@ Configurations can also be managed through enviroment variables:
 - `AOC_LANGUAGE`
 - `AOC_YEAR`
 - `AOC_TEMPLATE_DIR`
-- `EDITOR`
+- `AOC_EDITOR`
 
 ### Git tracking
 
