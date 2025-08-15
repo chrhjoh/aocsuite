@@ -1,4 +1,4 @@
-# AOC Suite
+# AoC Suite
 
 A set of libraries used to generate a command-line toolkit for Advent of Code (AOC) that helps you manage solutions, download puzzles, submit answers, with (future) support for multiple programming languages.
 
