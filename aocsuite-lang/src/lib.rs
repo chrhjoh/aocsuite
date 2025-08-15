@@ -132,6 +132,11 @@ pub fn remove_lib_file(lib_name: &str, language: &Option<LanguageType>) -> AocLa
     Ok(())
 }
 
+pub fn language_name(language: &Option<LanguageType>) -> AocLanguageResult<String> {
+    let language = aocsuite_config::get_config_val(&ConfigOpt::Language, None, language.clone())?;
+    Ok(language.to_string())
+}
+
 pub fn list_lib_files(language: &Option<LanguageType>) -> AocLanguageResult<Vec<String>> {
     let runner = resolve_runner(language)?;
     let file_extention = runner.file_extention();
@@ -149,6 +154,14 @@ pub fn list_lib_files(language: &Option<LanguageType>) -> AocLanguageResult<Vec<
     Ok(filtered_files)
 }
 
+pub fn clean_cache(language: &Option<LanguageType>) -> AocLanguageResult<()> {
+    resolve_runner(language)?.clean_cache()
+}
+
+pub fn clean_env(language: &Option<LanguageType>) -> AocLanguageResult<()> {
+    resolve_runner(language)?.clean_env()
+}
+
 fn validate_user_lib(lib_name: &str, unallowed_names: &Vec<&str>) -> AocLanguageResult<()> {
     if lib_name.trim().is_empty() {
         return Err(AocLanguageError::LibInvalid(
@@ -158,10 +171,10 @@ fn validate_user_lib(lib_name: &str, unallowed_names: &Vec<&str>) -> AocLanguage
 
     if !lib_name
         .chars()
-        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        .all(|c| c.is_alphabetic() || c == '_' || c == '-')
     {
         return Err(AocLanguageError::LibInvalid(
-            "Library name can only contain letters, numbers, underscores, and hyphens".to_string(),
+            "Library name can only contain letters, underscores, and hyphens".to_string(),
         ));
     }
 

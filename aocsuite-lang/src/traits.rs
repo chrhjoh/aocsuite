@@ -26,6 +26,7 @@ pub trait Solver {
     fn setup_solver(&self) -> AocLanguageResult<()>;
     fn main_contents(&self) -> String;
     fn template_contents(&self) -> String;
+    fn clean_cache(&self) -> AocLanguageResult<()>;
 }
 
 pub trait LibManager {
@@ -41,4 +42,5 @@ pub trait DepManager {
     fn add_package(&self, package: &str) -> AocLanguageResult<()>;
     fn list_packages(&self) -> AocLanguageResult<Vec<String>>;
     fn remove_packages(&self, package: &str) -> AocLanguageResult<()>;
+    fn clean_env(&self) -> AocLanguageResult<()>;
 }

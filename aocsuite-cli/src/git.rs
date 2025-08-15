@@ -12,6 +12,9 @@ pub enum AocGitError {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error("Only clone in format `git clone my_git_repo` is supported")]
+    Clone,
 }
 
 pub type AocGitResult<T> = Result<T, AocGitError>;
@@ -48,21 +51,33 @@ __pycache__/
 }
 
 pub fn run_git_command(args: &[String]) -> AocGitResult<String> {
+    let aocsuite_dir = aocsuite_utils::get_aocsuite_dir();
+    ensure_gitignore_exists(&aocsuite_dir.join(".gitignore"))?;
+
     let output = if is_interactive_command(args) {
-        run_git_command_interactive(args)?
+        run_git_command_interactive(args, &aocsuite_dir)?
+    } else if is_simple_clone(args)? {
+        let mut clone_args = args.to_vec();
+        clone_args.push(
+            aocsuite_dir
+                .clone()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        );
+
+        run_git_command_capture(&clone_args, &aocsuite_dir.parent().expect("Is not root"))?
     } else {
-        run_git_command_capture(args)?
+        run_git_command_capture(args, &aocsuite_dir)?
     };
     return Ok(output);
 }
 
-fn run_git_command_capture(args: &[String]) -> AocGitResult<String> {
-    let aocsuite_dir = aocsuite_utils::get_aocsuite_dir();
-    ensure_gitignore_exists(&aocsuite_dir.join(".gitignore"))?;
-
+fn run_git_command_capture(args: &[String], dir: &Path) -> AocGitResult<String> {
     let output = std::process::Command::new("git")
         .args(args)
-        .current_dir(aocsuite_dir)
+        .current_dir(dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -85,13 +100,10 @@ fn run_git_command_capture(args: &[String]) -> AocGitResult<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-fn run_git_command_interactive(args: &[String]) -> AocGitResult<String> {
-    let aocsuite_dir = aocsuite_utils::get_aocsuite_dir();
-    ensure_gitignore_exists(&aocsuite_dir.join(".gitignore"))?;
-
+fn run_git_command_interactive(args: &[String], dir: &Path) -> AocGitResult<String> {
     std::process::Command::new("git")
         .args(args)
-        .current_dir(aocsuite_dir)
+        .current_dir(dir)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
@@ -130,4 +142,14 @@ fn is_interactive_command(args: &[String]) -> bool {
         "difftool" | "mergetool" => true,
         _ => false,
     }
+}
+
+fn is_simple_clone(args: &[String]) -> AocGitResult<bool> {
+    if args[0] != "clone" {
+        return Ok(false);
+    }
+    if args.len() != 2 {
+        return Err(AocGitError::Clone);
+    }
+    return Ok(true);
 }

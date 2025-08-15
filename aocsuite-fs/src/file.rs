@@ -8,7 +8,7 @@ use aocsuite_parser::{parse, AocSubmissionResult, ParserType};
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 use serde_json::{Map, Value};
 
-use crate::{AocContentDir, AocFileError, AocFileResult};
+use crate::{AocCacheDir, AocFileError, AocFileResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AocFileType {
@@ -77,7 +77,7 @@ impl AocContentFile {
         Ok(path)
     }
     fn _to_path(&self) -> PathBuf {
-        let dir = AocContentDir::new();
+        let dir = AocCacheDir::new();
         let filename = self.filename();
 
         match self.day {

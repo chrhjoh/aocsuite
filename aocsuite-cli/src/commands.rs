@@ -17,9 +17,9 @@ pub enum AocCommand {
         language: Option<LanguageType>,
     },
     /// Manage library files
-    Dep {
+    Env {
         #[command(subcommand)]
-        action: DepAction,
+        action: EnvAction,
 
         #[arg(long)]
         language: Option<LanguageType>,
@@ -73,14 +73,23 @@ pub enum AocCommand {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    /// Git command on the AoCSuite directory
     Git {
         /// Git arguments to pass through
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Edit gitignore file
     GitIgnore,
 
-    Clean,
+    /// Clean cached AoC files and language files
+    Clean {
+        #[command(subcommand)]
+        action: CleanAction,
+    },
+
+    /// Completely remove all files
+    Uninstall,
 }
 
 #[derive(Debug, Subcommand)]
@@ -107,14 +116,23 @@ pub enum LibAction {
     /// Remove a library file
     Remove {
         /// Library name (without file extention)
-        lib: String,
+        #[arg(required_unless_present = "all")]
+        lib: Option<String>,
+
+        /// Remove all lib files
+        #[arg(long, short, conflicts_with = "lib", required_unless_present = "lib")]
+        all: bool,
+
+        /// Force removal
+        #[arg(long, short)]
+        force: bool,
     },
     /// List library files
     List,
 }
 
 #[derive(Debug, Subcommand)]
-pub enum DepAction {
+pub enum EnvAction {
     /// Add a new package
     Add {
         /// Package name to add (e.g., "requests" or "serde=1.0")
@@ -127,4 +145,36 @@ pub enum DepAction {
     },
     /// List installed packages
     List,
+
+    /// Clean and reset dependencies
+    Clean {
+        /// Force removal of environment
+        #[arg(long, short)]
+        force: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CleanAction {
+    /// Clean cached AoC files (pages, inputs)
+    Cache {
+        /// Remove all cached files
+        #[arg(long, group = "target")]
+        all: bool,
+        /// Remove all cached files for specific year
+        #[arg(long, group = "target")]
+        year_all: bool,
+        /// Force removal without confirmation
+        #[arg(long, short)]
+        force: bool,
+    },
+    /// Clean language-related files (caches such as target dir in rust)
+    Lang {
+        /// Language to clean files for
+        #[arg(long)]
+        language: Option<LanguageType>,
+        /// Force removal without confirmation
+        #[arg(long, short)]
+        force: bool,
+    },
 }

@@ -49,6 +49,11 @@ impl Solver for RustRunner {
         }
         Ok(())
     }
+    fn clean_cache(&self) -> AocLanguageResult<()> {
+        let target_dir = self.root_dir.join("targets");
+        std::fs::remove_dir_all(target_dir)?;
+        Ok(())
+    }
 
     fn get_solvefile_path(&self, file: &SolveFile) -> std::path::PathBuf {
         match file {

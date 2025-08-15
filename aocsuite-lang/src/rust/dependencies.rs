@@ -38,6 +38,12 @@ serde = { version = "1.0.219", features = ["derive"]}
 
         Ok(())
     }
+    fn clean_env(&self) -> AocLanguageResult<()> {
+        let cargo_path = self.root_dir.join("Cargo.toml");
+        std::fs::remove_file(cargo_path)?;
+        Ok(())
+    }
+
     fn list_packages(&self) -> AocLanguageResult<Vec<String>> {
         let cargo_path = self.root_dir.join("Cargo.toml");
         if !cargo_path.exists() {

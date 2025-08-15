@@ -1,21 +1,21 @@
+use super::RustRunner;
+use crate::traits::LibManager;
 use std::path::PathBuf;
 
-use crate::traits::LibManager;
-
-use super::PythonRunner;
-
-impl LibManager for PythonRunner {
+impl LibManager for RustRunner {
     fn get_lib_path(&self, lib_name: &str) -> PathBuf {
-        self.root_dir
+        self.src_dir()
             .join(format!("{}.{}", lib_name, self.file_extention()))
     }
+
     fn lib_dir(&self) -> PathBuf {
-        self.root_dir.clone()
+        self.src_dir()
     }
     fn file_extention(&self) -> String {
-        "py".to_string()
+        "rs".to_string()
     }
+
     fn invalid_lib_names(&self) -> Vec<&str> {
-        vec!["main", "solution"]
+        return vec!["main", "solution", "template"];
     }
 }

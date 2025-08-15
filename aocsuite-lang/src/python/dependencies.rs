@@ -27,6 +27,10 @@ impl DepManager for PythonRunner {
 
         Ok(())
     }
+    fn clean_env(&self) -> AocLanguageResult<()> {
+        std::fs::remove_dir_all(self.root_dir.join("venv"))?;
+        Ok(())
+    }
 
     fn add_package(&self, package: &str) -> AocLanguageResult<()> {
         let pip_path = self.get_pip_path();

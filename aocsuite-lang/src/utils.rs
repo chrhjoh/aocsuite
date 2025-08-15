@@ -138,6 +138,9 @@ pub enum AocLanguageError {
 
     #[error("Lib name not valid: {0:?}")]
     LibInvalid(String),
+
+    #[error("clean error: {0:?}")]
+    Clean(String),
 }
 
 pub type AocLanguageResult<T> = Result<T, AocLanguageError>;

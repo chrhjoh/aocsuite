@@ -1,6 +1,7 @@
 use crate::{
     traits::Solver,
     utils::{AocLanguageResult, SolveFile},
+    AocLanguageError,
 };
 
 use super::PythonRunner;
@@ -33,6 +34,11 @@ impl Solver for PythonRunner {
             .output()?;
 
         Ok(output)
+    }
+    fn clean_cache(&self) -> AocLanguageResult<()> {
+        Err(AocLanguageError::Clean(
+            "Python language have no files to clean.".to_string(),
+        ))
     }
 
     fn setup_solver(&self) -> AocLanguageResult<()> {
