@@ -29,7 +29,7 @@ impl Solver for RustRunner {
             .root_dir
             .join("target")
             .join("release")
-            .join("aocsuite_solution_rust");
+            .join("aocsuite-solution-rust");
 
         let output = std::process::Command::new(&binary_path)
             .arg(input)
