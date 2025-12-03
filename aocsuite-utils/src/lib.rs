@@ -38,6 +38,9 @@ pub fn valid_puzzle_release(day: PuzzleDay, year: PuzzleYear) -> AocReleaseResul
     if day < 1 || day > 25 || year < 2015 {
         return Err(ReleaseError::Puzzle(day, year));
     }
+    if day > 12 && year == 2025 {
+        return Err(ReleaseError::Puzzle(day, year));
+    }
     let now_utc = Utc::now();
     let now_eastern = now_utc.with_timezone(&Eastern);
 
