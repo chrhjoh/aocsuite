@@ -34,8 +34,8 @@ The application assumes one AoC Suite process per runtime root. Do not add norma
 
 ## Phase 3: Language Execution And Workspaces
 
-1. Keep selected day/year activation before compile/run and creation of missing day sources from the template, for Rust and Python.
-2. Split pure path/list operations from explicit workspace, environment, compile, and run setup. No query or clean operation may create a virtual environment or compile project.
+1. Complete: selected day/year activation occurs before compile/run and missing day sources are created from the template for Rust and Python.
+2. Complete: pure path/list operations are split from explicit workspace, environment, compile, and run setup. Query and clean operations do not create a virtual environment or compile project.
 3. Generate Python `main.py` in fresh workspaces and correct generated Python placeholder behavior.
 4. Replace root-level `result.json` with a unique per-run temporary JSON path, atomically written and cleared after validated consumption. Initial TUI behavior waits for one background job; cancellation is deferred.
 5. Expose public structured run results and command diagnostics. Libraries must not print subprocess output directly.
