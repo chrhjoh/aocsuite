@@ -44,6 +44,7 @@ impl Solver for RustRunner {
     fn setup_solver(&self) -> AocLanguageResult<()> {
         // Need main always for editing files
         let main_path = self.get_solvefile_path(&SolveFile::Main);
+        std::fs::create_dir_all(main_path.parent().expect("main file is not root"))?;
         if !main_path.exists() {
             std::fs::write(&main_path, self.main_contents())?
         }

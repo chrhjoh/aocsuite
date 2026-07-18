@@ -15,6 +15,12 @@ pub enum SolveFile {
     TemplateSolution,
 }
 
+impl SolveFile {
+    pub fn linked_solution(day: PuzzleDay, year: PuzzleYear) -> Self {
+        Self::LinkedSolution(Box::new(Self::Solution(day, year)))
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct PartResult {
     answer: String,

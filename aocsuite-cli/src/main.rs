@@ -1,4 +1,4 @@
-use aocsuite_cli::{AocCliError, AocCommand, run_aocsuite};
+use aocsuite_cli::{run_aocsuite, AocCliError, AocCommand};
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 
 use clap::Parser;

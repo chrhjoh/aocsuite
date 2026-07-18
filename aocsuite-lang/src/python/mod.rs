@@ -1,6 +1,6 @@
-mod user_library;
-mod solver;
 mod dependencies;
+mod solver;
+mod user_library;
 use std::path::PathBuf;
 
 pub struct PythonRunner {

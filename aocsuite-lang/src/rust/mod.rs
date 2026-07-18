@@ -1,6 +1,6 @@
 mod dependencies;
-mod user_library;
 mod solver;
+mod user_library;
 use std::path::PathBuf;
 
 pub struct RustRunner {
@@ -9,9 +9,7 @@ pub struct RustRunner {
 
 impl RustRunner {
     pub fn new(root_dir: PathBuf) -> RustRunner {
-        let runner = RustRunner { root_dir };
-        std::fs::create_dir_all(runner.src_dir()).expect("is writeable");
-        runner
+        RustRunner { root_dir }
     }
     fn src_dir(&self) -> PathBuf {
         self.root_dir.join("src")

@@ -6,6 +6,7 @@ use super::RustRunner;
 
 impl DepManager for RustRunner {
     fn setup_env(&self) -> AocLanguageResult<()> {
+        std::fs::create_dir_all(&self.root_dir)?;
         let cargo_contents = r#"[package]
 name = "aocsuite-solution-rust"
 version = "0.1.0"

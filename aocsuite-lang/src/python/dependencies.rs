@@ -8,6 +8,7 @@ use super::PythonRunner;
 
 impl DepManager for PythonRunner {
     fn setup_env(&self) -> AocLanguageResult<()> {
+        std::fs::create_dir_all(&self.root_dir)?;
         let venv_path = self.root_dir.join("venv");
 
         if !venv_path.exists() {

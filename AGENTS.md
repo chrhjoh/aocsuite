@@ -21,7 +21,7 @@
 - Config precedence is explicit function override, then `<runtime-root>/config.json`, then `AOC_*` environment variable, then caller default. Rust does not load `.envrc` or dotenv files.
 - Never run or log `config get session`: it prints the raw AoC session token. Avoid live submission/download commands as verification.
 - CLI day/year defaults use the current US/Eastern calendar date, not the latest released puzzle; pass explicit values in behavior checks outside December.
-- `run` currently relies on the active `solution.rs`/`solution.py` symlink last selected by `open` or `template`; its day/year arguments do not select the solution. Do not let a TUI day selection execute a stale link.
+- `compile` and `run` activate the requested day/year solution before execution. Keep this selection behavior covered for both Rust and Python runners.
 - All language runs share `<runtime-root>/result.json`; concurrent runs can race and failed runs can leave stale results.
 - Destructive CLI prompts accept empty input as yes, and `uninstall` recursively removes the entire runtime root.
 

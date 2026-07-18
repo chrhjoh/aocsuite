@@ -28,7 +28,6 @@ impl ToString for LanguageType {
 impl LanguageType {
     pub fn to_runner(&self) -> AocLanguageResult<LanguageRunner> {
         let root_dir = get_aocsuite_dir().join(self.to_string());
-        std::fs::create_dir_all(&root_dir)?;
         let runner: LanguageRunner = match self {
             LanguageType::Rust => Box::new(RustRunner::new(root_dir)),
             LanguageType::Python => Box::new(PythonRunner::new(root_dir)),

@@ -6,10 +6,10 @@ use crate::{
     AocCliResult, AocCommand, ConfigCommand,
 };
 use aocsuite_client::{open_page, post_answer, AocPage};
-use aocsuite_config::{get_config_val, set_config_val };
+use aocsuite_config::{get_config_val, set_config_val};
 use aocsuite_editor::open_solution_files;
 use aocsuite_fs::{update_cache_status, AocContentFile};
-use aocsuite_lang::{compile, editor_enviroment_vars, get_path, run, SolveFile};
+use aocsuite_lang::{Language, SolveFile};
 use aocsuite_parser::{parse, parse_submission_result, ParserType};
 use aocsuite_utils::{
     get_aocsuite_dir, valid_puzzle_release, valid_year_release, Exercise, PuzzleDay, PuzzleYear,
@@ -63,18 +63,17 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                 None => AocContentFile::input(day, year).to_path()?,
             };
 
-            compile(day, year, &language)?;
-            let result = run(day, year, &part, path.as_ref(), &language)?;
+            let language = Language::resolve(&language)?;
+            language.compile(day, year)?;
+            let result = language.run(day, year, &part, path.as_ref())?;
             println!("{result}");
         }
 
         AocCommand::Open { language } => {
             valid_puzzle_release(day, year)?;
-            let solve_path = get_path(
-                &SolveFile::LinkedSolution(Box::new(SolveFile::Solution(day, year))),
-                &language,
-            )?;
-            let env_vars = editor_enviroment_vars(&language)?;
+            let language = Language::resolve(&language)?;
+            let solve_path = language.prepare_solvefile(&SolveFile::linked_solution(day, year))?;
+            let env_vars = language.editor_environment_vars()?;
 
             open_solution_files(
                 &AocContentFile::puzzle(day, year).to_path()?,
@@ -85,15 +84,16 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             )?;
         }
         AocCommand::Template { language, reset } => {
+            let language = Language::resolve(&language)?;
             if reset {
-                let template_path = get_path(&SolveFile::TemplateSolution, &language)?;
-                if user_confirm("Are you sure you want to delete template file? (Y/n):")?{
+                let template_path = language.prepare_solvefile(&SolveFile::TemplateSolution)?;
+                if user_confirm("Are you sure you want to delete template file? (Y/n):")? {
                     std::fs::remove_file(template_path)?;
                 }
             }
             let edit_file = SolveFile::LinkedSolution(Box::new(SolveFile::TemplateSolution));
-            let path = get_path(&edit_file, &language)?;
-            let env_vars = editor_enviroment_vars(&language)?;
+            let path = language.prepare_solvefile(&edit_file)?;
+            let env_vars = language.editor_environment_vars()?;
             aocsuite_editor::open(&path, Some(env_vars))?;
         }
         AocCommand::Git { args } => {
@@ -106,77 +106,87 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             let path = get_gitignore_path()?;
             aocsuite_editor::open(&path, None)?;
         }
-        AocCommand::Env { action, language } => match action {
-            EnvAction::Add { package } => {
-                aocsuite_lang::add_package(&package, &language)?;
-                println!("Added package: {}", package);
-            }
-            EnvAction::Remove { package } => {
-                aocsuite_lang::remove_package(&package, &language)?;
-                println!("Removed package: {}", package);
-            }
-            EnvAction::List => {
-                let packages = aocsuite_lang::list_packages(&language)?;
-                if packages.is_empty() {
-                    println!("No packages installed");
-                } else {
-                    println!("Installed packages:");
-                    for package in packages {
-                        println!("  {}", package);
+        AocCommand::Env { action, language } => {
+            let language = Language::resolve(&language)?;
+            match action {
+                EnvAction::Add { package } => {
+                    language.add_package(&package)?;
+                    println!("Added package: {}", package);
+                }
+                EnvAction::Remove { package } => {
+                    language.remove_package(&package)?;
+                    println!("Removed package: {}", package);
+                }
+                EnvAction::List => {
+                    let packages = language.list_packages()?;
+                    if packages.is_empty() {
+                        println!("No packages installed");
+                    } else {
+                        println!("Installed packages:");
+                        for package in packages {
+                            println!("  {}", package);
+                        }
+                    }
+                }
+                EnvAction::Clean { force } => {
+                    if user_confirm_or_force(
+                        "Are you sure you want to delete your current environment (Y/n): ",
+                        force,
+                    )? {
+                        language.clean_env()?;
                     }
                 }
             }
-            EnvAction::Clean {force} => {
-                if user_confirm_or_force("Are you sure you want to delete your current environment (Y/n): ", force)?{
-                aocsuite_lang::clean_env(&language)?;
-                }
-            }
-        },
-        AocCommand::Lib { action, language } => match action {
+        }
+        AocCommand::Lib { action, language } => {
+            let language = Language::resolve(&language)?;
+            match action {
             LibAction::Edit { lib } => {
-                let path = aocsuite_lang::get_lib_filepath(&lib, &language)?;
-                let env_vars = editor_enviroment_vars(&language)?;
+                let path = language.get_lib_filepath(&lib)?;
+                let env_vars = language.editor_environment_vars()?;
                 aocsuite_editor::open(&path, Some(env_vars))?;
             }
             LibAction::Remove { lib, all, force } => {
-            let language_name = aocsuite_lang::language_name(&language)?;
+                let language_name = language.name();
                 if all {
-                    let files = aocsuite_lang::list_lib_files(&language)?;
+                    let files = language.list_lib_files()?;
                     if files.len() == 0 {
                         println!("No library files found");
-                        return Ok(())
+                        return Ok(());
                     }
-                    if user_confirm_or_force(&format!(
+                    if user_confirm_or_force(
+                        &format!(
                             "Do you want to delete {} libary files for {} (Y/n) : ",
                             files.len(),
                             language_name
-                        ), force)?
-                    {
-                        for lib in files.iter(){
-                            aocsuite_lang::remove_lib_file(lib, &language)?
+                        ),
+                        force,
+                    )? {
+                        for lib in files.iter() {
+                            language.remove_lib_file(lib)?
                         }
                     }
                 } else {
                     let lib = lib.expect("Lib only none when all is false");
-                    let file = aocsuite_lang::get_lib_filepath(&lib, &language)?;
-                    if !file.exists(){
-                    println!("Library file {lib} was not found");
-                    return Ok(())
-
+                    let file = language.get_lib_filepath(&lib)?;
+                    if !file.exists() {
+                        println!("Library file {lib} was not found");
+                        return Ok(());
                     }
-                    if user_confirm_or_force(&format!(
+                    if user_confirm_or_force(
+                        &format!(
                             "Do you want to delete the library {} for {} (Y/n) : ",
-                            &lib,
-                            language_name
-                        ), force)?
-                    {
-                        aocsuite_lang::remove_lib_file(&lib, &language)?;
+                            &lib, language_name
+                        ),
+                        force,
+                    )? {
+                        language.remove_lib_file(&lib)?;
                         println!("Removed library: {} for {}", lib, language_name);
                     }
                 }
             }
             LibAction::List => {
-                let files = aocsuite_lang::list_lib_files(&language)?;
+                let files = language.list_lib_files()?;
                 if files.is_empty() {
                     println!("No library files found");
                 } else {
@@ -186,56 +196,60 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                     }
                 }
             }
-        },
+            }
+        }
         AocCommand::Leaderboard { id } => {
             valid_year_release(day, year)?;
             open_page(&AocPage::Leaderboard(year, id))?;
         }
 
-AocCommand::Clean { action } => match action {
-    CleanAction::Cache { all, year_all, force } => {
-        let clean_day: Option<PuzzleDay>;
-        let clean_year_opt: Option<PuzzleYear>;
-        let file_prompt: String;
-        
-        if all {
-            clean_day = None;
-            clean_year_opt = None;
-            file_prompt = "all cached AoC files".to_string()
-            
-        } else if year_all {
-            clean_day = None;
-            clean_year_opt = Some(year);
-            file_prompt = format!("all cached AoC files for {year}").to_string()
-        } else {
-            clean_day = Some(day);
-            clean_year_opt = Some(year);
-            file_prompt = format!("all cached AoC files for day {day} in {year}").to_string()
-        }
-        if 
+        AocCommand::Clean { action } => match action {
+            CleanAction::Cache {
+                all,
+                year_all,
+                force,
+            } => {
+                let clean_day: Option<PuzzleDay>;
+                let clean_year_opt: Option<PuzzleYear>;
+                let file_prompt: String;
+
+                if all {
+                    clean_day = None;
+                    clean_year_opt = None;
+                    file_prompt = "all cached AoC files".to_string()
+                } else if year_all {
+                    clean_day = None;
+                    clean_year_opt = Some(year);
+                    file_prompt = format!("all cached AoC files for {year}").to_string()
+                } else {
+                    clean_day = Some(day);
+                    clean_year_opt = Some(year);
+                    file_prompt =
+                        format!("all cached AoC files for day {day} in {year}").to_string()
+                }
+                if 
             user_confirm_or_force(&format!(
                 "Do you want to delete {file_prompt} (puzzles, inputs, examples and calendar) (Y/n) : ",
             ), force)?
         {
         aocsuite_fs::clean_cache(clean_year_opt, clean_day)?;
         }
-        
-    }
-    
-    CleanAction::Lang { language, force } => {
-        let language_name = aocsuite_lang::language_name(&language)?;
-        if user_confirm_or_force(&format!(
-                "Do you want to delete caches for {}  (Y/n) : ", language_name
-            ), force,
-            )?
-        {
-        aocsuite_lang::clean_cache(&language)?;
-        }
-        
-        
-        
-    }
-},
+            }
+
+            CleanAction::Lang { language, force } => {
+                let language = Language::resolve(&language)?;
+                let language_name = language.name();
+                if user_confirm_or_force(
+                    &format!(
+                        "Do you want to delete caches for {}  (Y/n) : ",
+                        language_name
+                    ),
+                    force,
+                )? {
+                    language.clean_cache()?;
+                }
+            }
+        },
 
         AocCommand::Uninstall => {
             let aocsuite_dir = get_aocsuite_dir();
@@ -264,10 +278,9 @@ fn user_confirm(prompt: &str) -> std::io::Result<bool> {
     Ok(trimmed.is_empty() || trimmed == "y" || trimmed == "yes")
 }
 
-fn user_confirm_or_force(prompt: &str, force:bool) -> std::io::Result<bool>{
-
+fn user_confirm_or_force(prompt: &str, force: bool) -> std::io::Result<bool> {
     if force {
-        return Ok(true)
+        return Ok(true);
     }
-    return user_confirm(prompt)
+    return user_confirm(prompt);
 }
