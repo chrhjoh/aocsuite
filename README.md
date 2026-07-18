@@ -1,27 +1,29 @@
 # AoC Suite
 
-A set of libraries used to generate a command-line toolkit for Advent of Code (AOC) that helps you manage solutions, download puzzles, submit answers, with (future) support for multiple programming languages.
+A a command-line tool and tui for Advent of Code (AOC) that helps you manage solutions, download puzzles, submit answers, with (future) support for multiple programming languages.
 
 ## Features
 
 - Download and caches puzzle descriptions and input data automatically
 - See your progress from the calendar
-- Templating for new days
-- Open files in editor
+- Templating system for premade exercise layouts
+- Library file support
+- Open files in your editor of choice
 - Submit solutions directly from the command line
+- interacts with git for managing solutions
 
 ### Language support
 
-Generally language implementations are made with the fewest tools possible for simplicity. However, few tools are required for each language
+Generally language implementations are made with the fewest tools possible for simplicity. However, few tools are required for each language to manage enviroments
 
-- Python3
-  - pip
-- Rust
-  - cargo
+- Python3 is managed via pip
+- Rust is managed through cargo
 
 ## Installation
 
 ### From Source
+
+Will be improved in the future. For now the cli can be installed via the cli
 
 ```bash
 git clone https://github.com/your-username/aocsuite.git
@@ -29,7 +31,7 @@ cd aocsuite
 cargo install --path aocsuite-cli
 ```
 
-## Quick Start
+## Quick Start CLI
 
 1. **Configure your session token**:
    Either by environment variables or set via the config command

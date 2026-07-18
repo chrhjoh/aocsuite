@@ -17,23 +17,10 @@
 - [x] config as prompt
 - [x] Add cache support into the runner if answer is correct.
 - [x] edit should take lib and template args
+- [ ] Create aocsuite-tui. A ratatui based tui that provides overview, allows opening of editor. Interact with git and interaction with submission
+- [ ] Document aocsuite-tui in README
+- [ ] improve error and result messages
+- [ ] Write some documentation.
+- [ ] Implement tests for all subpackages
 - [ ] Github release
 - [ ] Upload crates
-
-## Bug Fixes
-
-- [ ]
-
-## Refactoring
-
-- [x] aocsuite-packages: Move into -client, -editor, -lang, -config packages
-- [ ] improve error messages
-
-## Tests
-
-- [ ] Implement some tests
-
-## Documentation
-
-- [ ] Write some documentation.
-- [x] Create a README.md
