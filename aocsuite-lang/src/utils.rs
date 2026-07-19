@@ -67,6 +67,7 @@ impl fmt::Display for ExerciseOutput {
 }
 
 static RESULT_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static LINK_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub fn new_result_file_path(runs_dir: &Path) -> AocLanguageResult<PathBuf> {
     fs::create_dir_all(runs_dir)?;
@@ -127,19 +128,107 @@ pub fn handle_command_output(output: Output) -> AocLanguageResult<()> {
 pub fn symlink_file(from: &Path, to: &Path) -> AocLanguageResult<()> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::symlink;
-        let _ = std::fs::remove_file(to); // Best-effort remove
-        symlink(from, to)?;
+        symlink_file_with(from, to, |source, destination| {
+            std::os::unix::fs::symlink(source, destination)
+        })?;
     }
 
     #[cfg(windows)]
     {
-        use std::os::windows::fs::symlink_file;
-        let _ = std::fs::remove_file(to); // Best-effort remove
-        symlink_file(from, to)?;
+        symlink_file_with(from, to, |source, destination| {
+            std::os::windows::fs::symlink_file(source, destination)
+        })?;
     }
 
     Ok(())
+}
+
+fn symlink_file_with(
+    from: &Path,
+    to: &Path,
+    create_link: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
+) -> AocLanguageResult<()> {
+    let destination_exists = match fs::symlink_metadata(to) {
+        Ok(metadata) if metadata.file_type().is_symlink() => true,
+        Ok(_) => return Err(AocLanguageError::ActiveSolutionNotLink(to.to_path_buf())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+
+    let temporary_link = temporary_link_path(to)?;
+    create_link(from, &temporary_link)?;
+
+    if let Err(error) = replace_link(&temporary_link, to, destination_exists) {
+        let _ = fs::remove_file(&temporary_link);
+        return Err(error.into());
+    }
+
+    Ok(())
+}
+
+fn temporary_link_path(destination: &Path) -> std::io::Result<PathBuf> {
+    let parent = destination.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "active solution path has no parent directory",
+        )
+    })?;
+    let name = destination.file_name().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "active solution path has no file name",
+        )
+    })?;
+
+    for _ in 0..16 {
+        let sequence = LINK_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temporary = parent.join(format!(
+            ".{}-{}-{sequence}.tmp",
+            name.to_string_lossy(),
+            std::process::id()
+        ));
+        match fs::symlink_metadata(&temporary) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(temporary),
+            Ok(_) => continue,
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "could not allocate a temporary active solution link",
+    ))
+}
+
+#[cfg(unix)]
+fn replace_link(
+    temporary_link: &Path,
+    destination: &Path,
+    _destination_exists: bool,
+) -> std::io::Result<()> {
+    fs::rename(temporary_link, destination)
+}
+
+#[cfg(windows)]
+fn replace_link(
+    temporary_link: &Path,
+    destination: &Path,
+    destination_exists: bool,
+) -> std::io::Result<()> {
+    if !destination_exists {
+        return fs::rename(temporary_link, destination);
+    }
+
+    let backup_link = temporary_link_path(destination)?;
+    fs::rename(destination, &backup_link)?;
+
+    match fs::rename(temporary_link, destination) {
+        Ok(()) => fs::remove_file(backup_link),
+        Err(error) => {
+            let _ = fs::rename(&backup_link, destination);
+            Err(error)
+        }
+    }
 }
 #[derive(Error, Debug)]
 pub enum AocLanguageError {
@@ -167,6 +256,9 @@ pub enum AocLanguageError {
     #[error("cannot create symlink for language file variant: {0:?}")]
     InvalidSymlinkTarget(SolverFile),
 
+    #[error("refusing to replace a non-symlink active solution: {0}")]
+    ActiveSolutionNotLink(PathBuf),
+
     #[error("Editing not allowed for language file: {0:?}")]
     FileEditNotAllowed(SolverFile),
 
@@ -191,3 +283,70 @@ pub enum AocLanguageError {
 
 pub type AocLanguageResult<T> = Result<T, AocLanguageError>;
 pub type LanguageRunner = Box<dyn LanguageHandler>;
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs, io,
+        path::PathBuf,
+        process,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::{symlink_file, symlink_file_with, AocLanguageError};
+
+    fn test_root() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time is after the Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("aocsuite-links-{}-{unique}", process::id()))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_link_creation_preserves_the_active_solution() {
+        let root = test_root();
+        fs::create_dir_all(&root).expect("create test runtime");
+        let first_solution = root.join("first.rs");
+        let active_solution = root.join("solution.rs");
+        fs::write(&first_solution, "first solution").expect("write first solution");
+        symlink_file(&first_solution, &active_solution).expect("create active solution");
+
+        let result = symlink_file_with(&root.join("second.rs"), &active_solution, |_, _| {
+            Err(io::Error::new(io::ErrorKind::Other, "create link failed"))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read_to_string(&active_solution).expect("read preserved active solution"),
+            "first solution"
+        );
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn active_solution_does_not_replace_a_regular_file() {
+        let root = test_root();
+        fs::create_dir_all(&root).expect("create test runtime");
+        let source = root.join("source.rs");
+        let destination = root.join("solution.rs");
+        fs::write(&source, "source solution").expect("write source solution");
+        fs::write(&destination, "user file").expect("write user file");
+
+        let result = symlink_file(&source, &destination);
+
+        assert!(matches!(
+            result,
+            Err(AocLanguageError::ActiveSolutionNotLink(_))
+        ));
+        assert_eq!(
+            fs::read_to_string(&destination).expect("read preserved user file"),
+            "user file"
+        );
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+}
