@@ -1,4 +1,12 @@
-use std::{fmt, fs::File, io::BufReader, path::Path, process::Output};
+use std::{
+    fmt,
+    fs::{self, File},
+    io::BufReader,
+    path::{Path, PathBuf},
+    process::Output,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use aocsuite_config::AocConfigError;
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
@@ -58,11 +66,49 @@ impl fmt::Display for ExerciseOutput {
     }
 }
 
+static RESULT_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+pub fn new_result_file_path(runs_dir: &Path) -> AocLanguageResult<PathBuf> {
+    fs::create_dir_all(runs_dir)?;
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time is after the Unix epoch")
+        .as_nanos();
+
+    for _ in 0..16 {
+        let sequence = RESULT_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let path = runs_dir.join(format!(
+            "result-{}-{timestamp}-{sequence}.json",
+            std::process::id()
+        ));
+        if !path.exists() {
+            return Ok(path);
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "could not allocate a unique result file",
+    )
+    .into())
+}
+
+pub fn with_result_file<T>(
+    result_file: &Path,
+    operation: impl FnOnce(&Path) -> AocLanguageResult<T>,
+) -> AocLanguageResult<T> {
+    let result = operation(result_file);
+    match fs::remove_file(result_file) {
+        Ok(()) => result,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => result,
+        Err(error) => result.and(Err(error.into())),
+    }
+}
+
 pub fn read_result(result_file: &Path) -> AocLanguageResult<ExerciseOutput> {
     let reader = BufReader::new(File::open(result_file)?);
-    let result = serde_json::from_reader(reader)?;
-    std::fs::remove_file(result_file)?;
-    Ok(result)
+    Ok(serde_json::from_reader(reader)?)
 }
 
 pub fn handle_command_output(output: Output) -> AocLanguageResult<()> {

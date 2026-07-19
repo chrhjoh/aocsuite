@@ -172,10 +172,17 @@ where
         }
     }
 
-    // Write output to file
+    // Publish a complete result so readers never observe a partial JSON document.
     let json_string = serde_json::to_string_pretty(&output).expect("Failed to serialize JSON");
-    if let Err(e) = fs::write(output_file, json_string) {
+    let output_path = Path::new(output_file);
+    let temporary_output_file = output_path.with_extension("tmp");
+    if let Err(e) = fs::write(&temporary_output_file, json_string) {
         eprintln!("Failed to write output file '{}': {}", output_file, e);
+        process::exit(1);
+    }
+    if let Err(e) = fs::rename(&temporary_output_file, output_path) {
+        let _ = fs::remove_file(&temporary_output_file);
+        eprintln!("Failed to publish output file '{}': {}", output_file, e);
         process::exit(1);
     }
 }

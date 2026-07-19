@@ -78,6 +78,7 @@ def part2(input: str) -> str:
     fn main_contents(&self) -> String {
         r#"import sys
 import json
+import os
 import time
 from pathlib import Path
 
@@ -136,10 +137,12 @@ def main():
         output["part1"] = run_part(part1, input_data)
         output["part2"] = run_part(part2, input_data)
     
-    # Write output to file
+    # Publish a complete result so readers never observe a partial JSON document.
     try:
-        with open(output_file, 'w') as f:
+        temporary_output_path = output_path.with_suffix('.tmp')
+        with open(temporary_output_path, 'w') as f:
             json.dump(output, f, indent=2)
+        os.replace(temporary_output_path, output_path)
     except IOError as e:
         print(f"Failed to write output file '{output_file}': {e}", file=sys.stderr)
         sys.exit(1)

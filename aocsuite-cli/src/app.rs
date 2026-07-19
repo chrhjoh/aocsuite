@@ -91,6 +91,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                     std::fs::remove_file(template_path)?;
                 }
             }
+            // Ensure the template exists before opening it; recreate it after a confirmed reset.
             let path = language.prepare_solver_file(&SolverFile::SolutionTemplate)?;
             let env_vars = language.editor_environment_vars()?;
             aocsuite_editor::open(&path, Some(env_vars))?;

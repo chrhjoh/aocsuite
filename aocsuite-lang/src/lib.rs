@@ -12,7 +12,10 @@ use std::{
 use aocsuite_config::{get_config_val, ConfigOpt};
 use aocsuite_utils::{get_aocsuite_dir, PuzzleDay, PuzzleYear};
 pub use languages::LanguageType;
-use utils::{handle_command_output, read_result, ExerciseOutput, LanguageRunner};
+use utils::{
+    handle_command_output, new_result_file_path, read_result, with_result_file, ExerciseOutput,
+    LanguageRunner,
+};
 pub use utils::{AocLanguageError, AocLanguageResult, SolverFile};
 
 pub struct Language {
@@ -37,10 +40,12 @@ impl Language {
         input: &Path,
     ) -> AocLanguageResult<ExerciseOutput> {
         self.setup_solution(day, year)?;
-        let output_file = get_aocsuite_dir().join("result.json");
-        let output = self.runner.run(day, year, part, input, &output_file)?;
-        handle_command_output(output)?;
-        read_result(&output_file)
+        let output_file = new_result_file_path(&get_aocsuite_dir().join("runs"))?;
+        with_result_file(&output_file, |output_file| {
+            let output = self.runner.run(day, year, part, input, output_file)?;
+            handle_command_output(output)?;
+            read_result(output_file)
+        })
     }
 
     pub fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<()> {
@@ -192,7 +197,8 @@ mod tests {
         python::PythonRunner,
         rust::RustRunner,
         traits::{LanguageHandler, Solver},
-        SolverFile,
+        utils::{new_result_file_path, read_result, with_result_file},
+        AocLanguageError, SolverFile,
     };
 
     fn test_root(language: &str) -> PathBuf {
@@ -292,6 +298,46 @@ mod tests {
 
         assert!(contents.contains("Input length: {len(input)}"));
         assert!(!contents.contains("Input length: {{len(input)}}"));
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn result_files_are_unique_and_cleaned_after_failures() {
+        let root = test_root("results");
+        let runs_dir = root.join("runs");
+        fs::create_dir_all(&runs_dir).expect("create runs directory");
+        let stale_result = root.join("result.json");
+        fs::write(&stale_result, "stale result").expect("write stale legacy result");
+
+        let malformed_result = new_result_file_path(&runs_dir).expect("allocate result path");
+        assert_ne!(malformed_result, stale_result);
+        assert!(!malformed_result.exists());
+        fs::write(&malformed_result, "not JSON").expect("write malformed result");
+        assert!(with_result_file(&malformed_result, read_result).is_err());
+        assert!(!malformed_result.exists());
+        assert!(stale_result.exists());
+
+        let failed_result = new_result_file_path(&runs_dir).expect("allocate result path");
+        fs::write(&failed_result, "partial result").expect("write partial result");
+        let failure: crate::AocLanguageResult<()> = with_result_file(&failed_result, |_| {
+            Err(AocLanguageError::Command("solver failed".to_string()))
+        });
+        assert!(failure.is_err());
+        assert!(!failed_result.exists());
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn generated_harnesses_publish_results_atomically() {
+        let root = test_root("atomic-harnesses");
+        fs::create_dir_all(&root).expect("create test runtime");
+        let rust = RustRunner::new(root.clone());
+        let python = PythonRunner::new(root.clone());
+
+        assert!(rust.main_contents().contains("fs::rename"));
+        assert!(python.main_contents().contains("os.replace"));
 
         fs::remove_dir_all(root).expect("remove test runtime");
     }
