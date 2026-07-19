@@ -32,3 +32,10 @@
 - Focused crate/test: `cargo test -p <crate> [test-filter]`; focused compile: `cargo check -p <crate>`.
 - CLI smoke test: `cargo run -p aocsuite-cli -- --help`.
 - There is no CI or repository lint/format configuration. The current baseline already fails `cargo fmt --all -- --check` in `aocsuite-cli/src/app.rs` and strict Clippy in `aocsuite-utils`; do not fold unrelated cleanup into TUI work.
+
+## Commits
+
+- Do not commit unless explicitly requested.
+- Use Conventional Commits.
+- Keep commits focused on one logical change.
+- Never amend or force-push without explicit permission.
