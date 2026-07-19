@@ -9,7 +9,7 @@ use aocsuite_client::{open_page, post_answer, AocPage};
 use aocsuite_config::{get_config_val, set_config_val};
 use aocsuite_editor::open_solution_files;
 use aocsuite_fs::{update_cache_status, AocContentFile};
-use aocsuite_lang::{Language, SolveFile};
+use aocsuite_lang::{Language, SolverFile};
 use aocsuite_parser::{parse, parse_submission_result, ParserType};
 use aocsuite_utils::{
     get_aocsuite_dir, valid_puzzle_release, valid_year_release, Exercise, PuzzleDay, PuzzleYear,
@@ -72,7 +72,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
         AocCommand::Open { language } => {
             valid_puzzle_release(day, year)?;
             let language = Language::resolve(&language)?;
-            let solve_path = language.prepare_solvefile(&SolveFile::linked_solution(day, year))?;
+            let solve_path = language.prepare_solver_file(&SolverFile::ActiveSolution(day, year))?;
             let env_vars = language.editor_environment_vars()?;
 
             open_solution_files(
@@ -86,13 +86,12 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
         AocCommand::Template { language, reset } => {
             let language = Language::resolve(&language)?;
             if reset {
-                let template_path = language.prepare_solvefile(&SolveFile::TemplateSolution)?;
+                let template_path = language.prepare_solver_file(&SolverFile::SolutionTemplate)?;
                 if user_confirm("Are you sure you want to delete template file? (Y/n):")? {
                     std::fs::remove_file(template_path)?;
                 }
             }
-            let edit_file = SolveFile::LinkedSolution(Box::new(SolveFile::TemplateSolution));
-            let path = language.prepare_solvefile(&edit_file)?;
+            let path = language.prepare_solver_file(&SolverFile::SolutionTemplate)?;
             let env_vars = language.editor_environment_vars()?;
             aocsuite_editor::open(&path, Some(env_vars))?;
         }

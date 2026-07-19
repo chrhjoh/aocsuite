@@ -6,7 +6,7 @@ use std::{
 
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 
-use crate::utils::{symlink_file, AocLanguageResult, SolveFile};
+use crate::utils::{symlink_file, AocLanguageResult, SolverFile};
 
 pub trait LanguageHandler: Solver + DepManager + LibManager {}
 impl<T> LanguageHandler for T where T: Solver + DepManager + LibManager {}
@@ -22,36 +22,37 @@ pub trait Solver {
         output: &std::path::Path,
     ) -> AocLanguageResult<Output>;
 
-    fn get_solvefile_path(&self, file: &SolveFile) -> PathBuf;
+    fn solver_file_path(&self, file: &SolverFile) -> PathBuf;
     fn setup_solver(&self) -> AocLanguageResult<()>;
     fn main_contents(&self) -> String;
     fn template_contents(&self) -> String;
     fn clean_cache(&self) -> AocLanguageResult<()>;
 
-    fn ensure_solvefile(&self, file: &SolveFile) -> AocLanguageResult<PathBuf> {
-        let path = self.get_solvefile_path(file);
+    fn ensure_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
+        let path = self.solver_file_path(file);
         match file {
-            SolveFile::Solution(_, _) => {
+            SolverFile::PuzzleSolution(_, _) => {
                 if !path.exists() {
                     std::fs::create_dir_all(path.parent().expect("solve file is not root"))?;
-                    let template_path = self.ensure_solvefile(&SolveFile::TemplateSolution)?;
+                    let template_path = self.ensure_solver_file(&SolverFile::SolutionTemplate)?;
                     std::fs::copy(template_path, &path)?;
                 }
             }
-            SolveFile::Main => {
+            SolverFile::Entrypoint => {
                 if !path.exists() {
                     std::fs::create_dir_all(path.parent().expect("solve file is not root"))?;
                     std::fs::write(&path, self.main_contents())?;
                 }
             }
-            SolveFile::TemplateSolution => {
+            SolverFile::SolutionTemplate => {
                 if !path.exists() {
                     std::fs::create_dir_all(path.parent().expect("solve file is not root"))?;
                     std::fs::write(&path, self.template_contents())?;
                 }
             }
-            SolveFile::LinkedSolution(linked_file) => {
-                let linked_path = self.ensure_solvefile(linked_file)?;
+            SolverFile::ActiveSolution(day, year) => {
+                let linked_path =
+                    self.ensure_solver_file(&SolverFile::PuzzleSolution(*day, *year))?;
                 std::fs::create_dir_all(path.parent().expect("solve file is not root"))?;
                 symlink_file(&linked_path, &path)?;
             }

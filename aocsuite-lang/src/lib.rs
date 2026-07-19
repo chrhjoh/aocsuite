@@ -13,7 +13,7 @@ use aocsuite_config::{get_config_val, ConfigOpt};
 use aocsuite_utils::{get_aocsuite_dir, PuzzleDay, PuzzleYear};
 pub use languages::LanguageType;
 use utils::{handle_command_output, read_result, ExerciseOutput, LanguageRunner};
-pub use utils::{AocLanguageError, AocLanguageResult, SolveFile};
+pub use utils::{AocLanguageError, AocLanguageResult, SolverFile};
 
 pub struct Language {
     name: String,
@@ -51,9 +51,9 @@ impl Language {
         }
     }
 
-    pub fn prepare_solvefile(&self, file: &SolveFile) -> AocLanguageResult<PathBuf> {
+    pub fn prepare_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
         self.runner.setup_solver()?;
-        self.runner.ensure_solvefile(file)
+        self.runner.ensure_solver_file(file)
     }
 
     pub fn add_package(&self, package: &str) -> AocLanguageResult<()> {
@@ -122,7 +122,7 @@ impl Language {
     fn setup_solution(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<()> {
         self.runner.setup_solver()?;
         self.runner
-            .ensure_solvefile(&SolveFile::linked_solution(day, year))?;
+            .ensure_solver_file(&SolverFile::ActiveSolution(day, year))?;
         self.runner.setup_env()
     }
 }
@@ -188,7 +188,12 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use crate::{python::PythonRunner, rust::RustRunner, traits::LanguageHandler, SolveFile};
+    use crate::{
+        python::PythonRunner,
+        rust::RustRunner,
+        traits::{LanguageHandler, Solver},
+        SolverFile,
+    };
 
     fn test_root(language: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -203,25 +208,25 @@ mod tests {
 
     fn assert_requested_solution_is_active(runner: &dyn LanguageHandler) {
         let first_solution = runner
-            .ensure_solvefile(&SolveFile::Solution(1, 2024))
+            .ensure_solver_file(&SolverFile::PuzzleSolution(1, 2024))
             .expect("create first solution");
         fs::write(&first_solution, "first solution").expect("write first solution");
         runner
-            .ensure_solvefile(&SolveFile::linked_solution(1, 2024))
+            .ensure_solver_file(&SolverFile::ActiveSolution(1, 2024))
             .expect("activate first solution");
 
-        let active_solution = runner.get_solvefile_path(&SolveFile::linked_solution(1, 2024));
+        let active_solution = runner.solver_file_path(&SolverFile::ActiveSolution(1, 2024));
         assert_eq!(
             fs::read_to_string(&active_solution).expect("read active first solution"),
             "first solution"
         );
 
         let second_solution = runner
-            .ensure_solvefile(&SolveFile::Solution(2, 2024))
+            .ensure_solver_file(&SolverFile::PuzzleSolution(2, 2024))
             .expect("create second solution");
         fs::write(&second_solution, "second solution").expect("write second solution");
         runner
-            .ensure_solvefile(&SolveFile::linked_solution(2, 2024))
+            .ensure_solver_file(&SolverFile::ActiveSolution(2, 2024))
             .expect("activate second solution");
 
         assert_eq!(
@@ -247,6 +252,46 @@ mod tests {
         let runner = PythonRunner::new(root.clone());
 
         assert_requested_solution_is_active(&runner);
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn python_setup_creates_main_without_overwriting_it() {
+        let root = test_root("python-main");
+        let runner = PythonRunner::new(root.clone());
+        let main_path = runner.solver_file_path(&SolverFile::Entrypoint);
+
+        runner.setup_solver().expect("set up fresh Python solver");
+        assert_eq!(
+            fs::read_to_string(&main_path).expect("read generated Python main"),
+            runner.main_contents()
+        );
+
+        fs::write(&main_path, "custom main").expect("replace generated Python main");
+        runner
+            .setup_solver()
+            .expect("set up existing Python solver");
+        assert_eq!(
+            fs::read_to_string(&main_path).expect("read preserved Python main"),
+            "custom main"
+        );
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn python_solution_template_interpolates_input_length() {
+        let root = test_root("python-template");
+        let runner = PythonRunner::new(root.clone());
+
+        let solution = runner
+            .ensure_solver_file(&SolverFile::PuzzleSolution(1, 2024))
+            .expect("create Python solution from template");
+        let contents = fs::read_to_string(solution).expect("read generated Python solution");
+
+        assert!(contents.contains("Input length: {len(input)}"));
+        assert!(!contents.contains("Input length: {{len(input)}}"));
 
         fs::remove_dir_all(root).expect("remove test runtime");
     }

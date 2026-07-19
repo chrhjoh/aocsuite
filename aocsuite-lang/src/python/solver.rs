@@ -1,6 +1,6 @@
 use crate::{
     traits::Solver,
-    utils::{AocLanguageResult, SolveFile},
+    utils::{AocLanguageResult, SolverFile},
     AocLanguageError,
 };
 
@@ -26,7 +26,7 @@ impl Solver for PythonRunner {
         let python_path = self.get_python_path();
 
         let output = std::process::Command::new(python_path)
-            .arg(self.get_solvefile_path(&SolveFile::Main))
+            .arg(self.solver_file_path(&SolverFile::Entrypoint))
             .arg(input)
             .arg(output)
             .arg(part)
@@ -42,15 +42,20 @@ impl Solver for PythonRunner {
     }
 
     fn setup_solver(&self) -> AocLanguageResult<()> {
+        let main_path = self.solver_file_path(&SolverFile::Entrypoint);
+        std::fs::create_dir_all(main_path.parent().expect("main file is not root"))?;
+        if !main_path.exists() {
+            std::fs::write(main_path, self.main_contents())?;
+        }
         Ok(())
     }
 
-    fn get_solvefile_path(&self, file: &SolveFile) -> std::path::PathBuf {
+    fn solver_file_path(&self, file: &SolverFile) -> std::path::PathBuf {
         match file {
-            SolveFile::Main => self.root_dir.join("main.py"),
-            SolveFile::TemplateSolution => self.root_dir.join("template.py"),
-            SolveFile::LinkedSolution(_) => self.root_dir.join("solution.py"),
-            SolveFile::Solution(day, year) => self
+            SolverFile::Entrypoint => self.root_dir.join("main.py"),
+            SolverFile::SolutionTemplate => self.root_dir.join("template.py"),
+            SolverFile::ActiveSolution(_, _) => self.root_dir.join("solution.py"),
+            SolverFile::PuzzleSolution(day, year) => self
                 .root_dir
                 .join(format!("year{year}"))
                 .join(format!("day{day}.py")),
@@ -61,11 +66,11 @@ impl Solver for PythonRunner {
 
 def part1(input: str) -> str:
     # Replace this stub with actual implementation
-    return f"Part 1 not implemented yet. Input length: {{len(input)}}"
+    return f"Part 1 not implemented yet. Input length: {len(input)}"
 
 def part2(input: str) -> str:
     # Replace this stub with actual implementation
-    return f"Part 2 not implemented yet. Input length: {{len(input)}}"
+    return f"Part 2 not implemented yet. Input length: {len(input)}"
 
 "#
         .to_string()

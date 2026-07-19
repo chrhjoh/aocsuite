@@ -1,5 +1,5 @@
 use crate::traits::Solver;
-use crate::utils::{AocLanguageResult, SolveFile};
+use crate::utils::{AocLanguageResult, SolverFile};
 
 use super::RustRunner;
 
@@ -43,7 +43,7 @@ impl Solver for RustRunner {
 
     fn setup_solver(&self) -> AocLanguageResult<()> {
         // Need main always for editing files
-        let main_path = self.get_solvefile_path(&SolveFile::Main);
+        let main_path = self.solver_file_path(&SolverFile::Entrypoint);
         std::fs::create_dir_all(main_path.parent().expect("main file is not root"))?;
         if !main_path.exists() {
             std::fs::write(&main_path, self.main_contents())?
@@ -59,12 +59,12 @@ impl Solver for RustRunner {
         Ok(())
     }
 
-    fn get_solvefile_path(&self, file: &SolveFile) -> std::path::PathBuf {
+    fn solver_file_path(&self, file: &SolverFile) -> std::path::PathBuf {
         match file {
-            SolveFile::Main => self.src_dir().join("main.rs"),
-            SolveFile::TemplateSolution => self.root_dir.join("template.rs"),
-            SolveFile::LinkedSolution(_) => self.src_dir().join("solution.rs"),
-            SolveFile::Solution(day, year) => self
+            SolverFile::Entrypoint => self.src_dir().join("main.rs"),
+            SolverFile::SolutionTemplate => self.root_dir.join("template.rs"),
+            SolverFile::ActiveSolution(_, _) => self.src_dir().join("solution.rs"),
+            SolverFile::PuzzleSolution(day, year) => self
                 .root_dir
                 .join(format!("year{year}"))
                 .join(format!("day{day}.rs")),

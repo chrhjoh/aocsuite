@@ -8,17 +8,11 @@ use thiserror::Error;
 use crate::traits::LanguageHandler;
 
 #[derive(Debug, Clone)]
-pub enum SolveFile {
-    Solution(PuzzleDay, PuzzleYear),
-    Main,
-    LinkedSolution(Box<SolveFile>),
-    TemplateSolution,
-}
-
-impl SolveFile {
-    pub fn linked_solution(day: PuzzleDay, year: PuzzleYear) -> Self {
-        Self::LinkedSolution(Box::new(Self::Solution(day, year)))
-    }
+pub enum SolverFile {
+    PuzzleSolution(PuzzleDay, PuzzleYear),
+    Entrypoint,
+    ActiveSolution(PuzzleDay, PuzzleYear),
+    SolutionTemplate,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -125,13 +119,13 @@ pub enum AocLanguageError {
     Config(#[from] AocConfigError),
 
     #[error("cannot create symlink for language file variant: {0:?}")]
-    InvalidSymlinkTarget(SolveFile),
+    InvalidSymlinkTarget(SolverFile),
 
     #[error("Editing not allowed for language file: {0:?}")]
-    FileEditNotAllowed(SolveFile),
+    FileEditNotAllowed(SolverFile),
 
     #[error("file not found: {0:?}")]
-    FileNotFound(SolveFile),
+    FileNotFound(SolverFile),
 
     #[error("environment error: {0:?}")]
     Env(String),
