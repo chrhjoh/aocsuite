@@ -126,7 +126,7 @@ fn fetch_aocfile(file: &AocContentFile) -> AocFileResult<()> {
     }
 
     file.save(&content)?;
-    file.set_cache_status(true);
+    update_cache(&file._to_path(), true);
     Ok(())
 }
 
@@ -214,5 +214,34 @@ pub fn update_cache_status(
             let puzzle_file = AocContentFile::puzzle(day, year);
             puzzle_file.set_cache_status(false);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::{is_cache_valid, update_cache};
+
+    #[test]
+    fn fetched_input_is_cache_valid() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "aocsuite-fs-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time before Unix epoch")
+                .as_nanos()
+        ));
+        let input_path = temp_dir.join("input.txt");
+        fs::create_dir_all(&temp_dir).expect("create test cache directory");
+        fs::write(&input_path, "cached input").expect("write input cache");
+
+        update_cache(&input_path, true);
+
+        assert!(is_cache_valid(&input_path));
+        fs::remove_dir_all(temp_dir).expect("remove test cache directory");
     }
 }
