@@ -19,18 +19,21 @@ pub enum AocPage {
 
 impl ToString for AocPage {
     fn to_string(&self) -> String {
+        self.url(BASE_URL)
+    }
+}
+
+impl AocPage {
+    fn url(&self, base_url: &str) -> String {
+        let base_url = base_url.trim_end_matches('/');
         match self {
-            AocPage::Puzzle(day, year) => format!("{}/{}/day/{}", BASE_URL, year, day),
-            AocPage::Input(day, year) => {
-                format!("{}/{}/day/{}/input", BASE_URL, year, day)
-            }
-            AocPage::Submit(day, year) => {
-                format!("{}/{}/day/{}/answer", BASE_URL, year, day)
-            }
-            AocPage::Calendar(year) => format!("{}/{}", BASE_URL, year),
+            AocPage::Puzzle(day, year) => format!("{base_url}/{year}/day/{day}"),
+            AocPage::Input(day, year) => format!("{base_url}/{year}/day/{day}/input"),
+            AocPage::Submit(day, year) => format!("{base_url}/{year}/day/{day}/answer"),
+            AocPage::Calendar(year) => format!("{base_url}/{year}"),
             AocPage::Leaderboard(year, id) => match id {
-                Some(id) => format!("{}/{}/leaderboard/private/view/{}", BASE_URL, year, id),
-                None => format!("{}/{}/leaderboard", BASE_URL, year),
+                Some(id) => format!("{base_url}/{year}/leaderboard/private/view/{id}"),
+                None => format!("{base_url}/{year}/leaderboard"),
             },
         }
     }
@@ -46,22 +49,22 @@ fn build_http_client_with_session(session: &str) -> AocClientResult<Client> {
     let session_header = format!("session={session}")
         .parse::<HeaderValue>()
         .map_err(|error| AocClientError::Session(error.to_string()))?;
-    headers.insert(
-        COOKIE,
-        session_header,
-    );
+    headers.insert(COOKIE, session_header);
     let client = Client::builder().default_headers(headers).build()?;
     Ok(client)
 }
 
 pub fn download_file(page: &AocPage) -> AocClientResult<String> {
     let client = build_http_client()?;
-    let response: Response = client
-        .get(&page.to_string())
+    download_file_from(page, &client, BASE_URL)
+}
+
+fn download_file_from(page: &AocPage, client: &Client, base_url: &str) -> AocClientResult<String> {
+    let response = client
+        .get(page.url(base_url))
         .send()
         .map_err(|e| AocClientError::Http(e))?;
-    //TODO: use the text to improve error handling from the response
-    Ok(response.text().map_err(|e| AocClientError::Http(e))?)
+    parse_submission_response(response)
 }
 
 pub fn open_page(page: &AocPage) -> AocClientResult<()> {
@@ -88,9 +91,25 @@ pub fn post_answer(
     let params = [("level", level.to_string()), ("answer", answer.to_string())];
     let page = AocPage::Submit(day, year).to_string();
     let client = build_http_client()?;
-    let response: Response = client.post(&page).form(&params).send()?;
-    let answer = response.text()?;
-    Ok(answer)
+    let response = client.post(&page).form(&params).send()?;
+    parse_submission_response(response)
+}
+
+fn parse_submission_response(response: Response) -> AocClientResult<String> {
+    let status = response.status();
+    if !status.is_success() {
+        return Err(match status.as_u16() {
+            401 | 403 => AocClientError::Authentication,
+            429 => AocClientError::RateLimited,
+            status => AocClientError::HttpStatus(status),
+        });
+    }
+
+    let body = response.text()?;
+    if body.contains("Please log in") {
+        return Err(AocClientError::Authentication);
+    }
+    Ok(body)
 }
 
 pub type AocClientResult<T> = Result<T, AocClientError>;
@@ -112,13 +131,47 @@ pub enum AocClientError {
     #[error("AoC session error: {0}")]
     Session(String),
 
+    #[error("AoC authentication failed")]
+    Authentication,
+
+    #[error("AoC rate limited the request")]
+    RateLimited,
+
+    #[error("AoC returned HTTP status {0}")]
+    HttpStatus(u16),
+
     #[error(transparent)]
     Config(#[from] AocConfigError),
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AocClientError, build_http_client_with_session};
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
+
+    use reqwest::blocking::Client;
+
+    use super::{AocClientError, AocPage, build_http_client_with_session, download_file_from};
+
+    fn serve_once(status: u16, body: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let address = listener.local_addr().expect("read test server address");
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept test request");
+            let mut request = [0; 1024];
+            stream.read(&mut request).expect("read test request");
+            write!(
+                stream,
+                "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .expect("write test response");
+        });
+        format!("http://{address}")
+    }
 
     #[test]
     fn invalid_session_header_returns_a_typed_error() {
@@ -131,5 +184,36 @@ mod tests {
     #[test]
     fn valid_session_header_builds_a_client() {
         assert!(build_http_client_with_session("valid-session").is_ok());
+    }
+
+    #[test]
+    fn failed_http_statuses_return_typed_errors() {
+        let client = Client::new();
+        let page = AocPage::Puzzle(1, 2024);
+
+        for (status, expected) in [
+            (302, "status"),
+            (400, "status"),
+            (401, "authentication"),
+            (429, "rate-limit"),
+            (500, "status"),
+        ] {
+            let base_url = serve_once(status, "failure");
+            let error = download_file_from(&page, &client, &base_url).expect_err("request fails");
+            match expected {
+                "authentication" => assert!(matches!(error, AocClientError::Authentication)),
+                "rate-limit" => assert!(matches!(error, AocClientError::RateLimited)),
+                _ => assert!(matches!(error, AocClientError::HttpStatus(code) if code == status)),
+            }
+        }
+    }
+
+    #[test]
+    fn successful_login_page_returns_an_authentication_error() {
+        let base_url = serve_once(200, "Please log in to get your puzzle input.");
+        let error = download_file_from(&AocPage::Input(1, 2024), &Client::new(), &base_url)
+            .expect_err("login page is rejected");
+
+        assert!(matches!(error, AocClientError::Authentication));
     }
 }

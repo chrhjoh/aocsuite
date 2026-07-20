@@ -124,14 +124,26 @@ impl AocContentFile {
 }
 fn fetch_aocfile(file: &AocContentFile) -> AocFileResult<()> {
     let page = page_from_file(file)?;
-    let mut content = download_file(&page)?;
-    if file.file_type == AocFileType::Puzzle {
-        content = parse(&content, ParserType::MarkdownArticle);
-    }
+    let content = download_file(&page)?;
+    let content = if file.file_type == AocFileType::Puzzle {
+        parse_puzzle_content(&content)?
+    } else {
+        content
+    };
 
     file.save(&content)?;
     update_cache(&file._to_path()?, true)?;
     Ok(())
+}
+
+fn parse_puzzle_content(content: &str) -> AocFileResult<String> {
+    let content = parse(content, ParserType::MarkdownArticle);
+    if content.trim().is_empty() {
+        return Err(AocFileError::InvalidFile(
+            "puzzle response did not contain an article".to_string(),
+        ));
+    }
+    Ok(content)
 }
 
 impl ToString for AocContentFile {
@@ -230,23 +242,33 @@ pub fn update_cache_status(
 mod tests {
     use std::{
         fs,
+        process,
+        sync::atomic::{AtomicUsize, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
 
     use super::{
-        is_cache_valid, page_from_file, update_cache, AocContentFile, AocFileError, AocFileType,
-        CACHE_FILE,
+        is_cache_valid, page_from_file, parse_puzzle_content, update_cache, AocContentFile,
+        AocFileError, AocFileType, CACHE_FILE,
     };
+
+    static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    fn test_dir() -> std::path::PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before Unix epoch")
+            .as_nanos();
+        let sequence = TEST_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "aocsuite-fs-test-{timestamp}-{}-{sequence}",
+            process::id()
+        ))
+    }
 
     #[test]
     fn fetched_input_is_cache_valid() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "aocsuite-fs-test-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system time before Unix epoch")
-                .as_nanos()
-        ));
+        let temp_dir = test_dir();
         let input_path = temp_dir.join("input.txt");
         fs::create_dir_all(&temp_dir).expect("create test cache directory");
         fs::write(&input_path, "cached input").expect("write input cache");
@@ -259,13 +281,7 @@ mod tests {
 
     #[test]
     fn cache_metadata_write_failures_are_returned() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "aocsuite-fs-test-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system time before Unix epoch")
-                .as_nanos()
-        ));
+        let temp_dir = test_dir();
         let input_path = temp_dir.join("input.txt");
         fs::create_dir_all(temp_dir.join(CACHE_FILE)).expect("create invalid metadata directory");
         fs::write(&input_path, "cached input").expect("write input cache");
@@ -273,6 +289,14 @@ mod tests {
         assert!(matches!(update_cache(&input_path, true), Err(AocFileError::Io(_))));
 
         fs::remove_dir_all(temp_dir).expect("remove test cache directory");
+    }
+
+    #[test]
+    fn puzzle_responses_without_articles_are_rejected_before_caching() {
+        assert!(matches!(
+            parse_puzzle_content("<html><main>Please log in</main></html>"),
+            Err(AocFileError::InvalidFile(_))
+        ));
     }
 
     #[test]
