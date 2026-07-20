@@ -9,7 +9,7 @@ Review snapshot: 2026-07-18. This is an issue and test inventory; resolved entri
 - Redact session values by default; no normal configuration read should print the raw token.
 - Migrate existing runtime data as part of the planned storage redesign, using a recoverable backup-and-migration process.
 - Serialize TUI solver runs. The stale-result defect still requires clearing and validating the run result, but concurrent TUI runs are out of scope.
-- Remove the special rule that blocks 2025 days 13-25; use the normal Advent of Code release rules.
+- Advent of Code 2025 has twelve puzzles; release days 1-12 daily in December and reject days 13-25.
 
 ## Confirmed Issues
 
@@ -26,7 +26,7 @@ Review snapshot: 2026-07-18. This is an issue and test inventory; resolved entri
 
 ### P1: Correctness and Recoverability
 
-- **I-09 Year-level release validation can panic or reject a valid calendar.** `valid_year_release` uses the CLI puzzle day without range validation and unwraps date construction. Day 0/32 can panic for the current year, while day 25 can delay calendar/leaderboard access until December 25 (`aocsuite-cli/src/app.rs:28-30`, `190-192`, `aocsuite-utils/src/lib.rs:56-69`). The special 2025 days 13-25 restriction must be removed (`aocsuite-utils/src/lib.rs:41-43`). Test with an injected clock at Eastern-time boundaries and invalid/extreme inputs.
+- **I-09 Resolved: release validation is day-safe and calendar-aware.** Puzzle validation rejects invalid days before constructing dates, including 2025 days 13-25 because that event had twelve daily releases. Calendar and leaderboard validation ignores the selected puzzle day and becomes available at December 1 midnight Eastern. Injected-clock regression tests cover invalid/extreme days, 2025 releases, Eastern-time boundaries, and invalid/future years (`aocsuite-utils/src/lib.rs`).
 - **I-10 Runtime-root resolution accepts unsafe values and can panic.** Empty or relative `XDG_DATA_HOME` produces a relative `aocsuite` directory; missing both `XDG_DATA_HOME` and `HOME` panics (`aocsuite-utils/src/lib.rs:86-94`). Cleanup can consequently target an unexpected working-directory tree. Test empty, relative, absolute, non-Unicode, and missing environment values in isolated child processes.
 - **I-11 Git no-argument and clone flows are broken.** Empty args reach `args[0]` and panic. Clone first creates `<runtime-root>/.gitignore`: it fails if the root is absent, and makes the destination non-empty if present, so simple clone cannot succeed (`aocsuite-cli/src/git.rs:22-33`, `53-72`, `147-154`). Test empty args and clone using local temporary repositories and a fake process runner. Git pass-through options such as `-C` are not sandboxed and must not be represented as confined operations in the TUI.
 - **I-12 Resolved: custom input paths resolve from the invocation directory.** `run --test FILE` canonicalizes custom input paths before the Rust/Python runners change their working directory. Regression tests cover an input relative to a separate invocation directory and missing-file errors (`aocsuite-cli/src/app.rs`).
