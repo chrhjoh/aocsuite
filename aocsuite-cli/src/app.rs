@@ -58,7 +58,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             let path = match test {
                 Some(file) => {
                     if file == "" {
-                        AocContentFile::example(day, year).to_path()?
+                        require_input_file(AocContentFile::example(day, year).to_path()?)?
                     } else {
                         resolve_custom_input_path(&file, &std::env::current_dir()?)?
                     }
@@ -298,23 +298,43 @@ fn resolve_custom_input_path(file: &str, invocation_dir: &Path) -> std::io::Resu
     path.canonicalize()
 }
 
+fn require_input_file(path: PathBuf) -> std::io::Result<PathBuf> {
+    if path.is_file() {
+        Ok(path)
+    } else if path.exists() {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("input path is not a file: {}", path.display()),
+        ))
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("input file not found: {}", path.display()),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
         fs,
         path::PathBuf,
         process,
+        sync::atomic::{AtomicUsize, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::resolve_custom_input_path;
+    use super::{require_input_file, resolve_custom_input_path};
+
+    static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     fn test_root() -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time is after the Unix epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("aocsuite-cli-{unique}-{}", process::id()))
+        let counter = TEST_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("aocsuite-cli-{unique}-{}-{counter}", process::id()))
     }
 
     #[test]
@@ -345,6 +365,49 @@ mod tests {
         let result = resolve_custom_input_path("missing.txt", &root);
 
         assert_eq!(result.expect_err("missing input fails").kind(), std::io::ErrorKind::NotFound);
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn missing_builtin_example_returns_not_found() {
+        let root = test_root();
+        fs::create_dir_all(&root).expect("create test runtime");
+
+        let result = require_input_file(root.join("example.txt"));
+
+        assert_eq!(
+            result.expect_err("missing example fails").kind(),
+            std::io::ErrorKind::NotFound
+        );
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn builtin_example_must_be_a_regular_file() {
+        let root = test_root();
+        let example = root.join("example.txt");
+        fs::create_dir_all(&example).expect("create example directory");
+
+        let result = require_input_file(example);
+
+        assert_eq!(
+            result.expect_err("example directory fails").kind(),
+            std::io::ErrorKind::InvalidInput
+        );
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn existing_builtin_example_is_accepted() {
+        let root = test_root();
+        let example = root.join("example.txt");
+        fs::create_dir_all(&root).expect("create test runtime");
+        fs::write(&example, "example input").expect("write example input");
+
+        assert_eq!(
+            require_input_file(example.clone()).expect("existing example succeeds"),
+            example
+        );
         fs::remove_dir_all(root).expect("remove test runtime");
     }
 }
