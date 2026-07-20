@@ -3,7 +3,7 @@ use std::process::Command;
 use aocsuite_config::{AocConfigError, ConfigOpt, get_config_val};
 use aocsuite_utils::{Exercise, PuzzleDay, PuzzleYear};
 use reqwest::blocking::{Client, Response};
-use reqwest::header::{COOKIE, HeaderMap};
+use reqwest::header::{COOKIE, HeaderMap, HeaderValue};
 use thiserror::Error;
 
 const BASE_URL: &str = "https://adventofcode.com";
@@ -38,12 +38,17 @@ impl ToString for AocPage {
 
 fn build_http_client() -> AocClientResult<Client> {
     let session: String = get_config_val(&ConfigOpt::Session, None, None)?;
+    build_http_client_with_session(&session)
+}
+
+fn build_http_client_with_session(session: &str) -> AocClientResult<Client> {
     let mut headers = HeaderMap::new();
+    let session_header = format!("session={session}")
+        .parse::<HeaderValue>()
+        .map_err(|error| AocClientError::Session(error.to_string()))?;
     headers.insert(
         COOKIE,
-        format!("session={}", session)
-            .parse()
-            .expect("Session can be parsed into String"),
+        session_header,
     );
     let client = Client::builder().default_headers(headers).build()?;
     Ok(client)
@@ -109,4 +114,22 @@ pub enum AocClientError {
 
     #[error(transparent)]
     Config(#[from] AocConfigError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AocClientError, build_http_client_with_session};
+
+    #[test]
+    fn invalid_session_header_returns_a_typed_error() {
+        assert!(matches!(
+            build_http_client_with_session("valid\r\ninvalid"),
+            Err(AocClientError::Session(_))
+        ));
+    }
+
+    #[test]
+    fn valid_session_header_builds_a_client() {
+        assert!(build_http_client_with_session("valid-session").is_ok());
+    }
 }
