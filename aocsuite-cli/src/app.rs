@@ -1,4 +1,7 @@
-use std::{io::Write, path::PathBuf};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     commands::{CleanAction, EnvAction, LibAction},
@@ -57,7 +60,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                     if file == "" {
                         AocContentFile::example(day, year).to_path()?
                     } else {
-                        PathBuf::from(file)
+                        resolve_custom_input_path(&file, &std::env::current_dir()?)?
                     }
                 }
                 None => AocContentFile::input(day, year).to_path()?,
@@ -283,4 +286,65 @@ fn user_confirm_or_force(prompt: &str, force: bool) -> std::io::Result<bool> {
         return Ok(true);
     }
     return user_confirm(prompt);
+}
+
+fn resolve_custom_input_path(file: &str, invocation_dir: &Path) -> std::io::Result<PathBuf> {
+    let path = PathBuf::from(file);
+    let path = if path.is_absolute() {
+        path
+    } else {
+        invocation_dir.join(path)
+    };
+    path.canonicalize()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        path::PathBuf,
+        process,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::resolve_custom_input_path;
+
+    fn test_root() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time is after the Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("aocsuite-cli-{unique}-{}", process::id()))
+    }
+
+    #[test]
+    fn custom_input_is_resolved_from_the_invocation_directory() {
+        let root = test_root();
+        let invocation_dir = root.join("invocation");
+        let language_dir = root.join("language");
+        let input = invocation_dir.join("fixtures/input.txt");
+        fs::create_dir_all(input.parent().expect("input has parent"))
+            .expect("create input directory");
+        fs::create_dir_all(&language_dir).expect("create language directory");
+        fs::write(&input, "example input").expect("write input");
+
+        let resolved = resolve_custom_input_path("fixtures/input.txt", &invocation_dir)
+            .expect("resolve custom input");
+
+        assert_eq!(resolved, input.canonicalize().expect("canonicalize input"));
+        assert_ne!(resolved, language_dir.join("fixtures/input.txt"));
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn missing_custom_input_returns_an_io_error() {
+        let root = test_root();
+        fs::create_dir_all(&root).expect("create test runtime");
+
+        let result = resolve_custom_input_path("missing.txt", &root);
+
+        assert_eq!(result.expect_err("missing input fails").kind(), std::io::ErrorKind::NotFound);
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
 }
