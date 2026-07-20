@@ -25,6 +25,7 @@ pub type AocGitResult<T> = Result<T, AocGitError>;
 
 pub fn get_gitignore_path() -> AocGitResult<PathBuf> {
     let aocsuite_dir = aocsuite_utils::get_aocsuite_dir()?;
+    std::fs::create_dir_all(&aocsuite_dir)?;
     let path = aocsuite_dir.join(".gitignore");
     ensure_gitignore_exists(&path)?;
     Ok(path)
@@ -56,26 +57,33 @@ __pycache__/
 
 pub fn run_git_command(args: &[String]) -> AocGitResult<String> {
     let aocsuite_dir = aocsuite_utils::get_aocsuite_dir()?;
-    ensure_gitignore_exists(&aocsuite_dir.join(".gitignore"))?;
+    run_git_command_with(args, &aocsuite_dir)
+}
 
-    let output = if is_interactive_command(args) {
-        run_git_command_interactive(args, &aocsuite_dir)?
-    } else if is_simple_clone(args)? {
+fn run_git_command_with(args: &[String], aocsuite_dir: &Path) -> AocGitResult<String> {
+    if is_simple_clone(args)? {
+        let parent = aocsuite_dir
+            .parent()
+            .ok_or(AocGitError::DirectoryNotFound)?;
+        std::fs::create_dir_all(parent)?;
+
+        let destination = aocsuite_dir
+            .file_name()
+            .ok_or(AocGitError::DirectoryNotFound)?
+            .to_string_lossy()
+            .into_owned();
         let mut clone_args = args.to_vec();
-        clone_args.push(
-            aocsuite_dir
-                .clone()
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .into_owned(),
-        );
+        clone_args.push(destination);
+        return run_git_command_capture(&clone_args, parent);
+    }
 
-        run_git_command_capture(&clone_args, &aocsuite_dir.parent().expect("Is not root"))?
+    std::fs::create_dir_all(aocsuite_dir)?;
+    ensure_gitignore_exists(&aocsuite_dir.join(".gitignore"))?;
+    if is_interactive_command(args) {
+        run_git_command_interactive(args, aocsuite_dir)
     } else {
-        run_git_command_capture(args, &aocsuite_dir)?
-    };
-    return Ok(output);
+        run_git_command_capture(args, aocsuite_dir)
+    }
 }
 
 fn run_git_command_capture(args: &[String], dir: &Path) -> AocGitResult<String> {
@@ -105,13 +113,20 @@ fn run_git_command_capture(args: &[String], dir: &Path) -> AocGitResult<String> 
 }
 
 fn run_git_command_interactive(args: &[String], dir: &Path) -> AocGitResult<String> {
-    std::process::Command::new("git")
+    let status = std::process::Command::new("git")
         .args(args)
         .current_dir(dir)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .status()?;
+
+    if !status.success() {
+        return Err(AocGitError::CommandFailed {
+            code: status.code().unwrap_or(1),
+            stderr: "interactive git command failed".to_string(),
+        });
+    }
 
     Ok("".to_string())
 }
@@ -149,11 +164,33 @@ fn is_interactive_command(args: &[String]) -> bool {
 }
 
 fn is_simple_clone(args: &[String]) -> AocGitResult<bool> {
-    if args[0] != "clone" {
+    if !matches!(args.first(), Some(arg) if arg == "clone") {
         return Ok(false);
     }
     if args.len() != 2 {
         return Err(AocGitError::Clone);
     }
-    return Ok(true);
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_simple_clone, AocGitError};
+
+    #[test]
+    fn empty_args_are_not_a_clone() {
+        assert!(!is_simple_clone(&[]).expect("empty args are valid"));
+    }
+
+    #[test]
+    fn clone_requires_exactly_one_repository_argument() {
+        assert!(
+            is_simple_clone(&["clone".to_string(), "repository".to_string()])
+                .expect("simple clone is accepted")
+        );
+        assert!(matches!(
+            is_simple_clone(&["clone".to_string()]),
+            Err(AocGitError::Clone)
+        ));
+    }
 }
