@@ -72,7 +72,43 @@ pub fn parse_submission_result(text: &str) -> AocSubmissionResult {
     }
 }
 fn extract_wait_time(text: &str) -> Option<u64> {
-    let re = Regex::new(r"you have to wait (\d+) seconds").ok()?;
-    re.captures(text)
-        .and_then(|caps| caps.get(1)?.as_str().parse().ok())
+    let re = Regex::new(
+        r"(?i)\byou\s+have(?:\s+to\s+wait)?\s+(?:(\d+)\s*(?:minutes?|mins?|m)\b(?:\s*(?:and\s*)?(\d+)\s*(?:seconds?|secs?|s)\b)?|(\d+)\s*(?:seconds?|secs?|s)\b)",
+    )
+    .ok()?;
+    let caps = re.captures(text)?;
+    let minutes = caps
+        .get(1)
+        .map(|value| value.as_str().parse::<u64>().ok())
+        .flatten()
+        .unwrap_or(0);
+    let seconds = caps
+        .get(2)
+        .or_else(|| caps.get(3))
+        .map(|value| value.as_str().parse::<u64>().ok())
+        .flatten()
+        .unwrap_or(0);
+
+    minutes.checked_mul(60)?.checked_add(seconds)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_wait_time;
+
+    #[test]
+    fn extracts_aoc_wait_times() {
+        let cases = [
+            ("you have to wait 12 seconds.", Some(12)),
+            ("You have to wait 1 second!", Some(1)),
+            ("You have 2 minutes left to wait.", Some(120)),
+            ("You have 1m 47s left to wait.", Some(107)),
+            ("YOU HAVE 3 MINUTES AND 2 SECONDS LEFT TO WAIT.", Some(182)),
+            ("You have to wait soon.", None),
+        ];
+
+        for (message, expected) in cases {
+            assert_eq!(extract_wait_time(message), expected, "{message}");
+        }
+    }
 }
