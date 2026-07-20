@@ -184,12 +184,16 @@ fn update_cache(path: &Path, val: bool) {
 fn page_from_file(file: &AocContentFile) -> AocFileResult<AocPage> {
     match file.file_type {
         AocFileType::Puzzle => {
-            let day = file.day.expect("cannot be created without day");
+            let day = file.day.ok_or_else(|| {
+                AocFileError::InvalidFile("Puzzle files require a puzzle day".to_string())
+            })?;
             Ok(AocPage::Puzzle(day, file.year))
         }
         AocFileType::Calendar => Ok(AocPage::Calendar(file.year)),
         AocFileType::Input => {
-            let day = file.day.expect("cannot be created without day");
+            let day = file.day.ok_or_else(|| {
+                AocFileError::InvalidFile("Input files require a puzzle day".to_string())
+            })?;
             Ok(AocPage::Input(day, file.year))
         }
         AocFileType::Example => Err(AocFileError::InvalidFile(
@@ -224,7 +228,9 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{is_cache_valid, update_cache};
+    use super::{
+        is_cache_valid, page_from_file, update_cache, AocContentFile, AocFileError, AocFileType,
+    };
 
     #[test]
     fn fetched_input_is_cache_valid() {
@@ -243,5 +249,21 @@ mod tests {
 
         assert!(is_cache_valid(&input_path));
         fs::remove_dir_all(temp_dir).expect("remove test cache directory");
+    }
+
+    #[test]
+    fn puzzle_and_input_without_a_day_return_errors() {
+        for file_type in [AocFileType::Puzzle, AocFileType::Input] {
+            let file = AocContentFile {
+                file_type,
+                day: None,
+                year: 2024,
+            };
+
+            assert!(matches!(
+                page_from_file(&file),
+                Err(AocFileError::InvalidFile(_))
+            ));
+        }
     }
 }
