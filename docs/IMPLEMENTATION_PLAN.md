@@ -50,7 +50,7 @@ The application assumes one AoC Suite process per runtime root. Do not add norma
 3. Make command parsing match documented submit/run behavior and preserve compatible CLI syntax where practical.
 4. Fix Git empty-argument/clone behavior and scope Git to `workspace/`; do not claim Git arguments are sandboxed.
 5. Fix editor resolution, path handling, argument escaping, exit-status propagation, and platform support.
-6. Retain the intentionally permissive empty/EOF destructive confirmation behavior, with explicit regression coverage.
+6. Retain empty-line destructive confirmation behavior while treating EOF as cancellation, with explicit regression coverage.
 7. Add behavior tests to `aocsuite-cli` and `aocsuite-editor`, using fake process launchers rather than real Git, editors, Cargo, Python, pip, or browsers.
 
 ## Pre-TUI Milestone

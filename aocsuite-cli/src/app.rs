@@ -295,7 +295,9 @@ fn user_confirm(
     output.flush()?;
 
     let mut response = String::new();
-    input.read_line(&mut response)?;
+    if input.read_line(&mut response)? == 0 {
+        return Ok(false);
+    }
 
     let trimmed = response.trim().to_lowercase();
     Ok(trimmed.is_empty() || trimmed == "y" || trimmed == "yes")
@@ -451,8 +453,8 @@ mod tests {
     }
 
     #[test]
-    fn confirmations_retain_empty_and_eof_as_approval() {
-        for response in [b"".as_slice(), b"\n", b"yes\n", b"Y\n"] {
+    fn confirmations_reject_eof_but_accept_empty_and_yes() {
+        for response in [b"\n".as_slice(), b"yes\n", b"Y\n"] {
             let mut output = Vec::new();
             assert!(
                 user_confirm(&mut Cursor::new(response), &mut output, "Confirm? ")
@@ -460,6 +462,12 @@ mod tests {
             );
             assert_eq!(output, b"Confirm? ");
         }
+
+        let mut output = Vec::new();
+        assert!(
+            !user_confirm(&mut Cursor::new(b""), &mut output, "Confirm? ")
+                .expect("read EOF")
+        );
 
         let mut output = Vec::new();
         assert!(

@@ -5,7 +5,7 @@ Review snapshot: 2026-07-18. This is an issue and test inventory; resolved entri
 ## Agreed Product Decisions
 
 - TUI feature parity covers every current CLI command leaf, not only the narrower TODO scope.
-- Preserve the current destructive-confirmation default: empty input and EOF proceed. Treat this as intentional behavior in future tests.
+- Preserve the current destructive-confirmation default: an empty line proceeds, while EOF cancels. Treat this as intentional behavior in future tests.
 - Redact session values by default; no normal configuration read should print the raw token.
 - Migrate existing runtime data as part of the planned storage redesign, using a recoverable backup-and-migration process.
 - Serialize TUI solver runs. The stale-result defect still requires clearing and validating the run result, but concurrent TUI runs are out of scope.
@@ -15,7 +15,7 @@ Review snapshot: 2026-07-18. This is an issue and test inventory; resolved entri
 
 ### P0: Safety, Security, and Wrong Results
 
-- **I-01 Resolved: destructive prompts intentionally approve empty input and EOF.** `user_confirm` retains the agreed empty/EOF-as-yes behavior for destructive operations. Injected-I/O regression tests cover EOF, Enter, yes, and no (`aocsuite-cli/src/app.rs`).
+- **I-01 Resolved: destructive prompts approve empty input but reject EOF.** `user_confirm` retains the agreed empty-line-as-yes behavior while treating closed stdin as cancellation. Injected-I/O regression tests cover EOF, Enter, yes, and no (`aocsuite-cli/src/app.rs`).
 - **I-02 Resolved: a requested day/year selects its solution.** `Language::compile` and `Language::run` share `setup_solution`, which initializes the solver, materializes the requested Rust/Python source and active link, and then initializes the environment before execution (`aocsuite-lang/src/lib.rs:32-51`, `122-127`). Rust and Python regression tests cover switching the active source between distinct day solutions. Fresh-run and template-edit coverage remains part of Phase 3.8.
 - **I-03 Resolved: solver results use unique transient files.** Each run allocates a unique path under `<runtime-root>/runs/`; result files are removed after successful, failed, or malformed consumption. Generated Rust and Python harnesses publish JSON through a same-directory rename/replace, so readers do not observe partial results. Regression tests cover stale legacy output, malformed output, failure cleanup, and generated atomic publication (`aocsuite-lang/src/lib.rs`, `aocsuite-lang/src/utils.rs`).
 - **I-04 Partially resolved: Python setup creates its fresh-runtime harness.** `PythonRunner::setup_solver` now creates `main.py` without overwriting an existing harness, allowing normal open/compile/run setup to materialize the required entrypoint (`aocsuite-lang/src/python/solver.rs`). Regression tests cover creation and preservation; an end-to-end fresh Python execution test remains.
