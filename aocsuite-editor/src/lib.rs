@@ -4,7 +4,7 @@ mod editor_types;
 
 use std::{collections::HashMap, path::Path};
 
-use aocsuite_config::{get_config_val, ConfigOpt};
+use aocsuite_config::{get_config_val, AocConfigError, ConfigOpt};
 use editor::Editor;
 use editor_types::EditorType;
 use thiserror::Error;
@@ -23,6 +23,9 @@ pub enum AocEditorError {
     #[error(transparent)]
     Var(#[from] std::env::VarError),
 
+    #[error(transparent)]
+    Config(#[from] AocConfigError),
+
     #[error("editor {0} exited unexpectedly")]
     RunProgram(String),
 }
@@ -33,10 +36,11 @@ fn resolve_editor_type() -> AocEditorResult<EditorType> {
     let editor_type = get_config_val(&ConfigOpt::Editor, None, None);
     match editor_type {
         Ok(t) => Ok(t),
-        Err(_) => {
+        Err(AocConfigError::NotFound { .. }) => {
             let program = std::env::var("EDITOR")?;
             Ok(program.parse()?)
         }
+        Err(error) => Err(error.into()),
     }
 }
 pub fn open_solution_files(
