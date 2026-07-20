@@ -16,6 +16,9 @@ pub use commands::{AocCommand, ConfigCommand};
 
 #[derive(Error, Debug)]
 pub enum AocCliError {
+    #[error("operation not allowed: {0}")]
+    NotAllowed(&'static str),
+
     #[error(transparent)]
     Client(#[from] AocClientError),
 

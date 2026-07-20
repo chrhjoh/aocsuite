@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use aocsuite_utils::{atomic_write, get_aocsuite_dir, RuntimeDirError};
+use aocsuite_utils::{atomic_write, get_aocsuite_dir, set_owner_only_permissions, RuntimeDirError};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -28,6 +28,7 @@ impl AocConfig {
         if !config_path.exists() {
             atomic_write(&config_path, b"{}")?;
         }
+        set_owner_only_permissions(&config_path)?;
 
         let contents = fs::read(&config_path)?;
         let data = serde_json::from_slice(&contents)?;
@@ -55,17 +56,20 @@ impl AocConfig {
         }
     }
     pub fn set(&mut self, key: &ConfigOpt) -> AocConfigResult<()> {
-        let current_value = self.get(key);
+        let input = if matches!(key, ConfigOpt::Session) {
+            rpassword::prompt_password("Enter value for session: ")?
+        } else {
+            let current_value = self.get(key);
+            match current_value {
+                Some(ref val) => print!("Enter value for {} [{}]: ", key.to_string(), val),
+                None => print!("Enter value for {}: ", key.to_string()),
+            }
+            io::stdout().flush()?;
 
-        match current_value {
-            Some(ref val) => print!("Enter value for {} [{}]: ", key.to_string(), val),
-            None => print!("Enter value for {}: ", key.to_string()),
-        }
-
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            input
+        };
 
         let trimmed_input = input.trim();
 

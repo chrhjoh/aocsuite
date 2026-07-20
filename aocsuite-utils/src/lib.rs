@@ -71,11 +71,15 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
             std::process::id(),
             sequence
         ));
-        let mut file = match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
         {
+            use std::os::unix::fs::OpenOptionsExt;
+
+            options.mode(0o600);
+        }
+        let mut file = match options.open(&temporary) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(error),
@@ -101,6 +105,16 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
         std::io::ErrorKind::AlreadyExists,
         "could not allocate a temporary file for an atomic write",
     ))
+}
+
+pub fn set_owner_only_permissions(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
 }
 
 pub fn valid_puzzle_release(day: PuzzleDay, year: PuzzleYear) -> AocReleaseResult<()> {
@@ -341,6 +355,59 @@ mod tests {
                 .expect("read test directory")
                 .count(),
             1
+        );
+        std::fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_creates_owner_only_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "aocsuite-utils-test-permissions-{}",
+            std::process::id()
+        ));
+        let path = dir.join("private");
+        std::fs::create_dir_all(&dir).expect("create test directory");
+
+        super::atomic_write(&path, b"secret").expect("write private file");
+
+        assert_eq!(
+            std::fs::metadata(&path)
+                .expect("read private file metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        std::fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owner_only_permissions_tightens_existing_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "aocsuite-utils-test-existing-permissions-{}",
+            std::process::id()
+        ));
+        let path = dir.join("private");
+        std::fs::create_dir_all(&dir).expect("create test directory");
+        std::fs::write(&path, "secret").expect("write test file");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
+            .expect("make test file public");
+
+        super::set_owner_only_permissions(&path).expect("tighten file permissions");
+
+        assert_eq!(
+            std::fs::metadata(&path)
+                .expect("read private file metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
         );
         std::fs::remove_dir_all(dir).expect("remove test directory");
     }

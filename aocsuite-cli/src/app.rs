@@ -9,7 +9,7 @@ use crate::{
     AocCliResult, AocCommand, ConfigCommand,
 };
 use aocsuite_client::{open_page, post_answer, AocPage};
-use aocsuite_config::{get_config_val, set_config_val};
+use aocsuite_config::{get_config_val, set_config_val, ConfigOpt};
 use aocsuite_editor::open_solution_files;
 use aocsuite_fs::{update_cache_status, AocContentFile};
 use aocsuite_lang::{Language, SolverFile};
@@ -22,6 +22,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
     match command {
         AocCommand::Config { command } => match command {
             ConfigCommand::Get { key } => {
+                ensure_config_read_allowed(&key)?;
                 let val: String = get_config_val(&key, None, None)?;
                 println!("{}: {val}", key.to_string());
             }
@@ -270,6 +271,15 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
     }
     Ok(())
 }
+
+fn ensure_config_read_allowed(key: &ConfigOpt) -> AocCliResult<()> {
+    if matches!(key, ConfigOpt::Session) {
+        return Err(crate::AocCliError::NotAllowed(
+            "reading the session configuration value",
+        ));
+    }
+    Ok(())
+}
 fn user_confirm(prompt: &str) -> std::io::Result<bool> {
     print!("{prompt}");
     std::io::stdout().flush()?;
@@ -324,7 +334,9 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{require_input_file, resolve_custom_input_path};
+    use aocsuite_config::ConfigOpt;
+
+    use super::{ensure_config_read_allowed, require_input_file, resolve_custom_input_path};
 
     static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -409,5 +421,14 @@ mod tests {
             example
         );
         fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn session_config_reads_are_not_allowed() {
+        assert!(matches!(
+            ensure_config_read_allowed(&ConfigOpt::Session),
+            Err(crate::AocCliError::NotAllowed(_))
+        ));
+        assert!(ensure_config_read_allowed(&ConfigOpt::Language).is_ok());
     }
 }

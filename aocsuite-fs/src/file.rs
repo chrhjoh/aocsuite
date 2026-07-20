@@ -5,7 +5,7 @@ use std::{
 
 use aocsuite_client::{download_file, AocPage};
 use aocsuite_parser::{parse, AocSubmissionResult, ParserType};
-use aocsuite_utils::{atomic_write, PuzzleDay, PuzzleYear};
+use aocsuite_utils::{atomic_write, set_owner_only_permissions, PuzzleDay, PuzzleYear};
 use serde_json::{Map, Value};
 
 use crate::{AocCacheDir, AocFileError, AocFileResult};
@@ -72,6 +72,9 @@ impl AocContentFile {
         let path = self._to_path()?;
         if !is_cache_valid(&path) & self.fetchable() {
             fetch_aocfile(self)?;
+        }
+        if self.file_type == AocFileType::Input && path.exists() {
+            set_owner_only_permissions(&path)?;
         }
 
         Ok(path)
