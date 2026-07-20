@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use aocsuite_utils::{get_aocsuite_dir, RuntimeDirError};
+use aocsuite_utils::{atomic_write, get_aocsuite_dir, RuntimeDirError};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -26,7 +26,7 @@ impl AocConfig {
         let config_path = config_dir.join("config.json");
 
         if !config_path.exists() {
-            fs::write(&config_path, b"{}")?;
+            atomic_write(&config_path, b"{}")?;
         }
 
         let contents = fs::read(&config_path)?;
@@ -77,7 +77,7 @@ impl AocConfig {
 
         // Save to file
         let serialized = serde_json::to_string_pretty(&self.data)?;
-        fs::write(&self.path, serialized)?;
+        atomic_write(&self.path, serialized.as_bytes())?;
 
         Ok(())
     }

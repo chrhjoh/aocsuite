@@ -5,7 +5,7 @@ use std::{
 
 use aocsuite_client::{download_file, AocPage};
 use aocsuite_parser::{parse, AocSubmissionResult, ParserType};
-use aocsuite_utils::{PuzzleDay, PuzzleYear};
+use aocsuite_utils::{atomic_write, PuzzleDay, PuzzleYear};
 use serde_json::{Map, Value};
 
 use crate::{AocCacheDir, AocFileError, AocFileResult};
@@ -97,7 +97,7 @@ impl AocContentFile {
 
     pub fn set_cache_status(&self, val: bool) -> AocFileResult<()> {
         if self.updateable() {
-            update_cache(&self._to_path()?, val)
+            update_cache(&self._to_path()?, val)?;
         }
         Ok(())
     }
@@ -109,7 +109,7 @@ impl AocContentFile {
             fs::create_dir_all(parent)?;
         }
 
-        fs::write(&path, contents)?;
+        atomic_write(&path, contents.as_bytes())?;
 
         Ok(())
     }
@@ -127,7 +127,7 @@ fn fetch_aocfile(file: &AocContentFile) -> AocFileResult<()> {
     }
 
     file.save(&content)?;
-    update_cache(&file._to_path()?, true);
+    update_cache(&file._to_path()?, true)?;
     Ok(())
 }
 
@@ -166,20 +166,20 @@ fn is_cache_valid(path: &Path) -> bool {
     }
 }
 
-fn update_cache(path: &Path, val: bool) {
+fn update_cache(path: &Path, val: bool) -> AocFileResult<()> {
     let cache_path = path.parent().unwrap().join(CACHE_FILE);
 
-    let mut cache_json: Map<String, Value> = if cache_path.exists() {
-        let cache_contents = fs::read_to_string(&cache_path).unwrap_or_default();
-        serde_json::from_str(&cache_contents).unwrap_or_default()
-    } else {
-        Map::new()
+    let mut cache_json: Map<String, Value> = match fs::read_to_string(&cache_path) {
+        Ok(cache_contents) => serde_json::from_str(&cache_contents)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Map::new(),
+        Err(error) => return Err(error.into()),
     };
     let filename = path.file_name().unwrap().to_str().unwrap();
     cache_json.insert(filename.to_owned(), Value::Bool(val));
 
-    let json_string = serde_json::to_string_pretty(&cache_json).unwrap();
-    fs::write(&cache_path, json_string).ok();
+    let json_string = serde_json::to_string_pretty(&cache_json)?;
+    atomic_write(&cache_path, json_string.as_bytes())?;
+    Ok(())
 }
 
 fn page_from_file(file: &AocContentFile) -> AocFileResult<AocPage> {
@@ -232,6 +232,7 @@ mod tests {
 
     use super::{
         is_cache_valid, page_from_file, update_cache, AocContentFile, AocFileError, AocFileType,
+        CACHE_FILE,
     };
 
     #[test]
@@ -247,9 +248,27 @@ mod tests {
         fs::create_dir_all(&temp_dir).expect("create test cache directory");
         fs::write(&input_path, "cached input").expect("write input cache");
 
-        update_cache(&input_path, true);
+        update_cache(&input_path, true).expect("update input cache");
 
         assert!(is_cache_valid(&input_path));
+        fs::remove_dir_all(temp_dir).expect("remove test cache directory");
+    }
+
+    #[test]
+    fn cache_metadata_write_failures_are_returned() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "aocsuite-fs-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time before Unix epoch")
+                .as_nanos()
+        ));
+        let input_path = temp_dir.join("input.txt");
+        fs::create_dir_all(temp_dir.join(CACHE_FILE)).expect("create invalid metadata directory");
+        fs::write(&input_path, "cached input").expect("write input cache");
+
+        assert!(matches!(update_cache(&input_path, true), Err(AocFileError::Io(_))));
+
         fs::remove_dir_all(temp_dir).expect("remove test cache directory");
     }
 

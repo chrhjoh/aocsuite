@@ -1,4 +1,11 @@
-use std::{env, ffi::OsString, path::PathBuf};
+use std::{
+    env,
+    ffi::OsString,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use chrono::{DateTime, Datelike, TimeZone, Utc};
 use chrono_tz::{Tz, US::Eastern};
@@ -45,6 +52,56 @@ pub enum RuntimeDirError {
 }
 
 pub type RuntimeDirResult<T> = Result<T, RuntimeDirError>;
+
+static ATOMIC_WRITE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+pub fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent directory")
+    })?;
+    let filename = path.file_name().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no file name")
+    })?;
+
+    for _ in 0..16 {
+        let sequence = ATOMIC_WRITE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temporary = parent.join(format!(
+            ".{}.{}.{}.tmp",
+            filename.to_string_lossy(),
+            std::process::id(),
+            sequence
+        ));
+        let mut file = match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        };
+
+        let result = file.write_all(contents).and_then(|()| file.sync_all());
+        drop(file);
+        if let Err(error) = result {
+            let _ = fs::remove_file(&temporary);
+            return Err(error);
+        }
+
+        return match fs::rename(&temporary, path) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let _ = fs::remove_file(&temporary);
+                Err(error)
+            }
+        };
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "could not allocate a temporary file for an atomic write",
+    ))
+}
 
 pub fn valid_puzzle_release(day: PuzzleDay, year: PuzzleYear) -> AocReleaseResult<()> {
     valid_puzzle_release_at(day, year, Utc::now())
@@ -264,5 +321,27 @@ mod tests {
                     .join(".local/share/aocsuite")
             );
         }
+    }
+
+    #[test]
+    fn atomic_write_replaces_a_file_without_leaving_a_temporary_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "aocsuite-utils-test-{}",
+            std::process::id()
+        ));
+        let path = dir.join("settings.json");
+        std::fs::create_dir_all(&dir).expect("create test directory");
+        std::fs::write(&path, "old").expect("write existing file");
+
+        super::atomic_write(&path, b"new").expect("atomically replace file");
+
+        assert_eq!(std::fs::read(&path).expect("read replacement"), b"new");
+        assert_eq!(
+            std::fs::read_dir(&dir)
+                .expect("read test directory")
+                .count(),
+            1
+        );
+        std::fs::remove_dir_all(dir).expect("remove test directory");
     }
 }

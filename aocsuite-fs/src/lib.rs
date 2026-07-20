@@ -24,6 +24,9 @@ pub enum AocFileError {
     #[error(transparent)]
     RuntimeDir(#[from] RuntimeDirError),
 
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+
     #[error("invalid file error: {0}")]
     InvalidFile(String),
 
