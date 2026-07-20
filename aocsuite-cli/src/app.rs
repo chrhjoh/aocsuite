@@ -1,5 +1,5 @@
 use std::{
-    io::Write,
+    io::{BufRead, Write},
     path::{Path, PathBuf},
 };
 
@@ -91,7 +91,11 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             let language = Language::resolve(&language)?;
             if reset {
                 let template_path = language.prepare_solver_file(&SolverFile::SolutionTemplate)?;
-                if user_confirm("Are you sure you want to delete template file? (Y/n):")? {
+                if user_confirm(
+                    &mut std::io::stdin().lock(),
+                    &mut std::io::stdout().lock(),
+                    "Are you sure you want to delete template file? (Y/n):",
+                )? {
                     std::fs::remove_file(template_path)?;
                 }
             }
@@ -261,11 +265,13 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                 "Ensure you have backed up any solutions. Files can be found at {:?}",
                 aocsuite_dir
             );
-            if user_confirm("Are you sure you want to delete everything in AoCSuite.\nThis includes any solutions you may have made (Y/n) : ")?{
-
+            if user_confirm(
+                &mut std::io::stdin().lock(),
+                &mut std::io::stdout().lock(),
+                "Are you sure you want to delete everything in AoCSuite.\nThis includes any solutions you may have made (Y/n) : ",
+            )?{
                 std::fs::remove_dir_all(aocsuite_dir)?;
                 println!("Removed the AoCSuite directory")
-                
             }
         }
     }
@@ -280,14 +286,18 @@ fn ensure_config_read_allowed(key: &ConfigOpt) -> AocCliResult<()> {
     }
     Ok(())
 }
-fn user_confirm(prompt: &str) -> std::io::Result<bool> {
-    print!("{prompt}");
-    std::io::stdout().flush()?;
+fn user_confirm(
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+    prompt: &str,
+) -> std::io::Result<bool> {
+    write!(output, "{prompt}")?;
+    output.flush()?;
 
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
+    let mut response = String::new();
+    input.read_line(&mut response)?;
 
-    let trimmed = input.trim().to_lowercase();
+    let trimmed = response.trim().to_lowercase();
     Ok(trimmed.is_empty() || trimmed == "y" || trimmed == "yes")
 }
 
@@ -295,7 +305,11 @@ fn user_confirm_or_force(prompt: &str, force: bool) -> std::io::Result<bool> {
     if force {
         return Ok(true);
     }
-    return user_confirm(prompt);
+    user_confirm(
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout().lock(),
+        prompt,
+    )
 }
 
 fn resolve_custom_input_path(file: &str, invocation_dir: &Path) -> std::io::Result<PathBuf> {
@@ -328,6 +342,7 @@ fn require_input_file(path: PathBuf) -> std::io::Result<PathBuf> {
 mod tests {
     use std::{
         fs,
+        io::Cursor,
         path::PathBuf,
         process,
         sync::atomic::{AtomicUsize, Ordering},
@@ -336,7 +351,10 @@ mod tests {
 
     use aocsuite_config::ConfigOpt;
 
-    use super::{ensure_config_read_allowed, require_input_file, resolve_custom_input_path};
+    use super::{
+        ensure_config_read_allowed, require_input_file, resolve_custom_input_path,
+        user_confirm,
+    };
 
     static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -431,4 +449,23 @@ mod tests {
         ));
         assert!(ensure_config_read_allowed(&ConfigOpt::Language).is_ok());
     }
+
+    #[test]
+    fn confirmations_retain_empty_and_eof_as_approval() {
+        for response in [b"".as_slice(), b"\n", b"yes\n", b"Y\n"] {
+            let mut output = Vec::new();
+            assert!(
+                user_confirm(&mut Cursor::new(response), &mut output, "Confirm? ")
+                    .expect("read confirmation")
+            );
+            assert_eq!(output, b"Confirm? ");
+        }
+
+        let mut output = Vec::new();
+        assert!(
+            !user_confirm(&mut Cursor::new(b"no\n"), &mut output, "Confirm? ")
+                .expect("read rejection")
+        );
+    }
+
 }
