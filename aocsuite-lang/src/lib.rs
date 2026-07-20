@@ -40,7 +40,7 @@ impl Language {
         input: &Path,
     ) -> AocLanguageResult<ExerciseOutput> {
         self.setup_solution(day, year)?;
-        let output_file = new_result_file_path(&get_aocsuite_dir().join("runs"))?;
+        let output_file = new_result_file_path(&get_aocsuite_dir()?.join("runs"))?;
         with_result_file(&output_file, |output_file| {
             let output = self.runner.run(day, year, part, input, output_file)?;
             handle_command_output(output)?;

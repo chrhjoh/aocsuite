@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use aocsuite_utils::RuntimeDirError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -13,6 +14,9 @@ pub enum AocGitError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
+    #[error(transparent)]
+    RuntimeDir(#[from] RuntimeDirError),
+
     #[error("Only clone in format `git clone my_git_repo` is supported")]
     Clone,
 }
@@ -20,7 +24,7 @@ pub enum AocGitError {
 pub type AocGitResult<T> = Result<T, AocGitError>;
 
 pub fn get_gitignore_path() -> AocGitResult<PathBuf> {
-    let aocsuite_dir = aocsuite_utils::get_aocsuite_dir();
+    let aocsuite_dir = aocsuite_utils::get_aocsuite_dir()?;
     let path = aocsuite_dir.join(".gitignore");
     ensure_gitignore_exists(&path)?;
     Ok(path)
@@ -51,7 +55,7 @@ __pycache__/
 }
 
 pub fn run_git_command(args: &[String]) -> AocGitResult<String> {
-    let aocsuite_dir = aocsuite_utils::get_aocsuite_dir();
+    let aocsuite_dir = aocsuite_utils::get_aocsuite_dir()?;
     ensure_gitignore_exists(&aocsuite_dir.join(".gitignore"))?;
 
     let output = if is_interactive_command(args) {

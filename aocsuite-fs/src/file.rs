@@ -69,20 +69,20 @@ impl AocContentFile {
     }
 
     pub fn to_path(&self) -> AocFileResult<PathBuf> {
-        let path = self._to_path();
+        let path = self._to_path()?;
         if !is_cache_valid(&path) & self.fetchable() {
             fetch_aocfile(self)?;
         }
 
         Ok(path)
     }
-    fn _to_path(&self) -> PathBuf {
-        let dir = AocCacheDir::new();
+    fn _to_path(&self) -> AocFileResult<PathBuf> {
+        let dir = AocCacheDir::new()?;
         let filename = self.filename();
 
         match self.day {
-            Some(day) => dir.daily_data_dir(day, self.year).join(filename),
-            None => dir.yearly_data_dir(self.year).join(filename),
+            Some(day) => Ok(dir.daily_data_dir(day, self.year).join(filename)),
+            None => Ok(dir.yearly_data_dir(self.year).join(filename)),
         }
     }
 
@@ -95,14 +95,15 @@ impl AocContentFile {
         }
     }
 
-    pub fn set_cache_status(&self, val: bool) {
+    pub fn set_cache_status(&self, val: bool) -> AocFileResult<()> {
         if self.updateable() {
-            update_cache(&self._to_path(), val)
+            update_cache(&self._to_path()?, val)
         }
+        Ok(())
     }
 
     fn save(&self, contents: &str) -> AocFileResult<()> {
-        let path = self._to_path();
+        let path = self._to_path()?;
 
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -126,7 +127,7 @@ fn fetch_aocfile(file: &AocContentFile) -> AocFileResult<()> {
     }
 
     file.save(&content)?;
-    update_cache(&file._to_path(), true);
+    update_cache(&file._to_path()?, true);
     Ok(())
 }
 
@@ -207,18 +208,19 @@ pub fn update_cache_status(
     day: PuzzleDay,
     year: PuzzleYear,
     update_puzzle: bool,
-) -> () {
+) -> AocFileResult<()> {
     if result == &AocSubmissionResult::Correct {
         // set the calendar cache to false for year
         let calendar_file = AocContentFile::calendar(year);
-        calendar_file.set_cache_status(false);
+        calendar_file.set_cache_status(false)?;
 
         if update_puzzle {
             // set the puzzle cache to false for day
             let puzzle_file = AocContentFile::puzzle(day, year);
-            puzzle_file.set_cache_status(false);
+            puzzle_file.set_cache_status(false)?;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]

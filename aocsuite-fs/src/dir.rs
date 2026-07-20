@@ -2,14 +2,16 @@ use std::path::PathBuf;
 
 use aocsuite_utils::{get_aocsuite_dir, PuzzleDay, PuzzleYear};
 
+use crate::AocFileResult;
+
 pub struct AocCacheDir {
     base: PathBuf,
 }
 impl AocCacheDir {
-    pub fn new() -> AocCacheDir {
-        AocCacheDir {
-            base: get_aocsuite_dir().join("data"),
-        }
+    pub fn new() -> AocFileResult<AocCacheDir> {
+        Ok(AocCacheDir {
+            base: get_aocsuite_dir()?.join("data"),
+        })
     }
 
     pub fn yearly_data_dir(&self, year: PuzzleYear) -> PathBuf {

@@ -9,7 +9,7 @@ use std::{
 };
 
 use aocsuite_config::AocConfigError;
-use aocsuite_utils::{PuzzleDay, PuzzleYear};
+use aocsuite_utils::{PuzzleDay, PuzzleYear, RuntimeDirError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -252,6 +252,9 @@ pub enum AocLanguageError {
 
     #[error(transparent)]
     Config(#[from] AocConfigError),
+
+    #[error(transparent)]
+    RuntimeDir(#[from] RuntimeDirError),
 
     #[error("cannot create symlink for language file variant: {0:?}")]
     InvalidSymlinkTarget(SolverFile),

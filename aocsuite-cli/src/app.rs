@@ -44,7 +44,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             valid_puzzle_release(day, year)?;
             let output = post_answer(&answer, &part, day, year)?;
             let result = parse_submission_result(&output);
-            update_cache_status(&result, day, year, part == Exercise::One);
+            update_cache_status(&result, day, year, part == Exercise::One)?;
             println!("{result}");
         }
 
@@ -255,7 +255,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
         },
 
         AocCommand::Uninstall => {
-            let aocsuite_dir = get_aocsuite_dir();
+            let aocsuite_dir = get_aocsuite_dir()?;
             println!(
                 "Ensure you have backed up any solutions. Files can be found at {:?}",
                 aocsuite_dir

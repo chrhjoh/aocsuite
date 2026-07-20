@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use aocsuite_utils::get_aocsuite_dir;
+use aocsuite_utils::{get_aocsuite_dir, RuntimeDirError};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -17,7 +17,7 @@ struct AocConfig {
 
 impl AocConfig {
     pub fn new() -> AocConfigResult<AocConfig> {
-        let config_dir = get_aocsuite_dir();
+        let config_dir = get_aocsuite_dir()?;
 
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir)?;
@@ -149,6 +149,8 @@ pub enum AocConfigError {
     NotFound { key: ConfigOpt },
     #[error("Failed to get config key: {0}")]
     GetEnv(#[from] VarError),
+    #[error(transparent)]
+    RuntimeDir(#[from] RuntimeDirError),
 }
 
 pub type AocConfigResult<T> = Result<T, AocConfigError>;
