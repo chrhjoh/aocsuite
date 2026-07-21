@@ -6,6 +6,7 @@ mod utils;
 
 use std::{
     collections::HashMap,
+    ffi::OsString,
     path::{Path, PathBuf},
 };
 
@@ -77,7 +78,7 @@ impl Language {
         self.runner.list_packages()
     }
 
-    pub fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<String, String>> {
+    pub fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<OsString, OsString>> {
         self.runner.editor_environment_vars()
     }
 

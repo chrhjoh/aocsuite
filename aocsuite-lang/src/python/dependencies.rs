@@ -1,8 +1,11 @@
 use crate::AocLanguageError;
 use crate::{traits::DepManager, AocLanguageResult};
-use std::collections::HashMap;
-use std::path::PathBuf;
 use std::process::Command;
+use std::{
+    collections::HashMap,
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 use super::PythonRunner;
 
@@ -100,16 +103,66 @@ impl DepManager for PythonRunner {
 
         Ok(())
     }
-    fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<String, String>> {
+    fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<OsString, OsString>> {
         let mut vars = HashMap::new();
-        let current_path = std::env::var("PATH").unwrap_or_default();
-        let new_path = format!(
-            "{}:{}",
-            self.get_python_path().parent().unwrap().to_string_lossy(),
-            current_path
+        let python_dir = self
+            .get_python_path()
+            .parent()
+            .expect("Python executable path always has a parent")
+            .to_path_buf();
+        let path = prepend_path(&python_dir, std::env::var_os("PATH"))?;
+        vars.insert(OsString::from("PATH"), path);
+        Ok(vars)
+    }
+}
+
+fn prepend_path(directory: &Path, current_path: Option<OsString>) -> AocLanguageResult<OsString> {
+    let mut paths = vec![directory.to_path_buf()];
+    if let Some(current_path) = current_path {
+        paths.extend(std::env::split_paths(&current_path));
+    }
+    std::env::join_paths(paths).map_err(|error| AocLanguageError::Env(error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{ffi::OsString, path::PathBuf};
+
+    use super::prepend_path;
+
+    #[test]
+    fn prepended_path_round_trips_with_platform_separator() {
+        let existing = std::env::join_paths([PathBuf::from("one"), PathBuf::from("two")])
+            .expect("join existing PATH");
+        let path = prepend_path(PathBuf::from("venv-bin").as_path(), Some(existing))
+            .expect("prepend PATH");
+
+        assert_eq!(
+            std::env::split_paths(&path).collect::<Vec<_>>(),
+            vec![
+                PathBuf::from("venv-bin"),
+                PathBuf::from("one"),
+                PathBuf::from("two")
+            ]
         );
-        vars.insert("PATH".to_string(), new_path);
-        return Ok(vars);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prepended_path_preserves_non_unicode_entries() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let existing =
+            std::env::join_paths([PathBuf::from(OsString::from_vec(b"old-\xff".to_vec()))])
+                .expect("join non-Unicode PATH");
+        let path = prepend_path(PathBuf::from("venv-bin").as_path(), Some(existing))
+            .expect("prepend PATH");
+
+        let paths = std::env::split_paths(&path).collect::<Vec<_>>();
+        assert_eq!(
+            paths[1].as_os_str(),
+            OsString::from_vec(b"old-\xff".to_vec())
+        );
     }
 }
 

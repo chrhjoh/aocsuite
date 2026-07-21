@@ -4,6 +4,7 @@ mod editor_types;
 
 use std::{
     collections::HashMap,
+    ffi::OsString,
     path::{Path, PathBuf},
 };
 
@@ -52,13 +53,13 @@ pub fn open_solution_files(
     examplefile: &Path,
     libfile: &Path,
     inputfile: &Path,
-    env_vars: Option<HashMap<String, String>>,
+    env_vars: Option<HashMap<OsString, OsString>>,
 ) -> AocEditorResult<()> {
     let editor = resolve_editor()?;
     editor.open_solution(puzzlefile, examplefile, libfile, inputfile, env_vars)?;
     Ok(())
 }
-pub fn open(file: &Path, env_vars: Option<HashMap<String, String>>) -> AocEditorResult<()> {
+pub fn open(file: &Path, env_vars: Option<HashMap<OsString, OsString>>) -> AocEditorResult<()> {
     let editor = resolve_editor()?;
     editor.open(file, env_vars)?;
     Ok(())

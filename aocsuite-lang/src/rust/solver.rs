@@ -25,11 +25,7 @@ impl Solver for RustRunner {
         input: &std::path::Path,
         output: &std::path::Path,
     ) -> AocLanguageResult<std::process::Output> {
-        let binary_path = self
-            .root_dir
-            .join("target")
-            .join("release")
-            .join("aocsuite-solution-rust");
+        let binary_path = release_binary_path(&self.root_dir);
 
         let output = std::process::Command::new(&binary_path)
             .arg(input)
@@ -95,6 +91,31 @@ enum Part {
     One,
     Two,
     Both,
+}
+
+fn release_binary_path(root_dir: &std::path::Path) -> std::path::PathBuf {
+    root_dir.join("target").join("release").join(format!(
+        "aocsuite-solution-rust{}",
+        std::env::consts::EXE_SUFFIX
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::release_binary_path;
+
+    #[test]
+    fn release_binary_uses_the_platform_executable_suffix() {
+        assert_eq!(
+            release_binary_path(Path::new("runtime")),
+            Path::new("runtime").join("target").join("release").join(format!(
+                "aocsuite-solution-rust{}",
+                std::env::consts::EXE_SUFFIX
+            ))
+        );
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -193,5 +214,33 @@ fn main() {
 
 "#
         .to_string()
+    }
+}
+
+fn release_binary_path(root_dir: &std::path::Path) -> std::path::PathBuf {
+    root_dir.join("target").join("release").join(format!(
+        "aocsuite-solution-rust{}",
+        std::env::consts::EXE_SUFFIX
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::release_binary_path;
+
+    #[test]
+    fn release_binary_uses_the_platform_executable_suffix() {
+        assert_eq!(
+            release_binary_path(Path::new("runtime")),
+            Path::new("runtime")
+                .join("target")
+                .join("release")
+                .join(format!(
+                    "aocsuite-solution-rust{}",
+                    std::env::consts::EXE_SUFFIX
+                ))
+        );
     }
 }

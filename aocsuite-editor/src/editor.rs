@@ -25,7 +25,7 @@ impl Editor {
     fn run(
         &self,
         args: Vec<OsString>,
-        env_vars: Option<HashMap<String, String>>,
+        env_vars: Option<HashMap<OsString, OsString>>,
     ) -> AocEditorResult<()> {
         let mut command = Command::new(&self.program);
         if let Some(vars) = env_vars {
@@ -51,7 +51,7 @@ impl Editor {
         examplefile: &Path,
         libfile: &Path,
         inputfile: &Path,
-        env_vars: Option<HashMap<String, String>>,
+        env_vars: Option<HashMap<OsString, OsString>>,
     ) -> AocEditorResult<()> {
         let args =
             self.args_builder
@@ -62,7 +62,7 @@ impl Editor {
     pub fn open(
         &self,
         file: &Path,
-        env_vars: Option<HashMap<String, String>>,
+        env_vars: Option<HashMap<OsString, OsString>>,
     ) -> AocEditorResult<()> {
         let args = vec![file.as_os_str().to_owned()];
         self.run(args, env_vars)?;
