@@ -1,26 +1,15 @@
 use std::{collections::HashMap, ffi::OsString, process::Command};
 
-use crate::{traits::DepManager, AocLanguageError, AocLanguageResult};
+use crate::{
+    traits::{DepManager, Solver},
+    AocLanguageError, AocLanguageResult,
+};
 
 use super::RustRunner;
 
 impl DepManager for RustRunner {
     fn setup_env(&self) -> AocLanguageResult<()> {
-        std::fs::create_dir_all(&self.root_dir)?;
-        let cargo_contents = r#"[package]
-name = "aocsuite-solution-rust"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-serde_json="1.0.140"
-serde = { version = "1.0.219", features = ["derive"]}
-"#;
-        let cargo_path = self.root_dir.join("Cargo.toml");
-        if !cargo_path.exists() {
-            std::fs::write(&cargo_path, cargo_contents)?
-        }
-        Ok(())
+        self.migrate_runtime()
     }
     fn add_package(&self, package: &str) -> AocLanguageResult<()> {
         let output = Command::new("cargo")

@@ -1,5 +1,8 @@
 use crate::AocLanguageError;
-use crate::{traits::DepManager, AocLanguageResult};
+use crate::{
+    traits::{DepManager, Solver},
+    AocLanguageResult,
+};
 use std::process::Command;
 use std::{
     collections::HashMap,
@@ -11,7 +14,7 @@ use super::PythonRunner;
 
 impl DepManager for PythonRunner {
     fn setup_env(&self) -> AocLanguageResult<()> {
-        std::fs::create_dir_all(&self.root_dir)?;
+        self.migrate_runtime()?;
         let venv_path = self.root_dir.join("venv");
 
         if !venv_path.exists() {

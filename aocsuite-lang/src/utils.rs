@@ -280,6 +280,9 @@ pub enum AocLanguageError {
     #[error("Lib name not valid: {0:?}")]
     LibInvalid(String),
 
+    #[error("runtime migration failed: {0}")]
+    RuntimeMigration(String),
+
     #[error("clean error: {0:?}")]
     Clean(String),
 }

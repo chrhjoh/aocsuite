@@ -1,5 +1,6 @@
 mod languages;
 mod python;
+mod runtime;
 mod rust;
 mod traits;
 mod utils;
@@ -60,7 +61,7 @@ impl Language {
     }
 
     pub fn prepare_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
-        self.runner.setup_solver()?;
+        self.runner.migrate_runtime()?;
         self.runner.ensure_solver_file(file)
     }
 
@@ -130,7 +131,7 @@ impl Language {
     }
 
     fn setup_solution(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<()> {
-        self.runner.setup_solver()?;
+        self.runner.migrate_runtime()?;
         self.runner
             .ensure_solver_file(&SolverFile::ActiveSolution(day, year))?;
         self.runner.setup_env()
@@ -345,7 +346,9 @@ mod tests {
         let runner = PythonRunner::new(root.clone());
         let main_path = runner.solver_file_path(&SolverFile::Entrypoint);
 
-        runner.setup_solver().expect("set up fresh Python solver");
+        runner
+            .migrate_runtime()
+            .expect("set up fresh Python solver");
         assert_eq!(
             fs::read_to_string(&main_path).expect("read generated Python main"),
             runner.main_contents()
@@ -353,12 +356,85 @@ mod tests {
 
         fs::write(&main_path, "custom main").expect("replace generated Python main");
         runner
-            .setup_solver()
+            .migrate_runtime()
             .expect("set up existing Python solver");
         assert_eq!(
             fs::read_to_string(&main_path).expect("read preserved Python main"),
             "custom main"
         );
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn rust_runtime_migration_replaces_only_owned_files() {
+        let root = test_root("rust-migration");
+        let runner = RustRunner::new(root.clone());
+        let main = root.join("src/main.rs");
+        let cargo = root.join("Cargo.toml");
+        let solution = root.join("src/solution.rs");
+        let library = root.join("src/helpers.rs");
+        let template = root.join("template.rs");
+        let puzzle = root.join("year2024/day1.rs");
+        fs::create_dir_all(main.parent().expect("main parent")).expect("create source directory");
+        fs::create_dir_all(puzzle.parent().expect("puzzle parent"))
+            .expect("create puzzle directory");
+        for path in [&main, &cargo, &solution, &library, &template, &puzzle] {
+            fs::write(path, "legacy or user content").expect("write legacy fixture");
+        }
+
+        runner
+            .migrate_runtime()
+            .expect("migrate legacy Rust runtime");
+
+        assert_eq!(
+            fs::read_to_string(&main).expect("read main"),
+            runner.main_contents()
+        );
+        assert!(fs::read_to_string(&cargo)
+            .expect("read Cargo manifest")
+            .contains("edition = \"2024\""));
+        for path in [&solution, &library, &template, &puzzle] {
+            assert_eq!(
+                fs::read_to_string(path).expect("read preserved user file"),
+                "legacy or user content"
+            );
+        }
+        assert!(root.join(".aocsuite-runtime.json").exists());
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn python_runtime_migration_replaces_only_owned_files() {
+        let root = test_root("python-migration");
+        let runner = PythonRunner::new(root.clone());
+        let main = root.join("main.py");
+        let solution = root.join("solution.py");
+        let library = root.join("helpers.py");
+        let template = root.join("template.py");
+        let puzzle = root.join("year2024/day1.py");
+        fs::create_dir_all(puzzle.parent().expect("puzzle parent"))
+            .expect("create puzzle directory");
+        for path in [&main, &solution, &library, &template, &puzzle] {
+            fs::write(path, "legacy or user content").expect("write legacy fixture");
+        }
+
+        runner
+            .migrate_runtime()
+            .expect("migrate legacy Python runtime");
+
+        assert_eq!(
+            fs::read_to_string(&main).expect("read main"),
+            runner.main_contents()
+        );
+        for path in [&solution, &library, &template, &puzzle] {
+            assert_eq!(
+                fs::read_to_string(path).expect("read preserved user file"),
+                "legacy or user content"
+            );
+        }
+        assert!(root.join(".aocsuite-runtime.json").exists());
 
         fs::remove_dir_all(root).expect("remove test runtime");
     }

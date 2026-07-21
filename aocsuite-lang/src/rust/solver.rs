@@ -1,7 +1,7 @@
 use crate::traits::Solver;
 use crate::utils::{AocLanguageResult, SolverFile};
 
-use super::RustRunner;
+use super::{cargo_contents, RustRunner};
 
 impl Solver for RustRunner {
     fn compile(
@@ -37,14 +37,17 @@ impl Solver for RustRunner {
         Ok(output)
     }
 
-    fn setup_solver(&self) -> AocLanguageResult<()> {
-        // Need main always for editing files
-        let main_path = self.solver_file_path(&SolverFile::Entrypoint);
-        std::fs::create_dir_all(main_path.parent().expect("main file is not root"))?;
-        if !main_path.exists() {
-            std::fs::write(&main_path, self.main_contents())?
-        }
-        Ok(())
+    fn migrate_runtime(&self) -> AocLanguageResult<()> {
+        crate::runtime::migrate_runtime(
+            &self.root_dir,
+            vec![
+                (
+                    self.solver_file_path(&SolverFile::Entrypoint),
+                    self.main_contents(),
+                ),
+                (self.root_dir.join("Cargo.toml"), cargo_contents()),
+            ],
+        )
     }
     fn clean_cache(&self) -> AocLanguageResult<()> {
         std::process::Command::new("cargo")

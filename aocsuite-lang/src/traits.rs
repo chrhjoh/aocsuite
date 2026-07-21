@@ -24,7 +24,7 @@ pub trait Solver {
     ) -> AocLanguageResult<Output>;
 
     fn solver_file_path(&self, file: &SolverFile) -> PathBuf;
-    fn setup_solver(&self) -> AocLanguageResult<()>;
+    fn migrate_runtime(&self) -> AocLanguageResult<()>;
     fn main_contents(&self) -> String;
     fn template_contents(&self) -> String;
     fn clean_cache(&self) -> AocLanguageResult<()>;

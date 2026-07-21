@@ -41,13 +41,14 @@ impl Solver for PythonRunner {
         ))
     }
 
-    fn setup_solver(&self) -> AocLanguageResult<()> {
-        let main_path = self.solver_file_path(&SolverFile::Entrypoint);
-        std::fs::create_dir_all(main_path.parent().expect("main file is not root"))?;
-        if !main_path.exists() {
-            std::fs::write(main_path, self.main_contents())?;
-        }
-        Ok(())
+    fn migrate_runtime(&self) -> AocLanguageResult<()> {
+        crate::runtime::migrate_runtime(
+            &self.root_dir,
+            vec![(
+                self.solver_file_path(&SolverFile::Entrypoint),
+                self.main_contents(),
+            )],
+        )
     }
 
     fn solver_file_path(&self, file: &SolverFile) -> std::path::PathBuf {
