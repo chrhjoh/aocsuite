@@ -4,7 +4,7 @@ members = [
 "aocsuite-cli", "aocsuite-client",
 "aocsuite-config",
 "aocsuite-editor"
-, "aocsuite-fs", "aocsuite-lang", "aocsuite-parser", "aocsuite-utils"]
+, "aocsuite-fs", "aocsuite-lang", "aocsuite-parser", "aocsuite-storage", "aocsuite-utils"]
 
 [workspace.dependencies]
 chrono = "0.4.41"
@@ -18,5 +18,7 @@ toml_edit = "0.22.27"
 colored = "3.0.0"
 html2md = "0.2.15"
 regex = "1.11.1"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
 scraper = "0.23.1"
 rpassword = "7.4.0"
+walkdir = "2.5.0"
