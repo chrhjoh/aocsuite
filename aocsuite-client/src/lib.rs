@@ -79,8 +79,15 @@ pub fn open_page(page: &AocPage) -> AocClientResult<()> {
     #[cfg(target_os = "windows")]
     let result = Command::new("cmd").args(["/C", "start", &url]).status();
 
-    result?;
-    Ok(())
+    ensure_browser_success(result?)
+}
+
+fn ensure_browser_success(status: std::process::ExitStatus) -> AocClientResult<()> {
+    if status.success() {
+        Ok(())
+    } else {
+        Err(AocClientError::BrowserFailed(status.code().unwrap_or(1)))
+    }
 }
 pub fn post_answer(
     answer: &str,
@@ -125,6 +132,9 @@ pub enum AocClientError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("browser launcher exited with status {0}")]
+    BrowserFailed(i32),
+
     #[error("HTML parsing error: {0}")]
     HtmlError(String),
 
@@ -154,7 +164,10 @@ mod tests {
 
     use reqwest::blocking::Client;
 
-    use super::{AocClientError, AocPage, build_http_client_with_session, download_file_from};
+    use super::{
+        AocClientError, AocPage, build_http_client_with_session, download_file_from,
+        ensure_browser_success,
+    };
 
     fn serve_once(status: u16, body: &'static str) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
@@ -184,6 +197,17 @@ mod tests {
     #[test]
     fn valid_session_header_builds_a_client() {
         assert!(build_http_client_with_session("valid-session").is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_browser_launch_returns_a_typed_error() {
+        use std::os::unix::process::ExitStatusExt;
+
+        assert!(matches!(
+            ensure_browser_success(std::process::ExitStatus::from_raw(1)),
+            Err(AocClientError::BrowserFailed(1))
+        ));
     }
 
     #[test]
