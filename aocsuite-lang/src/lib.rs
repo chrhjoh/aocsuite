@@ -20,6 +20,7 @@ pub use utils::{AocLanguageError, AocLanguageResult, SolverFile};
 
 pub struct Language {
     name: String,
+    language_type: LanguageType,
     runner: LanguageRunner,
 }
 
@@ -28,6 +29,7 @@ impl Language {
         let language = get_config_val(&ConfigOpt::Language, None, language.clone())?;
         Ok(Self {
             name: language.to_string(),
+            language_type: language.clone(),
             runner: language.to_runner()?,
         })
     }
@@ -80,9 +82,13 @@ impl Language {
     }
 
     pub fn get_lib_filepath(&self, lib_name: &str) -> AocLanguageResult<PathBuf> {
-        let unallowed_names = self.runner.invalid_lib_names();
-        validate_user_lib(lib_name, &unallowed_names)?;
+        validate_user_lib(lib_name, &self.language_type)?;
         let lib_path = self.runner.get_lib_path(lib_name);
+        ensure_no_case_collision(
+            &self.runner.lib_dir(),
+            &self.runner.file_extention(),
+            lib_name,
+        )?;
 
         if !lib_path.exists() {
             std::fs::create_dir_all(lib_path.parent().expect("is not root"))?;
@@ -92,8 +98,7 @@ impl Language {
     }
 
     pub fn remove_lib_file(&self, lib_name: &str) -> AocLanguageResult<()> {
-        let unallowed_names = self.runner.invalid_lib_names();
-        validate_user_lib(lib_name, &unallowed_names)?;
+        validate_user_lib(lib_name, &self.language_type)?;
         let lib_path = self.runner.get_lib_path(lib_name);
         if lib_path.exists() {
             std::fs::remove_file(lib_path)?;
@@ -109,10 +114,9 @@ impl Language {
         let file_extention = self.runner.file_extention();
         let dir = self.runner.lib_dir();
         let files = scan_lib_directory(&dir, &file_extention)?;
-        let unallowed_names = self.runner.invalid_lib_names();
         Ok(files
             .into_iter()
-            .filter(|file| validate_user_lib(file, &unallowed_names).is_ok())
+            .filter(|file| validate_user_lib(file, &self.language_type).is_ok())
             .collect())
     }
 
@@ -132,31 +136,31 @@ impl Language {
     }
 }
 
-fn validate_user_lib(lib_name: &str, unallowed_names: &Vec<&str>) -> AocLanguageResult<()> {
-    if lib_name.trim().is_empty() {
+fn validate_user_lib(lib_name: &str, language: &LanguageType) -> AocLanguageResult<()> {
+    if lib_name.is_empty() {
         return Err(AocLanguageError::LibInvalid(
             "Library name cannot be empty".to_string(),
         ));
     }
 
-    if !lib_name
-        .chars()
-        .all(|c| c.is_alphabetic() || c == '_' || c == '-')
+    let mut chars = lib_name.bytes();
+    let first = chars.next().expect("checked non-empty library name");
+    if !(first.is_ascii_alphabetic() || first == b'_')
+        || !chars.all(|c| c.is_ascii_alphanumeric() || c == b'_')
     {
         return Err(AocLanguageError::LibInvalid(
-            "Library name can only contain letters, underscores, and hyphens".to_string(),
+            "Library name must be an ASCII identifier".to_string(),
         ));
     }
 
-    if let Some(first_char) = lib_name.chars().next() {
-        if !first_char.is_alphabetic() && first_char != '_' {
-            return Err(AocLanguageError::LibInvalid(
-                "Library name must start with a letter or underscore".to_string(),
-            ));
-        }
-    }
-
-    if unallowed_names.contains(&lib_name) {
+    let reserved_names = match language {
+        LanguageType::Rust => RUST_RESERVED_NAMES,
+        LanguageType::Python => PYTHON_RESERVED_NAMES,
+    };
+    if reserved_names
+        .iter()
+        .any(|reserved| reserved.eq_ignore_ascii_case(lib_name))
+    {
         return Err(AocLanguageError::LibInvalid(format!(
             "'{}' is a reserved name for this language",
             lib_name
@@ -165,6 +169,37 @@ fn validate_user_lib(lib_name: &str, unallowed_names: &Vec<&str>) -> AocLanguage
 
     Ok(())
 }
+
+fn ensure_no_case_collision(dir: &Path, extension: &str, lib_name: &str) -> AocLanguageResult<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    for existing in scan_lib_directory(dir, extension)? {
+        if existing != lib_name && existing.eq_ignore_ascii_case(lib_name) {
+            return Err(AocLanguageError::LibInvalid(format!(
+                "'{}' conflicts with existing library '{}'",
+                lib_name, existing
+            )));
+        }
+    }
+    Ok(())
+}
+
+const RUST_RESERVED_NAMES: &[&str] = &[
+    "abstract", "as", "async", "await", "become", "box", "break", "const", "continue", "crate",
+    "do", "dyn", "else", "enum", "extern", "false", "final", "fn", "for", "gen", "if", "impl",
+    "in", "let", "loop", "macro", "match", "mod", "move", "mut", "override", "priv", "pub", "ref",
+    "return", "self", "Self", "static", "struct", "super", "trait", "true", "try", "type",
+    "typeof", "union", "unsafe", "use", "virtual", "where", "while", "yield", "main", "solution",
+    "template",
+];
+
+const PYTHON_RESERVED_NAMES: &[&str] = &[
+    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue",
+    "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import",
+    "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while",
+    "with", "yield", "match", "case", "type", "main", "solution", "template", "venv",
+];
 fn scan_lib_directory(dir: &Path, file_extention: &str) -> crate::AocLanguageResult<Vec<String>> {
     let mut lib_files = Vec::new();
     for entry in std::fs::read_dir(dir)? {
@@ -193,12 +228,13 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use super::{ensure_no_case_collision, validate_user_lib};
     use crate::{
         python::PythonRunner,
         rust::RustRunner,
         traits::{LanguageHandler, Solver},
         utils::{new_result_file_path, read_result, with_result_file},
-        AocLanguageError, SolverFile,
+        AocLanguageError, LanguageType, SolverFile,
     };
 
     fn test_root(language: &str) -> PathBuf {
@@ -210,6 +246,46 @@ mod tests {
             "aocsuite-lang-{language}-{}-{unique}",
             process::id()
         ))
+    }
+
+    #[test]
+    fn library_names_follow_language_identifier_rules() {
+        let cases = [
+            (LanguageType::Rust, "day2", true),
+            (LanguageType::Rust, "snake_case", true),
+            (LanguageType::Rust, "match", false),
+            (LanguageType::Rust, "Main", false),
+            (LanguageType::Rust, "two-words", false),
+            (LanguageType::Rust, "2fast", false),
+            (LanguageType::Rust, "café", false),
+            (LanguageType::Python, "day2", true),
+            (LanguageType::Python, "snake_case", true),
+            (LanguageType::Python, "class", false),
+            (LanguageType::Python, "venv", false),
+            (LanguageType::Python, "two-words", false),
+            (LanguageType::Python, "2fast", false),
+            (LanguageType::Python, "café", false),
+        ];
+
+        for (language, name, valid) in cases {
+            assert_eq!(
+                validate_user_lib(name, &language).is_ok(),
+                valid,
+                "{language:?} name {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn library_names_reject_case_insensitive_collisions() {
+        let dir = test_root("library-collision");
+        std::fs::create_dir_all(&dir).expect("create library directory");
+        std::fs::write(dir.join("Helpers.rs"), "").expect("create library");
+
+        assert!(ensure_no_case_collision(&dir, "rs", "helpers").is_err());
+        assert!(ensure_no_case_collision(&dir, "rs", "Helpers").is_ok());
+
+        std::fs::remove_dir_all(dir).expect("remove library directory");
     }
 
     fn assert_requested_solution_is_active(runner: &dyn LanguageHandler) {

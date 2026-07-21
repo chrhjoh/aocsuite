@@ -14,8 +14,4 @@ impl LibManager for RustRunner {
     fn file_extention(&self) -> String {
         "rs".to_string()
     }
-
-    fn invalid_lib_names(&self) -> Vec<&str> {
-        return vec!["main", "solution", "template"];
-    }
 }

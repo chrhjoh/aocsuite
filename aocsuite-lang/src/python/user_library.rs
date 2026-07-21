@@ -15,7 +15,4 @@ impl LibManager for PythonRunner {
     fn file_extention(&self) -> String {
         "py".to_string()
     }
-    fn invalid_lib_names(&self) -> Vec<&str> {
-        vec!["main", "solution", "template", "venv"]
-    }
 }

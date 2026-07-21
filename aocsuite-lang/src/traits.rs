@@ -65,7 +65,6 @@ pub trait LibManager {
     fn get_lib_path(&self, lib_name: &str) -> PathBuf;
     fn lib_dir(&self) -> PathBuf;
     fn file_extention(&self) -> String;
-    fn invalid_lib_names(&self) -> Vec<&str>;
 }
 
 pub trait DepManager {
