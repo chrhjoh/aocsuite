@@ -113,16 +113,21 @@ pub fn read_result(result_file: &Path) -> AocLanguageResult<ExerciseOutput> {
 }
 
 pub fn handle_command_output(output: Output) -> AocLanguageResult<()> {
-    if !output.status.success() {
-        // The compile command ran but failed
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(AocLanguageError::Command(stderr.to_string()));
-    }
+    ensure_command_success(&output)?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     if stdout != "" {
         println!("Standard out from exercise {}", stdout)
     }
     Ok(())
+}
+
+pub(crate) fn ensure_command_success(output: &Output) -> AocLanguageResult<()> {
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(AocLanguageError::Command(
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    ))
 }
 
 pub fn symlink_file(from: &Path, to: &Path) -> AocLanguageResult<()> {
@@ -299,7 +304,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{symlink_file, symlink_file_with, AocLanguageError};
+    use super::{ensure_command_success, symlink_file, symlink_file_with, AocLanguageError};
 
     fn test_root() -> PathBuf {
         let unique = SystemTime::now()
@@ -307,6 +312,22 @@ mod tests {
             .expect("system time is after the Unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("aocsuite-links-{}-{unique}", process::id()))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_commands_return_their_stderr() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let output = std::process::Output {
+            status: process::ExitStatus::from_raw(1),
+            stdout: Vec::new(),
+            stderr: b"command failed".to_vec(),
+        };
+        assert!(matches!(
+            ensure_command_success(&output),
+            Err(AocLanguageError::Command(message)) if message == "command failed"
+        ));
     }
 
     #[cfg(unix)]

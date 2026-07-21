@@ -2,6 +2,7 @@ use std::{collections::HashMap, ffi::OsString, process::Command};
 
 use crate::{
     traits::{DepManager, Solver},
+    utils::ensure_command_success,
     AocLanguageError, AocLanguageResult,
 };
 
@@ -47,9 +48,7 @@ impl DepManager for RustRunner {
             .current_dir(&self.root_dir)
             .output()?;
 
-        if !output.status.success() {
-            return Ok(Vec::new()); // If cargo tree fails, return empty list
-        }
+        ensure_command_success(&output)?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let packages: Vec<String> = stdout
