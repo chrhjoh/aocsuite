@@ -6,62 +6,273 @@ AoC Suite is a simple single-user application. Only one AoC Suite process is exp
 
 The TUI still serializes its own blocking jobs so it remains responsive and does not start two solver runs at once.
 
+## Ownership
+
+Add a broad `aocsuite-storage` service crate. It replaces `aocsuite-fs` and owns the physical layout, layout bootstrap and versioning, future layout migrations, SQLite lifecycle, AoC content fetch/parse/cache policy, run-file allocation, workspace Git, uninstall, and typed cleanup scopes.
+
+Keep strict internal layers even though they share one crate:
+
+- Layout and database modules depend only on `aocsuite-utils` and persistence packages.
+- The content module depends on layout/database plus `aocsuite-client` and `aocsuite-parser`.
+- The workspace module depends on layout/database plus the shared process executor.
+- Content, workspace, and database modules do not depend on one another through frontend types.
+
+Other crates consume an injected `RuntimeLayout` or storage handle instead of independently appending paths to `get_aocsuite_dir()`:
+
+- `aocsuite-utils` owns validated domain values and the injectable process executor.
+- `aocsuite-config` owns typed preferences, environment precedence, and session access.
+- `aocsuite-client` owns configuration-independent blocking AoC HTTP transport.
+- `aocsuite-parser` owns pure semantic parsing and Markdown conversion.
+- `aocsuite-lang` owns language projects, generated harness contents, package commands, compilation, and execution.
+- `aocsuite-launcher` owns editor/browser command resolution and external application launching.
+- CLI and TUI frontends own prompts, confirmation, rendering, terminal handoff, and job scheduling.
+
+`aocsuite-storage` may depend on client and parser APIs for its content service. It must not depend on configuration, language, launcher, CLI, or TUI crates. The client must not depend on configuration or storage; callers inject the optional resolved session.
+
+No general operations crate is planned. CLI and TUI call the same typed domain services and duplicate only frontend concerns. Domain policy such as fetch validation, submission counting/invalidation, run timing, cleanup scopes, and Git root enforcement stays inside its owning service.
+
+## Domain And Process Foundations
+
+Add UI-neutral validated values under `aocsuite_utils::domain`, including `PuzzleDay`, `PuzzleYear`, `PuzzleId`, `PuzzlePart`, `PartSelection`, and `LanguageId`. Structural validation belongs in constructors; release availability remains a separate check. Remove Clap derives from shared values and convert CLI types at the frontend boundary.
+
+`aocsuite-utils` also owns a synchronous injectable process executor with OS-native program, argument, path, and environment values. Process results retain status, stdout, and stderr. Captured execution is the default; foreground terminal inheritance is explicit. Storage Git, language, Cargo, Python, pip, launcher, and solver processes use this seam. Nonzero status is a completed result that the owning service contextualizes.
+
 ## Persistence Model
 
-Use one hardened runtime root. Keep files as the canonical representation of user work and cached AoC content; use bundled SQLite for cache metadata, storage schema versions, and durable application history.
-
-Do not store source files, templates, libraries, Cargo projects, Python environments, editor-opened files, cache content blobs, or the AoC session in SQLite.
-
-The database stores cache metadata, puzzle progress, local run history, submission history, and schema versions. It does not persist private leaderboard data.
+Use one hardened runtime root. Keep user work and complete language projects as Git-managed files, downloaded AoC content as disposable cache files, and transient results outside the Git workspace. Use bundled SQLite for cache metadata and the small amount of application state defined below.
 
 ```text
 aocsuite/
+  .aocsuite-layout.json      # Physical layout version
   config.json                # Typed non-secret preferences
-  secrets/session            # Owner-only AoC session token
-  state.sqlite               # Cache metadata and schema versions
-  cache/aoc/                 # Disposable downloaded puzzle/input/calendar files
-  workspace/                 # Git root for Rust/Python solutions, templates, and libraries
+  secrets/
+    session                  # Owner-only AoC session token
+  state.sqlite               # Metadata and bounded application state
+  cache/
+    aoc/                     # Disposable downloaded AoC content
   runs/                      # Unique transient solver result files
+  workspace/                 # The only Git-managed area
+    .git/
+    .gitignore
+    examples/                # Shared user-authored puzzle examples
+    rust/                    # Complete portable Rust project
+    python/                  # Complete portable Python project
 ```
 
-`workspace/` is the only Git-managed area. Cache, generated build products, environments, transient runs, and secrets are excluded from Git.
+Do not store source files, templates, libraries, Cargo files, Python environments, examples, cache body content, plaintext answers, or the AoC session in SQLite.
 
-## Cache Metadata
+## Runtime Layout API
 
-`state.sqlite` indexes cache entries by content type, year, day, file path, hash, size, fetch time, HTTP validation data, and validity/error state. Cache files are canonical; the database is an index.
+`aocsuite-storage` exposes a cloneable `RuntimeLayout` with discovery and explicit-root constructors. Tests use explicit temporary roots and do not mutate process-global environment variables.
 
-Write cache files to a same-directory temporary path and atomically replace the destination before updating the SQLite entry. If the database is missing or corrupt, rebuild its index from the cache files and mark entries without verifiable metadata stale.
+Path getters are pure. They never create directories, fetch content, migrate data, initialize projects, or launch commands. Bootstrap and mutation are separate explicit operations.
 
-Downloaded AoC content is disposable. `clean cache` removes only cached AoC files and their metadata; it does not remove preferences, secrets, or workspaces.
+The layout provides typed paths for at least:
 
-## Puzzle Progress And History
+- Layout manifest, preferences, session, database, cache, runs, and workspace.
+- Shared examples by year/day.
+- Rust and Python project roots.
+- Cache bodies by content type and puzzle date.
 
-SQLite records puzzle progress by year, day, and part, including completion status and any observed completion time. This supports calendar and progress views without treating cached AoC pages as the source of user state.
+Database paths are stored as validated relative paths and resolved through the layout. Database contents must never direct reads or deletion outside their owning root.
 
-Local run history records the selected puzzle, runner and language, source revision when available, execution time, duration, exit status, and answer hashes. Run result files remain transient; the history is durable and must not contain puzzle inputs or plaintext answers.
+Every application invocation bootstraps and validates storage before reading configuration or constructing services. Root bootstrap does not create `workspace/`; workspace initialization is lazy so Git clone can target an absent directory. If CLI help/version must also bootstrap literally, use a non-exiting Clap parse flow rather than relying on `Parser::parse` to terminate first.
 
-Submission history records the selected puzzle and part, submission time, hash of the submitted answer, AoC outcome, and any cooldown expiry. It prevents accidental duplicate submissions while keeping submitted answers out of SQLite. It must never include the session token.
+## Git Workspace
 
-Do not persist private leaderboard membership, names, rankings, or completion data. Leaderboard data is opt-in on AoC and must not be retained locally.
+`workspace/` is one Git repository containing two independent, portable language projects and shared examples. Generated execution harnesses are tracked because a cloned repository should preserve source, dependencies, and project scaffolding. AoC Suite may document manual standalone execution, but only AoC Suite-managed activation and execution are supported.
+
+```text
+workspace/
+  examples/
+    year2024/
+      day1.txt
+  rust/
+    .aocsuite-runtime.json
+    Cargo.toml
+    Cargo.lock
+    template.rs
+    year2024/
+      day1.rs
+    src/
+      main.rs
+      solution.rs            # Generated active link, ignored by Git
+      helpers.rs
+    target/                  # Ignored by Git
+  python/
+    .aocsuite-runtime.json
+    requirements.txt
+    main.py
+    template.py
+    solution.py              # Generated active link, ignored by Git
+    year2024/
+      day1.py
+    helpers.py
+    venv/                    # Ignored by Git
+    __pycache__/             # Ignored by Git
+```
+
+The generated workspace `.gitignore` is strictly AoC Suite-owned and may be replaced during workspace setup or migration. It excludes at least:
+
+```gitignore
+rust/target/
+rust/src/solution.rs
+python/venv/
+python/solution.py
+**/__pycache__/
+*.pyc
+```
+
+Track Rust `Cargo.toml`, Rust `Cargo.lock`, Python `requirements.txt`, generated harnesses, language runtime manifests, solutions, templates, libraries, and examples.
+
+Storage owns Git command execution rooted at `workspace/`. Captured Git disables pagers and terminal prompts; foreground commands require explicit frontend terminal handoff. Root bootstrap leaves the workspace absent. Clone creates it, while non-clone workspace operations initialize it lazily. Cloning into an existing nonempty workspace returns a typed conflict.
+
+## Generated Harnesses
+
+Generated `main.rs` and `main.py` files are strictly AoC Suite-owned even though they are tracked in Git. Manual edits may be overwritten.
+
+Each language project tracks `.aocsuite-runtime.json` with only its infrastructure version:
+
+```json
+{
+  "infrastructure_version": 1
+}
+```
+
+When the recorded version is older, the language-owned migration:
+
+1. Atomically replaces all owned generated harness files.
+2. Applies required scaffold changes without replacing user dependency declarations.
+3. Writes the new manifest version only after the file updates succeed.
+
+Migrations never replace solutions, templates, libraries, examples, `Cargo.toml`, `Cargo.lock`, or `requirements.txt`. No generated-file hashes or manual-modification detection are required.
+
+The active solution link is disposable selection state. It is recreated before compilation or execution and is not tracked in Git.
+
+All language jobs that may change the active link are serialized across activation, harness migration, setup, build, execution, result consumption, and timing persistence. The initial TUI uses one language-effect queue; direct callers must use the same high-level language job API instead of composing activation and execution primitives independently.
+
+## Dependency Management
+
+### Rust
+
+`workspace/rust/Cargo.toml` is the actual project manifest. AoC Suite uses `toml_edit` for package mutation and scaffold updates so unknown sections, comments, profiles, and user dependencies survive. Required harness dependencies may be inserted or repaired semantically, but the entire manifest is never regenerated during a harness migration.
+
+`Cargo.lock` is tracked because the solver is an executable project. Rust environment cleanup runs `cargo clean`; it does not remove either Cargo file.
+
+### Python
+
+`workspace/python/requirements.txt` is tracked and records the complete output of `pip freeze`.
+
+Package addition and removal run pip first. After a successful mutation, `pip freeze` atomically replaces `requirements.txt`. If freezing fails, return an error rather than reporting the persisted dependency state as current.
+
+Python setup creates an empty `requirements.txt` when absent, creates `venv/` when absent, and installs `-r requirements.txt`. Python environment cleanup removes only the virtual environment and generated Python caches. It preserves `requirements.txt`.
+
+Migration of dependencies from the current unversioned layout is out of scope.
+
+## Examples And Cleanup
+
+One example file is shared between Rust and Python for each puzzle. Examples live under `workspace/examples`, are user-owned and Git-managed, and are not cache content.
+
+Cleanup scopes are explicit and idempotent:
+
+- Normal cache cleaning removes only downloaded files under `cache/aoc` and their metadata.
+- Example cleaning removes examples only when explicitly requested.
+- A comprehensive confirmed clean may include both cache and examples.
+- Language cache cleaning removes Rust build output or Python bytecode caches.
+- Environment cleaning removes disposable environment state but preserves dependency declarations.
+- Missing cleanup targets are successful no-ops.
+
+## Cache Content And Metadata
+
+`state.sqlite` indexes cache entries by content type, year, day, validated relative path, size, fetch time, HTTP validation data, and validity/error state. Cache files are canonical; their database rows are rebuildable indexes.
+
+Puzzle HTML is the canonical downloaded body. Store raw `puzzle.html` plus disposable derived `puzzle.md` for editor and CLI workflows. Validate and convert the raw body before replacing a previously valid entry. If Markdown is missing after an interrupted write or parser upgrade, regenerate it from the cached HTML without another request. Calendar HTML and input text remain canonical raw bodies.
+
+Cache writes follow this order:
+
+1. Fetch and validate the response.
+2. Atomically replace the cache body using a same-directory temporary file.
+3. Record its size and fetch metadata.
+4. Commit the SQLite metadata row.
+
+If the database is missing or corrupt, scan recognized cache paths, rebuild their rows, and mark entries stale when fetch provenance cannot be verified. The content module reparses cached calendar HTML to rebuild stars. Unexpected files are reported or ignored, never deleted during indexing.
+
+Path lookup, status lookup, cached reads, fetch, refresh, invalidation, and cleanup are separate APIs. Asking for a cache path must not perform HTTP or filesystem mutation.
+
+Downloaded AoC content is disposable. Cache cleaning does not remove preferences, secrets, examples, workspaces, or run history.
+
+## SQLite State
+
+The initial database stores only:
+
+- Cache metadata.
+- A rebuildable projection of stars parsed from calendar content.
+- Submission attempt count by year, day, and part.
+- The most recent solver runtimes by year, day, language, and part.
+
+Calendar content is the source of truth for completion status. Do not invent or store a duration from puzzle download to completion. A run requesting both parts records each reported part runtime independently.
+
+Retain the latest 10 runtimes per year/day/language/part by default. The limit is a typed non-secret preference. Prune older entries in the same transaction that inserts a new timing.
+
+Do not store submitted answers, answer hashes, cooldowns, private leaderboard data, or detailed submission events. Cooldown and broader history are deferred until the shared domain services are established.
+
+Increment submission counts only for parsed correct and incorrect AoC outcomes. Rate limits, already-completed responses, authentication failures, transport failures, and unknown responses do not increment the count. Correct outcomes invalidate calendar content; correct part-one outcomes also invalidate puzzle content. This policy is implemented once in the shared storage content service.
+
+If `state.sqlite` fails its integrity check, rename it to a timestamped quarantine path, create a new database, rebuild cache metadata and calendar stars where possible, and report that submission counts and run timings may have been lost. Never silently delete the corrupt database.
+
+## SQLite Versioning
+
+Use a stable SQLite `application_id`, `PRAGMA user_version`, foreign keys, and ordered embedded schema migrations. Run each schema upgrade in a transaction and reject databases newer than the binary supports.
+
+The filesystem layout version is not stored only in SQLite because the database is replaceable. `.aocsuite-layout.json` is authoritative for the physical layout:
+
+```json
+{
+  "layout_version": 1,
+  "created_by": "0.4.0"
+}
+```
+
+SQLite may mirror the layout version for diagnostics.
 
 ## Configuration And Secrets
 
-`config.json` contains non-secret typed preferences and is written atomically. The session token is stored separately in `secrets/session` with owner-only permissions and is redacted in all normal output. `AOC_SESSION` remains a nonpersistent configuration source.
+`config.json` contains typed non-secret preferences and is written atomically. It includes the run-history limit with a default of 10. Configuration reads do not create files; initialization and writes are explicit.
 
-## Migration
+The session token is stored separately in `secrets/session` with owner-only file and directory permissions. `AOC_SESSION` remains a nonpersistent configuration source. Prompting belongs to the frontend, not `aocsuite-config`.
 
-The storage redesign migrates existing runtime data automatically:
+Remove the unused `template_dir` preference and `AOC_TEMPLATE_DIR`; templates are tracked inside each language project. Configuration, language, client, and launcher services receive explicit paths/settings and do not independently discover global configuration.
 
-1. Create an exclusive short-lived migration marker.
-2. Create a timestamped backup beside the existing runtime root.
-3. Move legacy source and Git state into `workspace/`.
-4. Move downloaded data into `cache/aoc/`.
-5. Move the session from legacy configuration into `secrets/session`.
-6. Initialize typed preferences and `state.sqlite`, then index cache files.
-7. Record the completed layout version and remove the migration marker.
+## Launcher And Frontend Boundaries
 
-Retain the backup for recovery. The migration also updates owned generated Rust/Python harness files and dependency scaffolding while preserving user solutions, templates, libraries, and dependency declarations.
+Rename `aocsuite-editor` to `aocsuite-launcher`. It owns editor aliases, browser platform commands, executable resolution, argument construction, environment forwarding, and process result handling. It does not read configuration, inspect storage, print output, or suspend terminals. CLI/TUI resolve the effective launcher setting and own terminal suspend/restore around foreground launches.
+
+Libraries return presentation-neutral values. Parser output contains semantic calendar cells/stars and submission outcomes, while language execution returns public part results and command diagnostics. ANSI, emoji, box drawing, prompts, and user-facing prose remain frontend adapters.
+
+Destructive service APIs accept typed, already-confirmed scopes and return idempotent reports. Storage owns cache/example/workspace/uninstall deletion safety; language owns template/library/build/environment cleanup. No service accepts a `force` flag or prompts.
+
+## Initial Layout And Future Migration
+
+There are no active users requiring migration from the current unversioned layout. Do not implement best-effort import, Git relocation, session extraction, or dependency extraction from it.
+
+Bootstrap behavior is:
+
+- Missing root: create layout version 1.
+- Empty root: initialize layout version 1.
+- Current supported layout: open normally.
+- Nonempty unversioned root: reject without mutation and provide manual-removal guidance.
+- Newer layout version: reject without mutation.
+
+Do not add an automatic or destructive legacy reset command.
+
+Future migrations between versioned layouts use a short-lived sibling marker and an untouched timestamped sibling backup. Migration phases are idempotent and resumable from the backup after interruption. Retain the backup for manual recovery and never silently merge conflicting files.
+
+## Packages
+
+Use `rusqlite` with bundled SQLite for the synchronous database layer and `walkdir` for deterministic cache indexing. Continue using workspace `chrono`, `serde`, `serde_json`, and `thiserror`; `toml_edit` belongs in `aocsuite-lang` for tracked Cargo manifest updates. Use `tempfile` for isolated storage tests.
+
+Do not add an async SQL client, a separate SQL migration framework, normal-operation file locks, answer-HMAC dependencies, or an archive format for migration backups.
 
 ## Deferred Features
 
-SQLite does not yet store search indexes. Reconsider expanding its role only when that feature is scheduled.
+Defer cooldown tracking, detailed run/submission history, answer retention, search indexes, private leaderboard persistence, and automatic legacy-root import. Reconsider them only after shared noninteractive operations and TUI requirements justify them.

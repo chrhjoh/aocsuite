@@ -7,8 +7,14 @@ Review snapshot: 2026-07-18. This is an issue and test inventory; resolved entri
 - TUI feature parity covers every current CLI command leaf, not only the narrower TODO scope.
 - Preserve the current destructive-confirmation default: an empty line proceeds, while EOF cancels. Treat this as intentional behavior in future tests.
 - Redact session values by default; no normal configuration read should print the raw token.
-- Migrate existing runtime data as part of the planned storage redesign, using a recoverable backup-and-migration process.
-- Serialize TUI solver runs. The stale-result defect still requires clearing and validating the run result, but concurrent TUI runs are out of scope.
+- There are no active users requiring import of the current unversioned runtime layout. Reject nonempty unversioned roots without mutation; future migrations between versioned layouts use recoverable backups and resumable phases.
+- Replace `aocsuite-fs` with a broad internally layered `aocsuite-storage` service owning layout, SQLite, AoC content lifecycle, workspace Git, cleanup, and run allocation.
+- Keep complete Rust/Python projects, generated harnesses, version manifests, Cargo files, Python requirements, solutions, templates, libraries, and shared examples in the Git workspace. Ignore only disposable environments/build output and active links.
+- Generated harnesses are strictly AoC Suite-owned and migrate by version only; manual harness edits may be overwritten without hash checks.
+- Use one shared process-executor seam in `aocsuite-utils`, semantic parser/language results, and a combined `aocsuite-launcher` for editor/browser processes.
+- Do not add a general operations crate. CLI and TUI use the same typed domain services and duplicate only presentation, confirmation, terminal handoff, and job scheduling.
+- Bootstrap storage on every application invocation, create `workspace/` lazily, regenerate the AoC Suite-owned `.gitignore`, and serialize all jobs that may change an active solution link.
+- Add GitHub Actions in stages: locked baseline CI, then required Ubuntu/Windows/macOS tests after deterministic seams, followed by tag-driven CLI releases and future same-version TUI artifacts. See `docs/CI.md`.
 - Advent of Code 2025 has twelve puzzles; release days 1-12 daily in December and reject days 13-25.
 
 ## Confirmed Issues
@@ -50,12 +56,14 @@ Review snapshot: 2026-07-18. This is an issue and test inventory; resolved entri
 
 These are prerequisites or design risks, not separate confirmed defects:
 
-- Extract typed, non-interactive operations from the CLI dispatcher. The TUI must not call `run_aocsuite` or parse its output (`aocsuite-cli/src/app.rs`).
-- Separate pure path queries from fetch/setup/mutation. `AocContentFile::to_path` can download, and language lookup/list/clean can create environments.
-- Return semantic calendar data and public structured solver results. Current calendar output embeds ANSI and `ExerciseOutput` fields are inaccessible outside `aocsuite-lang` (`aocsuite-parser/src/http_ansicalendar.rs`, `aocsuite-lang/src/utils.rs:18-58`).
-- Represent browser/editor/Git/Cargo/Python/pip/solver launches as structured command requests behind an injectable executor. Current calls block and some print directly to the host terminal.
-- Move Git operations out of the private CLI module or introduce a shared owning crate. Confirmation remains frontend state; shared destructive APIs should receive already-confirmed typed requests.
-- Keep network, filesystem mutation, environment setup, subprocess waits, and editor terminal handoff outside Ratatui update/render. Serialize solver jobs and use job IDs so stale asynchronous completions cannot update the wrong selection.
+- Keep Clap types, prompting, confirmation, and rendering in frontends. The TUI must not call `run_aocsuite` or parse CLI output (`aocsuite-cli/src/app.rs`).
+- Add validated puzzle/language values under `aocsuite_utils::domain`; remove Clap and global config discovery from service crates.
+- Replace side-effecting path getters with pure paths plus explicit ensure/load/refresh/mutate operations. `AocContentFile::to_path` and several language/Git getters currently hide mutation.
+- Replace `aocsuite-fs` with storage-owned typed cache keys, raw puzzle HTML plus derived Markdown, semantic fetch/cache policy, SQLite metadata, shared examples, and typed cleanup.
+- Return semantic calendar/submission data and public structured solver reports. Current calendar output embeds ANSI and language output still includes library printing/opaque fields.
+- Route browser/editor/Git/Cargo/Python/pip/solver launches through `aocsuite-utils::ProcessExecutor`; rename editor support to a configuration-independent `aocsuite-launcher`.
+- Move Git and uninstall safety into storage workspace services. Confirmation remains frontend state; destructive APIs receive typed already-confirmed scopes and return idempotent reports.
+- Keep network, storage mutation, language setup/runs, subprocess waits, and launcher terminal handoff outside Ratatui update/render. Serialize language jobs and use job IDs so stale asynchronous completions cannot update the wrong selection.
 
 ## Required Test Coverage
 
@@ -65,25 +73,25 @@ These are prerequisites or design risks, not separate confirmed defects:
 - Inject a fixed clock for release/default tests; cover UTC/US-Eastern date disagreement and midnight release boundaries without relying on the execution date.
 - Inject environment lookup where possible. Transitional tests that mutate process environment must run in isolated child processes because parallel tests otherwise race.
 - Inject an HTTP base URL/client and use a local mock server. Never contact Advent of Code or use a real session token.
-- Introduce a process-executor seam returning status/stdout/stderr. Deterministic tests must not launch real Git, Cargo, Python, pip, editors, or browsers.
+- Use the shared process-executor seam returning status/stdout/stderr. Deterministic tests must not launch real Git, Cargo, Python, pip, editors, or browsers.
 - Do not add cross-process concurrency coverage: the project assumes a single AoCSuite process at a time. Serialize solver runs in the TUI and give each queued job an ID for stale-completion handling.
 - TUI tests must use `ratatui::TestBackend`, synthetic events, and fake terminal operations; they must not alter the test runner's raw mode, alternate screen, cursor, or stdin.
 
 ### Crate Test Map
 
-- **`aocsuite-utils`:** release boundaries, invalid inputs without panic, Eastern defaults, 2025 twelve-day policy, and runtime-root precedence/validation.
-- **`aocsuite-config`:** source precedence, typed parsing, non-interactive set/remove, secret handling, Unix permissions, malformed JSON, and failed writes.
-- **`aocsuite-client`:** every URL shape, cookie/form construction, status handling, redirects, timeout behavior, invalid sessions, and browser-launch status through fakes.
-- **`aocsuite-fs`:** pure paths; cache miss/hit/offline/refresh; input persistence; parser/fetch failure preserving good data; metadata corruption; submission invalidation; clean day/year/all scope and idempotence.
+- **`aocsuite-utils`:** validated domain values, release boundaries, Eastern defaults, 2025 twelve-day policy, runtime-root precedence/validation, and fake/real process execution.
+- **`aocsuite-config`:** source precedence, typed parsing, non-interactive set/remove, session redaction, Unix permissions, malformed JSON, and failed writes.
+- **`aocsuite-client`:** explicit optional sessions, every URL shape, cookie/form construction, status handling, redirects, timeout behavior, and invalid sessions.
+- **`aocsuite-storage`:** pure layout paths; bootstrap/version rejection; raw/derived cache lifecycle; fetch/parser failures preserving good data; SQLite corruption/recovery; stars/counts/timings; Git modes; cleanup/uninstall scopes and idempotence.
 - **`aocsuite-parser`:** fixture-driven markdown with zero/one/two articles, structured calendar cells/stars/styles, and the complete submission/rate-limit response table.
 - **`aocsuite-lang`:** shared Rust/Python contract for setup, selected solution, compile/run, custom/example input, part selection, public result fields, unique result files, command failures, package list/add/remove/clean, library names, symlink safety, generated templates, and migrations.
-- **`aocsuite-editor`:** editor resolution, argument ordering/escaping, environment forwarding, non-UTF-8 paths, and child exit status using command specifications.
-- **`aocsuite-cli`:** expose parser construction for table-driven coverage of all command leaves; test formatting/error mapping, Git classification, confirmations, and every destructive scope against fake services.
+- **`aocsuite-launcher`:** editor/browser resolution, argument ordering/escaping, environment forwarding, non-UTF-8 paths, captured/foreground modes, and child status using command specifications.
+- **`aocsuite-cli`:** expose parser construction for table-driven coverage of all command leaves; test service mapping, formatting/error mapping, confirmations, and every destructive scope against fake services.
 - **`aocsuite-tui`:** pure state/reducer tests; loading/success/error/confirmation transitions; selection-to-request correctness; `TestBackend` rendering at normal/narrow sizes; no ANSI or session leakage; synthetic key/resize/tick handling; terminal restoration; responsive background jobs; stale-result rejection.
 
 ### Cross-Frontend and Workflow Tests
 
-- Maintain one parity case table for all CLI command leaves. CLI parsing and TUI actions must produce the same typed operation request, including selected day/year/language/part/input and clean target.
+- Maintain one parity case table for all CLI command leaves. CLI parsing and TUI actions must map to equivalent typed domain-service requests, including selected day/year/language/part/input and clean target.
 - Add three deterministic workflow integrations after the seams exist: calendar cache miss then hit; select/open/run an example using the exact selected solution; submit a correct answer and verify cache invalidation.
 - Keep live AoC, real editor/browser, and installed Cargo/Python environment smoke tests optional and outside the deterministic suite.
 
@@ -92,5 +100,6 @@ These are prerequisites or design risks, not separate confirmed defects:
 - `cargo check --workspace` passes.
 - `cargo test --workspace` passes; `aocsuite-lang` currently covers Rust/Python active-source selection.
 - `cargo run -p aocsuite-cli -- --help` passes.
+- Baseline GitHub CI runs locked workspace check/test and the CLI help smoke test; `docs/CI.md` defines the staged cross-platform and release targets.
 - `cargo fmt --all -- --check` currently fails on existing formatting in `aocsuite-cli/src/app.rs`.
 - `cargo clippy --workspace --all-targets --all-features` currently fails on `clippy::never_loop` in `aocsuite-parser/src/http_ansicalendar.rs:17-24` and also reports existing warnings in `aocsuite-utils` and the calendar parser.
