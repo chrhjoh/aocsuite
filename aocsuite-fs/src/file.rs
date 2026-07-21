@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use aocsuite_client::{download_file, AocPage};
+use aocsuite_client::{AocClient, AocPage};
 use aocsuite_parser::{parse, AocSubmissionResult, ParserType};
 use aocsuite_utils::{atomic_write, set_owner_only_permissions, PuzzleDay, PuzzleYear};
 use serde_json::{Map, Value};
@@ -68,10 +68,10 @@ impl AocContentFile {
         )
     }
 
-    pub fn to_path(&self) -> AocFileResult<PathBuf> {
-        let path = self._to_path()?;
-        if !is_cache_valid(&path) & self.fetchable() {
-            fetch_aocfile(self)?;
+    pub fn materialize(&self, client: &AocClient) -> AocFileResult<PathBuf> {
+        let path = self.path()?;
+        if !is_cache_valid(&path) && self.fetchable() {
+            fetch_aocfile(self, client)?;
         }
         if self.file_type == AocFileType::Input && path.exists() {
             set_owner_only_permissions(&path)?;
@@ -79,7 +79,7 @@ impl AocContentFile {
 
         Ok(path)
     }
-    fn _to_path(&self) -> AocFileResult<PathBuf> {
+    pub fn path(&self) -> AocFileResult<PathBuf> {
         let dir = AocCacheDir::new()?;
         let filename = self.filename();
 
@@ -100,13 +100,13 @@ impl AocContentFile {
 
     pub fn set_cache_status(&self, val: bool) -> AocFileResult<()> {
         if self.updateable() {
-            update_cache(&self._to_path()?, val)?;
+            update_cache(&self.path()?, val)?;
         }
         Ok(())
     }
 
     fn save(&self, contents: &str) -> AocFileResult<()> {
-        let path = self._to_path()?;
+        let path = self.path()?;
 
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -116,15 +116,15 @@ impl AocContentFile {
 
         Ok(())
     }
-    pub fn load(&self) -> AocFileResult<String> {
-        let path = self.to_path()?;
+    pub fn load(&self, client: &AocClient) -> AocFileResult<String> {
+        let path = self.materialize(client)?;
         let contents = fs::read_to_string(&path)?;
         Ok(contents)
     }
 }
-fn fetch_aocfile(file: &AocContentFile) -> AocFileResult<()> {
+fn fetch_aocfile(file: &AocContentFile, client: &AocClient) -> AocFileResult<()> {
     let page = page_from_file(file)?;
-    let content = download_file(&page)?;
+    let content = client.download(&page)?;
     let content = if file.file_type == AocFileType::Puzzle {
         parse_puzzle_content(&content)?
     } else {
@@ -132,7 +132,7 @@ fn fetch_aocfile(file: &AocContentFile) -> AocFileResult<()> {
     };
 
     file.save(&content)?;
-    update_cache(&file._to_path()?, true)?;
+    update_cache(&file.path()?, true)?;
     Ok(())
 }
 

@@ -8,15 +8,15 @@ use crate::{
     git::{get_gitignore_path, run_git_command},
     AocCliResult, AocCommand, ConfigCommand,
 };
-use aocsuite_client::{open_page, post_answer, AocPage};
-use aocsuite_config::{get_config_val, set_config_val, ConfigOpt};
-use aocsuite_editor::open_solution_files;
+use aocsuite_client::{AocClient, AocClientOptions, AocPage};
+use aocsuite_config::{get_config_val, set_config_val, AocConfigError, ConfigOpt};
+use aocsuite_editor::{open_browser, open_solution_files};
 use aocsuite_fs::{update_cache_status, AocContentFile};
 use aocsuite_lang::{Language, SolverFile};
 use aocsuite_parser::{parse, parse_submission_result, ParserType};
 use aocsuite_utils::{
     get_aocsuite_dir, valid_puzzle_release, valid_year_release, PartSelection, PuzzleDay,
-    PuzzlePart, PuzzleYear,
+    PuzzleId, PuzzlePart, PuzzleYear,
 };
 
 pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> AocCliResult<()> {
@@ -32,14 +32,14 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
 
         AocCommand::Calendar => {
             valid_year_release(day, year)?;
-            let calendar = AocContentFile::calendar(year).load()?;
+            let calendar = AocContentFile::calendar(year).load(&resolve_aoc_client()?)?;
             let parsed_calendar = parse(&calendar, ParserType::Colored);
             println!("{parsed_calendar}");
         }
 
         AocCommand::View => {
             valid_puzzle_release(day, year)?;
-            open_page(&AocPage::Puzzle(day, year))?;
+            open_browser(&AocPage::Puzzle(day, year).to_string())?;
         }
 
         AocCommand::Submit { part, answer } => {
@@ -48,7 +48,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                 Some(answer) => answer,
                 None => prompt_answer()?,
             };
-            let output = post_answer(&answer, &part, day, year)?;
+            let output = resolve_aoc_client()?.submit(PuzzleId::new(day, year), part, &answer)?;
             let result = parse_submission_result(&output);
             update_cache_status(&result, day, year, part == PuzzlePart::One)?;
             println!("{result}");
@@ -64,12 +64,12 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             let path = match test {
                 Some(file) => {
                     if file == "" {
-                        require_input_file(AocContentFile::example(day, year).to_path()?)?
+                        require_input_file(AocContentFile::example(day, year).path()?)?
                     } else {
                         resolve_custom_input_path(&file, &std::env::current_dir()?)?
                     }
                 }
-                None => AocContentFile::input(day, year).to_path()?,
+                None => AocContentFile::input(day, year).materialize(&resolve_aoc_client()?)?,
             };
 
             let language = Language::resolve(&language)?;
@@ -80,15 +80,16 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
 
         AocCommand::Open { language } => {
             valid_puzzle_release(day, year)?;
+            let client = resolve_aoc_client()?;
             let language = Language::resolve(&language)?;
             let solve_path = language.prepare_solver_file(&SolverFile::ActiveSolution(day, year))?;
             let env_vars = language.editor_environment_vars()?;
 
             open_solution_files(
-                &AocContentFile::puzzle(day, year).to_path()?,
-                &AocContentFile::example(day, year).to_path()?,
+                &AocContentFile::puzzle(day, year).materialize(&client)?,
+                &AocContentFile::example(day, year).path()?,
                 &solve_path,
-                &AocContentFile::input(day, year).to_path()?,
+                &AocContentFile::input(day, year).materialize(&client)?,
                 Some(env_vars),
             )?;
         }
@@ -213,7 +214,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
         }
         AocCommand::Leaderboard { id } => {
             valid_year_release(day, year)?;
-            open_page(&AocPage::Leaderboard(year, id))?;
+            open_browser(&AocPage::Leaderboard(year, id).to_string())?;
         }
 
         AocCommand::Clean { action } => match action {
@@ -291,6 +292,19 @@ fn ensure_config_read_allowed(key: &ConfigOpt) -> AocCliResult<()> {
     }
     Ok(())
 }
+
+fn resolve_aoc_client() -> AocCliResult<AocClient> {
+    let session = match get_config_val::<String>(&ConfigOpt::Session, None, None) {
+        Ok(session) => Some(session),
+        Err(AocConfigError::NotFound { .. }) => None,
+        Err(error) => return Err(error.into()),
+    };
+    Ok(AocClient::new(
+        session.as_deref(),
+        AocClientOptions::default(),
+    )?)
+}
+
 fn user_confirm(
     input: &mut impl BufRead,
     output: &mut impl Write,

@@ -1,12 +1,15 @@
-use std::process::Command;
+use std::time::Duration;
 
-use aocsuite_config::{AocConfigError, ConfigOpt, get_config_val};
-use aocsuite_utils::{PuzzleDay, PuzzlePart, PuzzleYear};
-use reqwest::blocking::{Client, Response};
-use reqwest::header::{COOKIE, HeaderMap, HeaderValue};
+use aocsuite_utils::{PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
+use reqwest::{
+    blocking::{Client, Response},
+    header::{COOKIE, HeaderMap, HeaderValue},
+    redirect::Policy,
+};
 use thiserror::Error;
 
 const BASE_URL: &str = "https://adventofcode.com";
+const USER_AGENT: &str = concat!("aocsuite/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone, Copy)]
 pub enum AocPage {
@@ -17,92 +20,120 @@ pub enum AocPage {
     Leaderboard(PuzzleYear, Option<u32>),
 }
 
-impl ToString for AocPage {
-    fn to_string(&self) -> String {
-        self.url(BASE_URL)
-    }
-}
-
 impl AocPage {
     fn url(&self, base_url: &str) -> String {
         let base_url = base_url.trim_end_matches('/');
         match self {
-            AocPage::Puzzle(day, year) => format!("{base_url}/{year}/day/{day}"),
-            AocPage::Input(day, year) => format!("{base_url}/{year}/day/{day}/input"),
-            AocPage::Submit(day, year) => format!("{base_url}/{year}/day/{day}/answer"),
-            AocPage::Calendar(year) => format!("{base_url}/{year}"),
-            AocPage::Leaderboard(year, id) => match id {
+            Self::Puzzle(day, year) => format!("{base_url}/{year}/day/{day}"),
+            Self::Input(day, year) => format!("{base_url}/{year}/day/{day}/input"),
+            Self::Submit(day, year) => format!("{base_url}/{year}/day/{day}/answer"),
+            Self::Calendar(year) => format!("{base_url}/{year}"),
+            Self::Leaderboard(year, id) => match id {
                 Some(id) => format!("{base_url}/{year}/leaderboard/private/view/{id}"),
                 None => format!("{base_url}/{year}/leaderboard"),
             },
         }
     }
-}
 
-fn build_http_client() -> AocClientResult<Client> {
-    let session: String = get_config_val(&ConfigOpt::Session, None, None)?;
-    build_http_client_with_session(&session)
-}
-
-fn build_http_client_with_session(session: &str) -> AocClientResult<Client> {
-    let mut headers = HeaderMap::new();
-    let session_header = format!("session={session}")
-        .parse::<HeaderValue>()
-        .map_err(|error| AocClientError::Session(error.to_string()))?;
-    headers.insert(COOKIE, session_header);
-    let client = Client::builder().default_headers(headers).build()?;
-    Ok(client)
-}
-
-pub fn download_file(page: &AocPage) -> AocClientResult<String> {
-    let client = build_http_client()?;
-    download_file_from(page, &client, BASE_URL)
-}
-
-fn download_file_from(page: &AocPage, client: &Client, base_url: &str) -> AocClientResult<String> {
-    let response = client
-        .get(page.url(base_url))
-        .send()
-        .map_err(|e| AocClientError::Http(e))?;
-    parse_submission_response(response)
-}
-
-pub fn open_page(page: &AocPage) -> AocClientResult<()> {
-    let url = page.to_string();
-
-    #[cfg(target_os = "macos")]
-    let result = Command::new("open").arg(&url).status();
-
-    #[cfg(target_os = "linux")]
-    let result = Command::new("xdg-open").arg(&url).status();
-
-    #[cfg(target_os = "windows")]
-    let result = Command::new("cmd").args(["/C", "start", &url]).status();
-
-    ensure_browser_success(result?)
-}
-
-fn ensure_browser_success(status: std::process::ExitStatus) -> AocClientResult<()> {
-    if status.success() {
-        Ok(())
-    } else {
-        Err(AocClientError::BrowserFailed(status.code().unwrap_or(1)))
+    fn requires_session(&self) -> bool {
+        matches!(
+            self,
+            Self::Input(_, _) | Self::Submit(_, _) | Self::Leaderboard(_, Some(_))
+        )
     }
 }
-pub fn post_answer(
-    answer: &str,
-    level: &PuzzlePart,
-    day: PuzzleDay,
-    year: PuzzleYear,
-) -> AocClientResult<String> {
-    let params = [("level", level.to_string()), ("answer", answer.to_string())];
-    let page = AocPage::Submit(day, year).to_string();
-    let client = build_http_client()?;
-    let response = client.post(&page).form(&params).send()?;
-    parse_submission_response(response)
+
+impl std::fmt::Display for AocPage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.url(BASE_URL))
+    }
 }
 
-fn parse_submission_response(response: Response) -> AocClientResult<String> {
+#[derive(Debug, Clone)]
+pub struct AocClientOptions {
+    pub base_url: String,
+    pub timeout: Duration,
+    pub user_agent: String,
+}
+
+impl Default for AocClientOptions {
+    fn default() -> Self {
+        Self {
+            base_url: BASE_URL.to_owned(),
+            timeout: Duration::from_secs(30),
+            user_agent: USER_AGENT.to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AocClient {
+    client: Client,
+    base_url: String,
+    has_session: bool,
+}
+
+impl AocClient {
+    pub fn new(session: Option<&str>, options: AocClientOptions) -> AocClientResult<Self> {
+        let mut headers = HeaderMap::new();
+        if let Some(session) = session {
+            if session.is_empty() {
+                return Err(AocClientError::Session(
+                    "session token cannot be empty".to_owned(),
+                ));
+            }
+            let session_header = format!("session={session}")
+                .parse::<HeaderValue>()
+                .map_err(|error| AocClientError::Session(error.to_string()))?;
+            headers.insert(COOKIE, session_header);
+        }
+
+        let client = Client::builder()
+            .default_headers(headers)
+            .timeout(options.timeout)
+            .user_agent(options.user_agent)
+            .redirect(Policy::none())
+            .build()?;
+        Ok(Self {
+            client,
+            base_url: options.base_url.trim_end_matches('/').to_owned(),
+            has_session: session.is_some(),
+        })
+    }
+
+    pub fn download(&self, page: &AocPage) -> AocClientResult<String> {
+        self.ensure_session(page)?;
+        let response = self.client.get(page.url(&self.base_url)).send()?;
+        parse_response(response)
+    }
+
+    pub fn submit(
+        &self,
+        puzzle: PuzzleId,
+        part: PuzzlePart,
+        answer: &str,
+    ) -> AocClientResult<String> {
+        let page = AocPage::Submit(puzzle.day, puzzle.year);
+        self.ensure_session(&page)?;
+        let params = [("level", part.to_string()), ("answer", answer.to_owned())];
+        let response = self
+            .client
+            .post(page.url(&self.base_url))
+            .form(&params)
+            .send()?;
+        parse_response(response)
+    }
+
+    fn ensure_session(&self, page: &AocPage) -> AocClientResult<()> {
+        if page.requires_session() && !self.has_session {
+            Err(AocClientError::MissingSession)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn parse_response(response: Response) -> AocClientResult<String> {
     let status = response.status();
     if !status.is_success() {
         return Err(match status.as_u16() {
@@ -123,23 +154,14 @@ pub type AocClientResult<T> = Result<T, AocClientError>;
 
 #[derive(Debug, Error)]
 pub enum AocClientError {
-    #[error("Http error: {0}")]
+    #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
-
-    #[error("UnreleasedError: {0}")]
-    Unreleased(#[from] aocsuite_utils::ReleaseError),
-
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("browser launcher exited with status {0}")]
-    BrowserFailed(i32),
-
-    #[error("HTML parsing error: {0}")]
-    HtmlError(String),
 
     #[error("AoC session error: {0}")]
     Session(String),
+
+    #[error("this AoC request requires a session token")]
+    MissingSession,
 
     #[error("AoC authentication failed")]
     Authentication,
@@ -149,9 +171,6 @@ pub enum AocClientError {
 
     #[error("AoC returned HTTP status {0}")]
     HttpStatus(u16),
-
-    #[error(transparent)]
-    Config(#[from] AocConfigError),
 }
 
 #[cfg(test)]
@@ -159,31 +178,31 @@ mod tests {
     use std::{
         io::{Read, Write},
         net::TcpListener,
+        sync::mpsc::{self, Receiver},
         thread,
+        time::Duration,
     };
 
-    use reqwest::blocking::Client;
-    use aocsuite_utils::{PuzzleDay, PuzzleYear};
+    use aocsuite_utils::{PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
 
-    use super::{
-        AocClientError, AocPage, build_http_client_with_session, download_file_from,
-        ensure_browser_success,
-    };
+    use super::{AocClient, AocClientError, AocClientOptions, AocPage};
 
-    fn puzzle() -> (PuzzleDay, PuzzleYear) {
-        (
+    fn puzzle() -> PuzzleId {
+        PuzzleId::new(
             PuzzleDay::new(1).expect("valid test day"),
             PuzzleYear::new(2024).expect("valid test year"),
         )
     }
 
-    fn serve_once(status: u16, body: &'static str) -> String {
+    fn serve_once(status: u16, body: &'static str) -> (String, Receiver<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
         let address = listener.local_addr().expect("read test server address");
+        let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accept test request");
-            let mut request = [0; 1024];
-            stream.read(&mut request).expect("read test request");
+            let mut request = [0; 4096];
+            let bytes = stream.read(&mut request).expect("read test request");
+            let _ = sender.send(String::from_utf8_lossy(&request[..bytes]).into_owned());
             write!(
                 stream,
                 "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -191,39 +210,163 @@ mod tests {
             )
             .expect("write test response");
         });
+        (format!("http://{address}"), receiver)
+    }
+
+    fn client(base_url: String, session: Option<&str>) -> AocClient {
+        AocClient::new(
+            session,
+            AocClientOptions {
+                base_url,
+                user_agent: "aocsuite-test/1".to_owned(),
+                ..AocClientOptions::default()
+            },
+        )
+        .expect("build test client")
+    }
+
+    fn serve_after(delay: Duration) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let address = listener.local_addr().expect("read test server address");
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept test request");
+            let mut request = [0; 1024];
+            let _ = stream.read(&mut request);
+            thread::sleep(delay);
+            let _ = stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+        });
         format!("http://{address}")
     }
 
     #[test]
     fn invalid_session_header_returns_a_typed_error() {
         assert!(matches!(
-            build_http_client_with_session("valid\r\ninvalid"),
+            AocClient::new(Some("valid\r\ninvalid"), AocClientOptions::default()),
             Err(AocClientError::Session(_))
         ));
     }
 
     #[test]
-    fn valid_session_header_builds_a_client() {
-        assert!(build_http_client_with_session("valid-session").is_ok());
+    fn pages_build_every_supported_url_shape() {
+        let puzzle = puzzle();
+        let base = "https://example.com/root/";
+
+        assert_eq!(
+            AocPage::Puzzle(puzzle.day, puzzle.year).url(base),
+            "https://example.com/root/2024/day/1"
+        );
+        assert_eq!(
+            AocPage::Input(puzzle.day, puzzle.year).url(base),
+            "https://example.com/root/2024/day/1/input"
+        );
+        assert_eq!(
+            AocPage::Submit(puzzle.day, puzzle.year).url(base),
+            "https://example.com/root/2024/day/1/answer"
+        );
+        assert_eq!(
+            AocPage::Calendar(puzzle.year).url(base),
+            "https://example.com/root/2024"
+        );
+        assert_eq!(
+            AocPage::Leaderboard(puzzle.year, None).url(base),
+            "https://example.com/root/2024/leaderboard"
+        );
+        assert_eq!(
+            AocPage::Leaderboard(puzzle.year, Some(42)).url(base),
+            "https://example.com/root/2024/leaderboard/private/view/42"
+        );
     }
 
-    #[cfg(unix)]
     #[test]
-    fn failed_browser_launch_returns_a_typed_error() {
-        use std::os::unix::process::ExitStatusExt;
+    fn public_requests_allow_an_absent_session() {
+        let (base_url, request) = serve_once(200, "puzzle");
+        let client = client(base_url, None);
+        let puzzle = puzzle();
+
+        assert_eq!(
+            client
+                .download(&AocPage::Puzzle(puzzle.day, puzzle.year))
+                .unwrap(),
+            "puzzle"
+        );
+        let request = request.recv().unwrap();
+        let request = request.to_ascii_lowercase();
+        assert!(request.contains("user-agent: aocsuite-test/1"));
+        assert!(!request.contains("cookie:"));
+    }
+
+    #[test]
+    fn private_requests_require_a_session() {
+        let client = client("http://127.0.0.1:1".to_owned(), None);
+        let puzzle = puzzle();
 
         assert!(matches!(
-            ensure_browser_success(std::process::ExitStatus::from_raw(1)),
-            Err(AocClientError::BrowserFailed(1))
+            client.download(&AocPage::Input(puzzle.day, puzzle.year)),
+            Err(AocClientError::MissingSession)
+        ));
+        assert!(matches!(
+            client.submit(puzzle, PuzzlePart::One, "answer"),
+            Err(AocClientError::MissingSession)
         ));
     }
 
     #[test]
-    fn failed_http_statuses_return_typed_errors() {
-        let client = Client::new();
-        let (day, year) = puzzle();
-        let page = AocPage::Puzzle(day, year);
+    fn request_timeout_is_configurable() {
+        let options = AocClientOptions {
+            base_url: serve_after(Duration::from_millis(250)),
+            timeout: Duration::from_millis(20),
+            ..AocClientOptions::default()
+        };
+        let client = AocClient::new(None, options).unwrap();
+        let puzzle = puzzle();
 
+        assert!(matches!(
+            client.download(&AocPage::Puzzle(puzzle.day, puzzle.year)),
+            Err(AocClientError::Http(error)) if error.is_timeout()
+        ));
+    }
+
+    #[test]
+    fn configured_sessions_are_attached_to_requests() {
+        let (base_url, request) = serve_once(200, "input");
+        let client = client(base_url, Some("test-session"));
+        let puzzle = puzzle();
+
+        client
+            .download(&AocPage::Input(puzzle.day, puzzle.year))
+            .unwrap();
+        assert!(
+            request
+                .recv()
+                .unwrap()
+                .to_ascii_lowercase()
+                .contains("cookie: session=test-session")
+        );
+    }
+
+    #[test]
+    fn submissions_send_the_part_answer_and_session() {
+        let (base_url, request) = serve_once(200, "correct");
+        let client = client(base_url, Some("test-session"));
+
+        assert_eq!(
+            client.submit(puzzle(), PuzzlePart::Two, "12345").unwrap(),
+            "correct"
+        );
+        let request = request.recv().unwrap();
+        assert!(request.starts_with("POST /2024/day/1/answer HTTP/1.1"));
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("cookie: session=test-session")
+        );
+        assert!(request.contains("level=2&answer=12345"));
+    }
+
+    #[test]
+    fn failed_http_statuses_return_typed_errors() {
+        let puzzle = puzzle();
         for (status, expected) in [
             (302, "status"),
             (400, "status"),
@@ -231,8 +374,10 @@ mod tests {
             (429, "rate-limit"),
             (500, "status"),
         ] {
-            let base_url = serve_once(status, "failure");
-            let error = download_file_from(&page, &client, &base_url).expect_err("request fails");
+            let (base_url, _) = serve_once(status, "failure");
+            let error = client(base_url, None)
+                .download(&AocPage::Puzzle(puzzle.day, puzzle.year))
+                .expect_err("request fails");
             match expected {
                 "authentication" => assert!(matches!(error, AocClientError::Authentication)),
                 "rate-limit" => assert!(matches!(error, AocClientError::RateLimited)),
@@ -243,9 +388,10 @@ mod tests {
 
     #[test]
     fn successful_login_page_returns_an_authentication_error() {
-        let base_url = serve_once(200, "Please log in to get your puzzle input.");
-        let (day, year) = puzzle();
-        let error = download_file_from(&AocPage::Input(day, year), &Client::new(), &base_url)
+        let (base_url, _) = serve_once(200, "Please log in to get your puzzle input.");
+        let puzzle = puzzle();
+        let error = client(base_url, Some("expired"))
+            .download(&AocPage::Input(puzzle.day, puzzle.year))
             .expect_err("login page is rejected");
 
         assert!(matches!(error, AocClientError::Authentication));
