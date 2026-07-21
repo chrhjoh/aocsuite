@@ -234,8 +234,8 @@ mod tests {
     use crate::{
         python::PythonRunner,
         rust::RustRunner,
-        traits::{LanguageHandler, Solver},
-        utils::{new_result_file_path, read_result, with_result_file},
+        traits::{DepManager, LanguageHandler, Solver},
+        utils::{handle_command_output, new_result_file_path, read_result, with_result_file},
         AocLanguageError, LanguageType, SolverFile,
     };
 
@@ -362,6 +362,43 @@ mod tests {
             fs::read_to_string(&main_path).expect("read preserved Python main"),
             "custom main"
         );
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn fresh_python_runtime_executes_a_solution() {
+        let root = test_root("python-execution");
+        let runner = PythonRunner::new(root.clone());
+        let input = root.join("input.txt");
+        let output = root.join("result.json");
+
+        runner
+            .migrate_runtime()
+            .expect("migrate fresh Python runtime");
+        let solution = runner
+            .ensure_solver_file(&SolverFile::PuzzleSolution(1, 2024))
+            .expect("create Python solution");
+        fs::write(
+            &solution,
+            "def part1(input):\n    return input.strip()\n\ndef part2(input):\n    return len(input)\n",
+        )
+        .expect("write Python solution");
+        runner
+            .ensure_solver_file(&SolverFile::ActiveSolution(1, 2024))
+            .expect("activate Python solution");
+        runner
+            .setup_env()
+            .expect("create Python virtual environment");
+        fs::write(&input, "example\n").expect("write input");
+
+        let command = runner
+            .run(1, 2024, "both", &input, &output)
+            .expect("run Python solution");
+        handle_command_output(command).expect("Python solution succeeds");
+        let result = read_result(&output).expect("parse Python result");
+        assert!(result.to_string().contains("Answer: example"));
+        assert!(result.to_string().contains("Answer: 8"));
 
         fs::remove_dir_all(root).expect("remove test runtime");
     }
