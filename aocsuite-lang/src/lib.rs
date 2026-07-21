@@ -27,10 +27,10 @@ pub struct Language {
 
 impl Language {
     pub fn resolve(language: &Option<LanguageId>) -> AocLanguageResult<Self> {
-        let language = get_config_val(&ConfigOpt::Language, None, language.clone())?;
+        let language = get_config_val(&ConfigOpt::Language, None, *language)?;
         Ok(Self {
             name: language.to_string(),
-            language_type: language.clone(),
+            language_type: language,
             runner: languages::to_runner(language)?,
         })
     }

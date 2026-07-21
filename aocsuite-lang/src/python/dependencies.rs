@@ -126,6 +126,27 @@ fn prepend_path(directory: &Path, current_path: Option<OsString>) -> AocLanguage
     std::env::join_paths(paths).map_err(|error| AocLanguageError::Env(error.to_string()))
 }
 
+impl PythonRunner {
+    fn get_pip_path(&self) -> PathBuf {
+        if cfg!(windows) {
+            self.root_dir.join("venv").join("Scripts").join("pip.exe")
+        } else {
+            self.root_dir.join("venv").join("bin").join("pip")
+        }
+    }
+
+    pub fn get_python_path(&self) -> PathBuf {
+        if cfg!(windows) {
+            self.root_dir
+                .join("venv")
+                .join("Scripts")
+                .join("python.exe")
+        } else {
+            self.root_dir.join("venv").join("bin").join("python")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{ffi::OsString, path::PathBuf};
@@ -165,26 +186,5 @@ mod tests {
             paths[1].as_os_str(),
             OsString::from_vec(b"old-\xff".to_vec())
         );
-    }
-}
-
-impl PythonRunner {
-    fn get_pip_path(&self) -> PathBuf {
-        if cfg!(windows) {
-            self.root_dir.join("venv").join("Scripts").join("pip.exe")
-        } else {
-            self.root_dir.join("venv").join("bin").join("pip")
-        }
-    }
-
-    pub fn get_python_path(&self) -> PathBuf {
-        if cfg!(windows) {
-            self.root_dir
-                .join("venv")
-                .join("Scripts")
-                .join("python.exe")
-        } else {
-            self.root_dir.join("venv").join("bin").join("python")
-        }
     }
 }

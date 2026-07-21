@@ -113,9 +113,7 @@ mod tests {
     #[test]
     fn invalid_puzzle_values_are_rejected_during_parsing() {
         assert!(AocCli::try_parse_from(["aocsuite-cli", "--day", "0", "calendar"]).is_err());
-        assert!(
-            AocCli::try_parse_from(["aocsuite-cli", "--year", "2014", "calendar"]).is_err()
-        );
+        assert!(AocCli::try_parse_from(["aocsuite-cli", "--year", "2014", "calendar"]).is_err());
     }
 
     #[test]

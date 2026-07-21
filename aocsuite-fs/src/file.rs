@@ -146,9 +146,9 @@ fn parse_puzzle_content(content: &str) -> AocFileResult<String> {
     Ok(content)
 }
 
-impl ToString for AocContentFile {
-    fn to_string(&self) -> String {
-        self.filename().to_owned()
+impl std::fmt::Display for AocContentFile {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.filename())
     }
 }
 
@@ -175,10 +175,7 @@ fn is_cache_valid(path: &Path) -> bool {
     };
     let filename = path.file_name().unwrap().to_str().unwrap();
 
-    match cache_json.get(filename) {
-        Some(Value::Bool(true)) => true,
-        _ => false,
-    }
+    matches!(cache_json.get(filename), Some(Value::Bool(true)))
 }
 
 fn update_cache(path: &Path, val: bool) -> AocFileResult<()> {
@@ -241,8 +238,7 @@ pub fn update_cache_status(
 #[cfg(test)]
 mod tests {
     use std::{
-        fs,
-        process,
+        fs, process,
         sync::atomic::{AtomicUsize, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
@@ -288,7 +284,10 @@ mod tests {
         fs::create_dir_all(temp_dir.join(CACHE_FILE)).expect("create invalid metadata directory");
         fs::write(&input_path, "cached input").expect("write input cache");
 
-        assert!(matches!(update_cache(&input_path, true), Err(AocFileError::Io(_))));
+        assert!(matches!(
+            update_cache(&input_path, true),
+            Err(AocFileError::Io(_))
+        ));
 
         fs::remove_dir_all(temp_dir).expect("remove test cache directory");
     }

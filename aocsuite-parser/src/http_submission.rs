@@ -79,14 +79,12 @@ fn extract_wait_time(text: &str) -> Option<u64> {
     let caps = re.captures(text)?;
     let minutes = caps
         .get(1)
-        .map(|value| value.as_str().parse::<u64>().ok())
-        .flatten()
+        .and_then(|value| value.as_str().parse::<u64>().ok())
         .unwrap_or(0);
     let seconds = caps
         .get(2)
         .or_else(|| caps.get(3))
-        .map(|value| value.as_str().parse::<u64>().ok())
-        .flatten()
+        .and_then(|value| value.as_str().parse::<u64>().ok())
         .unwrap_or(0);
 
     minutes.checked_mul(60)?.checked_add(seconds)

@@ -14,7 +14,7 @@ impl HttpParser for AnsiCalendarParser {
         let document = Html::parse_document(html);
         let pre_selector = Selector::parse("pre.calendar").unwrap();
 
-        for pre_element in document.select(&pre_selector) {
+        if let Some(pre_element) = document.select(&pre_selector).next() {
             let rows = process_calendar_content(pre_element, &class_color_map, None);
             return rows
                 .into_iter()
@@ -58,11 +58,9 @@ fn process_calendar_content(
             scraper::Node::Text(text) => {
                 let lines: Vec<&str> = text.split('\n').collect();
                 for (i, line) in lines.iter().enumerate() {
-                    if i > 0 {
-                        if !current_row.is_empty() || !rows.is_empty() {
-                            rows.push(current_row);
-                            current_row = Vec::new();
-                        }
+                    if i > 0 && (!current_row.is_empty() || !rows.is_empty()) {
+                        rows.push(current_row);
+                        current_row = Vec::new();
                     }
                     if !line.is_empty() {
                         let hex = "#666666";
@@ -87,7 +85,7 @@ fn process_calendar_content(
                     match &current_stars {
                         Some(CalendarStars::Two) => {}
                         Some(CalendarStars::One) => {
-                            if (class == "calendar-mark-verycomplete") & (content.contains("*")) {
+                            if class == "calendar-mark-verycomplete" && content.contains("*") {
                                 continue;
                             }
                         }

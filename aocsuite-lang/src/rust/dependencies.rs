@@ -65,7 +65,7 @@ impl DepManager for RustRunner {
         Ok(packages)
     }
     fn remove_packages(&self, package: &str) -> AocLanguageResult<()> {
-        if vec!["serde", "serde_json"].contains(&package) {
+        if ["serde", "serde_json"].contains(&package) {
             return Err(AocLanguageError::DepRemove(
                 package.to_string(),
                 "Is required by AocSuite".to_string(),

@@ -18,7 +18,7 @@ pub enum EditorType {
 }
 
 impl EditorType {
-    pub fn to_args_builder(&self) -> ArgsBuilder {
+    pub fn to_args_builder(self) -> ArgsBuilder {
         match self {
             EditorType::Neovim | EditorType::Vim => Box::new(VimArgs {}),
             _ => Box::new(GenericArgs {}),

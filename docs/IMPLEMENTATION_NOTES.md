@@ -101,5 +101,5 @@ These are prerequisites or design risks, not separate confirmed defects:
 - `cargo test --workspace` passes; `aocsuite-lang` currently covers Rust/Python active-source selection.
 - `cargo run -p aocsuite-cli -- --help` passes.
 - Baseline GitHub CI runs locked workspace check/test and the CLI help smoke test; `docs/CI.md` defines the staged cross-platform and release targets.
-- `cargo fmt --all -- --check` currently fails on existing formatting in `aocsuite-cli/src/app.rs`.
-- `cargo clippy --workspace --all-targets --all-features` currently fails on `clippy::never_loop` in `aocsuite-parser/src/http_ansicalendar.rs:17-24` and also reports existing warnings in `aocsuite-utils` and the calendar parser.
+- `cargo fmt --all -- --check` passes.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings` passes.

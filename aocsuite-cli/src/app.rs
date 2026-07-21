@@ -15,8 +15,8 @@ use aocsuite_fs::{update_cache_status, AocContentFile};
 use aocsuite_lang::{Language, SolverFile};
 use aocsuite_parser::{parse, parse_submission_result, ParserType};
 use aocsuite_utils::{
-    get_aocsuite_dir, valid_puzzle_release, valid_year_release, PartSelection, PuzzleDay,
-    PuzzleId, PuzzlePart, PuzzleYear,
+    get_aocsuite_dir, valid_puzzle_release, valid_year_release, PartSelection, PuzzleDay, PuzzleId,
+    PuzzlePart, PuzzleYear,
 };
 
 pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> AocCliResult<()> {
@@ -25,7 +25,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             ConfigCommand::Get { key } => {
                 ensure_config_read_allowed(&key)?;
                 let val: String = get_config_val(&key, None, None)?;
-                println!("{}: {val}", key.to_string());
+                println!("{key}: {val}");
             }
             ConfigCommand::Set { key } => set_config_val(&key)?,
         },
@@ -63,7 +63,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             let part = part.map_or(PartSelection::Both, PartSelection::from);
             let path = match test {
                 Some(file) => {
-                    if file == "" {
+                    if file.is_empty() {
                         require_input_file(AocContentFile::example(day, year).path()?)?
                     } else {
                         resolve_custom_input_path(&file, &std::env::current_dir()?)?
@@ -82,7 +82,8 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             valid_puzzle_release(day, year)?;
             let client = resolve_aoc_client()?;
             let language = Language::resolve(&language)?;
-            let solve_path = language.prepare_solver_file(&SolverFile::ActiveSolution(day, year))?;
+            let solve_path =
+                language.prepare_solver_file(&SolverFile::ActiveSolution(day, year))?;
             let env_vars = language.editor_environment_vars()?;
 
             open_solution_files(
@@ -116,7 +117,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                 println!("{}", output);
             }
         }
-        AocCommand::GitIgnore {} => {
+        AocCommand::GitIgnore => {
             let path = get_gitignore_path()?;
             aocsuite_editor::open(&path, None)?;
         }
@@ -155,61 +156,61 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
         AocCommand::Lib { action, language } => {
             let language = Language::resolve(&language)?;
             match action {
-            LibAction::Edit { lib } => {
-                let path = language.get_lib_filepath(&lib)?;
-                let env_vars = language.editor_environment_vars()?;
-                aocsuite_editor::open(&path, Some(env_vars))?;
-            }
-            LibAction::Remove { lib, all, force } => {
-                let language_name = language.name();
-                if all {
-                    let files = language.list_lib_files()?;
-                    if files.len() == 0 {
-                        println!("No library files found");
-                        return Ok(());
-                    }
-                    if user_confirm_or_force(
-                        &format!(
-                            "Do you want to delete {} libary files for {} (Y/n) : ",
-                            files.len(),
-                            language_name
-                        ),
-                        force,
-                    )? {
-                        for lib in files.iter() {
-                            language.remove_lib_file(lib)?
+                LibAction::Edit { lib } => {
+                    let path = language.get_lib_filepath(&lib)?;
+                    let env_vars = language.editor_environment_vars()?;
+                    aocsuite_editor::open(&path, Some(env_vars))?;
+                }
+                LibAction::Remove { lib, all, force } => {
+                    let language_name = language.name();
+                    if all {
+                        let files = language.list_lib_files()?;
+                        if files.is_empty() {
+                            println!("No library files found");
+                            return Ok(());
+                        }
+                        if user_confirm_or_force(
+                            &format!(
+                                "Do you want to delete {} libary files for {} (Y/n) : ",
+                                files.len(),
+                                language_name
+                            ),
+                            force,
+                        )? {
+                            for lib in files.iter() {
+                                language.remove_lib_file(lib)?
+                            }
+                        }
+                    } else {
+                        let lib = lib.expect("Lib only none when all is false");
+                        let file = language.get_lib_filepath(&lib)?;
+                        if !file.exists() {
+                            println!("Library file {lib} was not found");
+                            return Ok(());
+                        }
+                        if user_confirm_or_force(
+                            &format!(
+                                "Do you want to delete the library {} for {} (Y/n) : ",
+                                lib, language_name
+                            ),
+                            force,
+                        )? {
+                            language.remove_lib_file(&lib)?;
+                            println!("Removed library: {} for {}", lib, language_name);
                         }
                     }
-                } else {
-                    let lib = lib.expect("Lib only none when all is false");
-                    let file = language.get_lib_filepath(&lib)?;
-                    if !file.exists() {
-                        println!("Library file {lib} was not found");
-                        return Ok(());
-                    }
-                    if user_confirm_or_force(
-                        &format!(
-                            "Do you want to delete the library {} for {} (Y/n) : ",
-                            &lib, language_name
-                        ),
-                        force,
-                    )? {
-                        language.remove_lib_file(&lib)?;
-                        println!("Removed library: {} for {}", lib, language_name);
+                }
+                LibAction::List => {
+                    let files = language.list_lib_files()?;
+                    if files.is_empty() {
+                        println!("No library files found");
+                    } else {
+                        println!("Current library names:");
+                        for package in files {
+                            println!("  {}", package);
+                        }
                     }
                 }
-            }
-            LibAction::List => {
-                let files = language.list_lib_files()?;
-                if files.is_empty() {
-                    println!("No library files found");
-                } else {
-                    println!("Current library names:");
-                    for package in files {
-                        println!("  {}", package);
-                    }
-                }
-            }
             }
         }
         AocCommand::Leaderboard { id } => {
@@ -241,13 +242,14 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                     file_prompt =
                         format!("all cached AoC files for day {day} in {year}").to_string()
                 }
-                if 
-            user_confirm_or_force(&format!(
-                "Do you want to delete {file_prompt} (puzzles, inputs, examples and calendar) (Y/n) : ",
-            ), force)?
-        {
-        aocsuite_fs::clean_cache(clean_year_opt, clean_day)?;
-        }
+                if user_confirm_or_force(
+                    &format!(
+                        "Do you want to delete {file_prompt} (puzzles, inputs, examples and calendar) (Y/n) : ",
+                    ),
+                    force,
+                )? {
+                    aocsuite_fs::clean_cache(clean_year_opt, clean_day)?;
+                }
             }
 
             CleanAction::Lang { language, force } => {
@@ -381,8 +383,7 @@ mod tests {
     use aocsuite_config::ConfigOpt;
 
     use super::{
-        ensure_config_read_allowed, require_input_file, resolve_custom_input_path,
-        user_confirm,
+        ensure_config_read_allowed, require_input_file, resolve_custom_input_path, user_confirm,
     };
 
     static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -423,7 +424,10 @@ mod tests {
 
         let result = resolve_custom_input_path("missing.txt", &root);
 
-        assert_eq!(result.expect_err("missing input fails").kind(), std::io::ErrorKind::NotFound);
+        assert_eq!(
+            result.expect_err("missing input fails").kind(),
+            std::io::ErrorKind::NotFound
+        );
         fs::remove_dir_all(root).expect("remove test runtime");
     }
 
@@ -491,10 +495,7 @@ mod tests {
         }
 
         let mut output = Vec::new();
-        assert!(
-            !user_confirm(&mut Cursor::new(b""), &mut output, "Confirm? ")
-                .expect("read EOF")
-        );
+        assert!(!user_confirm(&mut Cursor::new(b""), &mut output, "Confirm? ").expect("read EOF"));
 
         let mut output = Vec::new();
         assert!(

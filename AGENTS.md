@@ -61,7 +61,7 @@
 - Focused crate/test: `cargo test -p <crate> [test-filter]`; focused compile: `cargo check -p <crate>`
 - CLI smoke test: `cargo run -p aocsuite-cli -- --help`
 - Deterministic tests must use explicit temporary roots and fake clock/environment/process/HTTP seams. Do not launch real Git, Cargo, Python, pip, editors, browsers, or AoC requests in normal test coverage.
-- Baseline GitHub CI runs locked workspace check/test and the CLI help smoke test. The current baseline still fails `cargo fmt --all -- --check` in `aocsuite-cli/src/app.rs` and strict Clippy in existing utility/parser code; do not fold unrelated cleanup into boundary work.
+- Baseline GitHub CI runs locked workspace check/test and the CLI help smoke test. Formatting and strict workspace Clippy pass locally but are not yet required CI jobs.
 
 ## CI And Releases
 

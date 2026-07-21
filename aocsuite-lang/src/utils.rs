@@ -115,7 +115,7 @@ pub fn read_result(result_file: &Path) -> AocLanguageResult<ExerciseOutput> {
 pub fn handle_command_output(output: Output) -> AocLanguageResult<()> {
     ensure_command_success(&output)?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    if stdout != "" {
+    if !stdout.is_empty() {
         println!("Standard out from exercise {}", stdout)
     }
     Ok(())
@@ -341,7 +341,7 @@ mod tests {
         symlink_file(&first_solution, &active_solution).expect("create active solution");
 
         let result = symlink_file_with(&root.join("second.rs"), &active_solution, |_, _| {
-            Err(io::Error::new(io::ErrorKind::Other, "create link failed"))
+            Err(io::Error::other("create link failed"))
         });
 
         assert!(result.is_err());

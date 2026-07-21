@@ -49,11 +49,7 @@ impl AocConfig {
             ConfigOpt::Editor => "AOC_EDITOR",
             ConfigOpt::TemplateDir => "AOC_TEMPLATE_DIR",
         };
-        let val = std::env::var(env_var);
-        match val {
-            Ok(v) => Some(v),
-            Err(_) => None,
-        }
+        std::env::var(env_var).ok()
     }
     pub fn set(&mut self, key: &ConfigOpt) -> AocConfigResult<()> {
         let input = if matches!(key, ConfigOpt::Session) {
@@ -61,8 +57,8 @@ impl AocConfig {
         } else {
             let current_value = self.get(key);
             match current_value {
-                Some(ref val) => print!("Enter value for {} [{}]: ", key.to_string(), val),
-                None => print!("Enter value for {}: ", key.to_string()),
+                Some(ref val) => print!("Enter value for {key} [{val}]: "),
+                None => print!("Enter value for {key}: "),
             }
             io::stdout().flush()?;
 
@@ -102,10 +98,10 @@ where
 
     let config = AocConfig::new()?;
     if let Some(val) = config.get(key) {
-        return Ok(val.parse().map_err(|_| AocConfigError::Invalid {
+        return val.parse().map_err(|_| AocConfigError::Invalid {
             key: key.clone(),
             val,
-        })?);
+        });
     }
 
     if let Some(val) = default {
@@ -128,16 +124,15 @@ pub enum ConfigOpt {
     TemplateDir,
 }
 
-impl ToString for ConfigOpt {
-    fn to_string(&self) -> String {
-        match self {
+impl std::fmt::Display for ConfigOpt {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
             ConfigOpt::Language => "language",
             ConfigOpt::Year => "year",
             ConfigOpt::Editor => "editor",
             ConfigOpt::Session => "session",
             ConfigOpt::TemplateDir => "template_dir",
-        }
-        .to_string()
+        })
     }
 }
 
