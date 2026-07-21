@@ -57,7 +57,10 @@ static ATOMIC_WRITE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
     let parent = path.parent().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent directory")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "path has no parent directory",
+        )
     })?;
     let filename = path.file_name().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no file name")
@@ -189,6 +192,22 @@ pub fn today_year() -> PuzzleYear {
     now_utc.with_timezone(&Eastern).year()
 }
 
+/// Returns the most recently released puzzle date in US/Eastern time.
+pub fn default_puzzle_date() -> (PuzzleDay, PuzzleYear) {
+    default_puzzle_date_at(Utc::now())
+}
+
+pub fn default_puzzle_date_at(now_utc: DateTime<Utc>) -> (PuzzleDay, PuzzleYear) {
+    let now = now_utc.with_timezone(&Eastern);
+    if now.month() == 12 {
+        let year = now.year();
+        return (now.day().min(if year == 2025 { 12 } else { 25 }), year);
+    }
+
+    let year = now.year() - 1;
+    (if year == 2025 { 12 } else { 25 }, year)
+}
+
 pub fn get_aocsuite_dir() -> RuntimeDirResult<PathBuf> {
     get_aocsuite_dir_from(env::var_os("XDG_DATA_HOME"), env::var_os("HOME"))
 }
@@ -222,8 +241,8 @@ mod tests {
     use std::{ffi::OsString, path::PathBuf};
 
     use super::{
-        get_aocsuite_dir_from, valid_puzzle_release_at, valid_year_release_at, ReleaseError,
-        RuntimeDirError,
+        default_puzzle_date_at, get_aocsuite_dir_from, valid_puzzle_release_at,
+        valid_year_release_at, ReleaseError, RuntimeDirError,
     };
 
     fn utc(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> chrono::DateTime<Utc> {
@@ -264,6 +283,12 @@ mod tests {
             Err(ReleaseError::Puzzle(2, 2026))
         ));
         assert!(valid_puzzle_release_at(2, 2026, utc(2026, 12, 2, 5, 0)).is_ok());
+    }
+
+    #[test]
+    fn default_puzzle_date_uses_the_latest_released_event() {
+        assert_eq!(default_puzzle_date_at(utc(2026, 7, 20, 12, 0)), (12, 2025));
+        assert_eq!(default_puzzle_date_at(utc(2026, 12, 2, 5, 0)), (2, 2026));
     }
 
     #[test]
@@ -339,10 +364,7 @@ mod tests {
 
     #[test]
     fn atomic_write_replaces_a_file_without_leaving_a_temporary_file() {
-        let dir = std::env::temp_dir().join(format!(
-            "aocsuite-utils-test-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("aocsuite-utils-test-{}", std::process::id()));
         let path = dir.join("settings.json");
         std::fs::create_dir_all(&dir).expect("create test directory");
         std::fs::write(&path, "old").expect("write existing file");

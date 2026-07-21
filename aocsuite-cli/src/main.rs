@@ -1,5 +1,6 @@
 use aocsuite_cli::{run_aocsuite, AocCliError, AocCommand};
-use aocsuite_utils::{PuzzleDay, PuzzleYear};
+use aocsuite_config::{get_config_val, ConfigOpt};
+use aocsuite_utils::{default_puzzle_date, PuzzleDay, PuzzleYear};
 
 use clap::Parser;
 
@@ -10,23 +11,106 @@ struct AocCli {
     /// Command to execute
     command: AocCommand,
 
-    /// Specify day for exercises etc. (default: current)
-    #[arg(long, default_value_t=aocsuite_utils::today_day())]
-    day: PuzzleDay,
+    /// Specify day for exercises etc. (default: latest released)
+    #[arg(long)]
+    day: Option<PuzzleDay>,
 
-    /// Specify year for calendar, exercises, etc (default: current)
-    #[arg(long, default_value_t=aocsuite_utils::today_year())]
-    year: PuzzleYear,
+    /// Specify year for calendar, exercises, etc (default: latest released or configured)
+    #[arg(long)]
+    year: Option<PuzzleYear>,
 }
 
-fn terminate_with_error(err: AocCliError) {
+fn terminate_with_error(err: AocCliError) -> ! {
     eprintln!("encountered error: {err}");
     std::process::exit(1);
 }
 
 fn main() {
     let args = AocCli::parse();
-    if let Err(err) = run_aocsuite(args.command, args.day, args.year) {
+    let configured_year = match get_config_val(&ConfigOpt::Year, None, args.year) {
+        Ok(year) => Some(year),
+        Err(aocsuite_config::AocConfigError::NotFound { .. }) => None,
+        Err(err) => terminate_with_error(err.into()),
+    };
+    let (day, year) = resolve_puzzle_date(args.day, configured_year, default_puzzle_date());
+    if let Err(err) = run_aocsuite(args.command, day, year) {
         terminate_with_error(err);
+    }
+}
+
+fn resolve_puzzle_date(
+    requested_day: Option<PuzzleDay>,
+    configured_year: Option<PuzzleYear>,
+    default: (PuzzleDay, PuzzleYear),
+) -> (PuzzleDay, PuzzleYear) {
+    let year = configured_year.unwrap_or(default.1);
+    let day = requested_day.unwrap_or_else(|| {
+        if year == default.1 {
+            default.0
+        } else if year == 2025 {
+            12
+        } else {
+            25
+        }
+    });
+    (day, year)
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{resolve_puzzle_date, AocCli};
+    use aocsuite_cli::AocCommand;
+    use aocsuite_utils::Exercise;
+
+    #[test]
+    fn run_part_uses_the_documented_long_option() {
+        let cli =
+            AocCli::try_parse_from(["aocsuite-cli", "run", "--part", "1"]).expect("parse run part");
+
+        assert!(matches!(
+            cli.command,
+            AocCommand::Run {
+                part: Some(Exercise::One),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn submit_prompts_when_answer_is_omitted() {
+        let cli = AocCli::try_parse_from(["aocsuite-cli", "submit", "--part", "2"])
+            .expect("parse submit without answer");
+
+        assert!(matches!(
+            cli.command,
+            AocCommand::Submit {
+                part: Exercise::Two,
+                answer: None,
+            }
+        ));
+    }
+
+    #[test]
+    fn explicit_day_and_year_are_parsed() {
+        let cli =
+            AocCli::try_parse_from(["aocsuite-cli", "--day", "4", "--year", "2024", "calendar"])
+                .expect("parse explicit puzzle date");
+
+        assert_eq!(cli.day, Some(4));
+        assert_eq!(cli.year, Some(2024));
+    }
+
+    #[test]
+    fn configured_year_overrides_the_default_year() {
+        assert_eq!(
+            resolve_puzzle_date(None, Some(2024), (20, 2026)),
+            (25, 2024)
+        );
+        assert_eq!(
+            resolve_puzzle_date(None, Some(2025), (20, 2026)),
+            (12, 2025)
+        );
     }
 }

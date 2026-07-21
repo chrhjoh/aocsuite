@@ -80,7 +80,7 @@ Most commands require day and year and can be specified as --day and --year
 
 - `aocsuite-cli open ` - Will open the puzzle and a file for your soloutions. Also opens the input along with a file for potential examples
 - `aocsuite-cli run` - Run your solution on the AoC input. specify --test for your own examples
-- `aocsuite-cli submit --part PART ANSWER` - Submit an answer
+- `aocsuite-cli submit --part PART [ANSWER]` - Submit an answer, prompting when `ANSWER` is omitted
 
 ### Dependencies
 

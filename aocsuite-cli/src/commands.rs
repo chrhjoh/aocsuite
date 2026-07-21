@@ -47,6 +47,7 @@ pub enum AocCommand {
         language: Option<LanguageType>,
 
         /// Puzzle part
+        #[arg(long)]
         part: Option<Exercise>,
 
         /// Input file to use instead of AoC input. AocSuite Example file can be used by supplying
@@ -58,10 +59,11 @@ pub enum AocCommand {
     /// Submit answer to Advent of Code
     Submit {
         /// Puzzle part
+        #[arg(long)]
         part: Exercise,
 
         /// Puzzle answer. Will prompt if not specified
-        answer: String,
+        answer: Option<String>,
     },
     /// Open Leaderboard in browser
     Leaderboard {

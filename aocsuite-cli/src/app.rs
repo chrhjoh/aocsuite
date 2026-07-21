@@ -43,6 +43,10 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
 
         AocCommand::Submit { part, answer } => {
             valid_puzzle_release(day, year)?;
+            let answer = match answer {
+                Some(answer) => answer,
+                None => prompt_answer()?,
+            };
             let output = post_answer(&answer, &part, day, year)?;
             let result = parse_submission_result(&output);
             update_cache_status(&result, day, year, part == Exercise::One)?;
@@ -314,6 +318,14 @@ fn user_confirm_or_force(prompt: &str, force: bool) -> std::io::Result<bool> {
     )
 }
 
+fn prompt_answer() -> std::io::Result<String> {
+    print!("Enter answer: ");
+    std::io::stdout().flush()?;
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+    Ok(answer.trim().to_string())
+}
+
 fn resolve_custom_input_path(file: &str, invocation_dir: &Path) -> std::io::Result<PathBuf> {
     let path = PathBuf::from(file);
     let path = if path.is_absolute() {
@@ -475,5 +487,4 @@ mod tests {
                 .expect("read rejection")
         );
     }
-
 }

@@ -46,7 +46,7 @@ The application assumes one AoC Suite process per runtime root. Do not add norma
 ## Phase 4: Remaining CLI, Editor, And Git Behavior
 
 1. Extract typed noninteractive operations from `run_aocsuite`; keep it as the CLI formatting/prompt adapter.
-2. Correct release/default-date handling, remove the 2025 day 13-25 restriction, and cover Eastern-time boundaries without wall-clock tests.
+2. Correct release/default-date handling, and cover Eastern-time boundaries without wall-clock tests.
 3. Make command parsing match documented submit/run behavior and preserve compatible CLI syntax where practical.
 4. Fix Git empty-argument/clone behavior and scope Git to `workspace/`; do not claim Git arguments are sandboxed.
 5. Fix editor resolution, path handling, argument escaping, exit-status propagation, and platform support.
@@ -58,6 +58,7 @@ The application assumes one AoC Suite process per runtime root. Do not add norma
 Before adding `aocsuite-tui`:
 
 - Every issue in `IMPLEMENTATION_NOTES.md` is resolved or has an explicit accepted product decision recorded there.
+- Complete refactor of other workspace crates including HTTP, storage and parser changes.
 - Every existing workspace crate has behavior-focused test coverage for its public responsibilities and each corrected defect.
 - `cargo check --workspace`, `cargo test --workspace`, and `cargo run -p aocsuite-cli -- --help` pass.
 - The CLI operates through the same structured, noninteractive shared boundaries intended for the TUI.
