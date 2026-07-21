@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use aocsuite_utils::RuntimeDirError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -14,19 +13,15 @@ pub enum AocGitError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
-    #[error(transparent)]
-    RuntimeDir(#[from] RuntimeDirError),
-
     #[error("Only clone in format `git clone my_git_repo` is supported")]
     Clone,
 }
 
 pub type AocGitResult<T> = Result<T, AocGitError>;
 
-pub fn get_gitignore_path() -> AocGitResult<PathBuf> {
-    let aocsuite_dir = aocsuite_utils::get_aocsuite_dir()?;
-    std::fs::create_dir_all(&aocsuite_dir)?;
-    let path = aocsuite_dir.join(".gitignore");
+pub fn get_gitignore_path(workspace_dir: &Path) -> AocGitResult<PathBuf> {
+    std::fs::create_dir_all(workspace_dir)?;
+    let path = workspace_dir.join(".gitignore");
     ensure_gitignore_exists(&path)?;
     Ok(path)
 }
@@ -40,24 +35,17 @@ fn ensure_gitignore_exists(path: &Path) -> AocGitResult<()> {
 }
 
 fn get_default_gitignore_content() -> &'static str {
-    r#"# AOC Suite generated files
-data/
-config.json
-
-# Language specific
-# Rust
-Cargo.lock
-target/
-
-# Python
-__pycache__/
-
+    r#"rust/target/
+rust/src/solution.rs
+python/venv/
+python/solution.py
+**/__pycache__/
+*.pyc
 "#
 }
 
-pub fn run_git_command(args: &[String]) -> AocGitResult<String> {
-    let aocsuite_dir = aocsuite_utils::get_aocsuite_dir()?;
-    run_git_command_with(args, &aocsuite_dir)
+pub fn run_git_command(args: &[String], workspace_dir: &Path) -> AocGitResult<String> {
+    run_git_command_with(args, workspace_dir)
 }
 
 fn run_git_command_with(args: &[String], aocsuite_dir: &Path) -> AocGitResult<String> {
@@ -175,7 +163,7 @@ fn is_simple_clone(args: &[String]) -> AocGitResult<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_simple_clone, AocGitError};
+    use super::{get_default_gitignore_content, is_simple_clone, AocGitError};
 
     #[test]
     fn empty_args_are_not_a_clone() {
@@ -192,5 +180,14 @@ mod tests {
             is_simple_clone(&["clone".to_string()]),
             Err(AocGitError::Clone)
         ));
+    }
+
+    #[test]
+    fn workspace_gitignore_preserves_tracked_project_files() {
+        let contents = get_default_gitignore_content();
+        assert!(contents.contains("rust/target/"));
+        assert!(contents.contains("python/venv/"));
+        assert!(!contents.contains("Cargo.lock"));
+        assert!(!contents.contains("config.json"));
     }
 }

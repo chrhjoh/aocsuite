@@ -1,5 +1,6 @@
 use aocsuite_cli::{run_aocsuite, AocCliError, AocCommand};
-use aocsuite_config::{get_config_val, ConfigOpt};
+use aocsuite_config::{ConfigKey, Configuration};
+use aocsuite_storage::RuntimeLayout;
 use aocsuite_utils::{default_puzzle_date, PuzzleDay, PuzzleYear};
 
 use clap::Parser;
@@ -26,14 +27,24 @@ fn terminate_with_error(err: AocCliError) -> ! {
 }
 
 fn main() {
-    let args = AocCli::parse();
-    let configured_year = match get_config_val(&ConfigOpt::Year, None, args.year) {
-        Ok(year) => Some(year),
-        Err(aocsuite_config::AocConfigError::NotFound { .. }) => None,
-        Err(err) => terminate_with_error(err.into()),
+    let parsed = AocCli::try_parse();
+    let layout = RuntimeLayout::new().unwrap_or_else(|error| terminate_with_error(error.into()));
+    layout
+        .bootstrap()
+        .unwrap_or_else(|error| terminate_with_error(error.into()));
+    let args = parsed.unwrap_or_else(|error| error.exit());
+    let mut config = Configuration::load(layout.config_path(), layout.session_path())
+        .unwrap_or_else(|error| terminate_with_error(error.into()));
+    let configured_year = match args.year {
+        Some(year) => Some(year),
+        None => match config.get::<PuzzleYear>(ConfigKey::Year) {
+            Ok(year) => Some(year),
+            Err(aocsuite_config::AocConfigError::NotFound { .. }) => None,
+            Err(error) => terminate_with_error(error.into()),
+        },
     };
     let (day, year) = resolve_puzzle_date(args.day, configured_year, default_puzzle_date());
-    if let Err(err) = run_aocsuite(args.command, day, year) {
+    if let Err(err) = run_aocsuite(args.command, day, year, &layout, &mut config) {
         terminate_with_error(err);
     }
 }
@@ -61,7 +72,7 @@ mod tests {
     use clap::Parser;
 
     use super::{resolve_puzzle_date, AocCli};
-    use aocsuite_cli::AocCommand;
+    use aocsuite_cli::{AocCommand, ConfigCommand, ConfigCommandKey};
     use aocsuite_utils::{PuzzleDay, PuzzlePart, PuzzleYear};
 
     fn puzzle(day: u32, year: i32) -> (PuzzleDay, PuzzleYear) {
@@ -97,6 +108,21 @@ mod tests {
                 answer: None,
             }
         ));
+    }
+
+    #[test]
+    fn config_keys_are_frontend_owned() {
+        let cli = AocCli::try_parse_from(["aocsuite-cli", "config", "set", "session"])
+            .expect("parse session configuration");
+        assert!(matches!(
+            cli.command,
+            AocCommand::Config {
+                command: ConfigCommand::Set {
+                    key: ConfigCommandKey::Session
+                }
+            }
+        ));
+        assert!(AocCli::try_parse_from(["aocsuite-cli", "config", "set", "template-dir"]).is_err());
     }
 
     #[test]

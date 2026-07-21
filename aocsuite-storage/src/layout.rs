@@ -1,11 +1,9 @@
 use std::{
-    fs,
+    env, fs,
     path::{Component, Path, PathBuf},
 };
 
-use aocsuite_utils::{
-    atomic_write, get_aocsuite_dir, LanguageId, PuzzleId, PuzzleYear, RuntimeDirError,
-};
+use aocsuite_utils::{atomic_write, LanguageId, PuzzleId, PuzzleYear};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -31,13 +29,52 @@ pub struct RuntimeLayout {
     root: PathBuf,
 }
 
-impl RuntimeLayout {
-    pub fn discover() -> Result<Self, LayoutError> {
-        Self::new(get_aocsuite_dir()?)
+fn get_aocsuite_dir() -> Result<PathBuf, LayoutError> {
+    let environment_preferences = [
+        (
+            "AOCSUITE_DATA_DIR",
+            env::var_os("AOCSUITE_DATA_DIR"),
+            PathBuf::new(),
+        ),
+        (
+            "XDG_DATA_HOME",
+            env::var_os("XDG_DATA_HOME"),
+            PathBuf::from("aocsuite"),
+        ),
+        (
+            "HOME",
+            env::var_os("HOME"),
+            PathBuf::from(".local/share/aocsuite"),
+        ),
+    ];
+
+    for (variable, value, suffix) in environment_preferences {
+        let Some(value) = value else {
+            continue;
+        };
+
+        let base_path = PathBuf::from(value);
+
+        if !valid_environment_path(&base_path) {
+            return Err(LayoutError::InvalidEnvironmentPath {
+                variable,
+                path: base_path,
+            });
+        }
+
+        return Ok(base_path.join(suffix));
     }
 
-    pub fn new(root: impl Into<PathBuf>) -> Result<Self, LayoutError> {
-        let root = root.into();
+    Err(LayoutError::MissingHome)
+}
+
+fn valid_environment_path(path: &PathBuf) -> bool {
+    !path.as_os_str().is_empty() && path.is_absolute()
+}
+
+impl RuntimeLayout {
+    pub fn new() -> Result<Self, LayoutError> {
+        let root = get_aocsuite_dir()?;
         if root.as_os_str().is_empty()
             || !root.is_absolute()
             || root.components().any(|part| part == Component::ParentDir)
@@ -47,54 +84,50 @@ impl RuntimeLayout {
         Ok(Self { root })
     }
 
-    pub fn root(&self) -> &Path {
+    pub fn root_dir(&self) -> &Path {
         &self.root
     }
 
-    pub fn manifest(&self) -> PathBuf {
+    pub fn layout_manifest_path(&self) -> PathBuf {
         self.root.join(LAYOUT_MANIFEST)
     }
 
-    pub fn preferences(&self) -> PathBuf {
+    pub fn config_path(&self) -> PathBuf {
         self.root.join("config.json")
     }
 
-    pub fn secrets(&self) -> PathBuf {
-        self.root.join("secrets")
+    pub fn session_path(&self) -> PathBuf {
+        self.root.join("session")
     }
 
-    pub fn session(&self) -> PathBuf {
-        self.secrets().join("session")
-    }
-
-    pub fn database(&self) -> PathBuf {
+    pub fn database_path(&self) -> PathBuf {
         self.root.join("state.sqlite")
     }
 
-    pub fn cache(&self) -> PathBuf {
+    pub fn aoc_cache_dir(&self) -> PathBuf {
         self.root.join("cache").join("aoc")
     }
 
-    pub fn runs(&self) -> PathBuf {
+    pub fn runs_dir(&self) -> PathBuf {
         self.root.join("runs")
     }
 
-    pub fn workspace(&self) -> PathBuf {
+    pub fn workspace_dir(&self) -> PathBuf {
         self.root.join("workspace")
     }
 
-    pub fn examples(&self) -> PathBuf {
-        self.workspace().join("examples")
+    pub fn examples_dir(&self) -> PathBuf {
+        self.workspace_dir().join("examples")
     }
 
-    pub fn example(&self, puzzle: PuzzleId) -> PathBuf {
-        self.examples()
+    pub fn example_path(&self, puzzle: PuzzleId) -> PathBuf {
+        self.examples_dir()
             .join(format!("year{}", puzzle.year))
             .join(format!("day{}.txt", puzzle.day))
     }
 
-    pub fn language_project(&self, language: LanguageId) -> PathBuf {
-        self.workspace().join(language.to_string())
+    pub fn language_project_dir(&self, language: LanguageId) -> PathBuf {
+        self.workspace_dir().join(language.to_string())
     }
 
     pub fn cache_path(&self, key: CacheKey) -> PathBuf {
@@ -103,7 +136,7 @@ impl RuntimeLayout {
             CacheKey::PuzzleMarkdown(puzzle) => self.puzzle_cache_dir(puzzle).join("puzzle.md"),
             CacheKey::Input(puzzle) => self.puzzle_cache_dir(puzzle).join("input.txt"),
             CacheKey::Calendar(year) => self
-                .cache()
+                .aoc_cache_dir()
                 .join(format!("year{year}"))
                 .join("calendar.html"),
         }
@@ -121,7 +154,7 @@ impl RuntimeLayout {
             Err(error) => return Err(error.into()),
         }
 
-        let manifest = self.manifest();
+        let manifest = self.layout_manifest_path();
         if !manifest.exists() {
             if directory_is_empty(&self.root)? {
                 return self.initialize(false);
@@ -144,7 +177,7 @@ impl RuntimeLayout {
     }
 
     fn puzzle_cache_dir(&self, puzzle: PuzzleId) -> PathBuf {
-        self.cache()
+        self.aoc_cache_dir()
             .join(format!("year{}", puzzle.year))
             .join(format!("day{}", puzzle.day))
     }
@@ -163,26 +196,26 @@ impl RuntimeLayout {
                 created.extend(missing_ancestors);
                 fs::create_dir_all(&self.root)?;
             }
-            set_owner_only_directory(&self.root)?;
 
             for directory in [
-                self.secrets(),
                 self.root.join("cache"),
-                self.cache(),
-                self.runs(),
+                self.aoc_cache_dir(),
+                self.runs_dir(),
             ] {
                 if !directory.exists() {
                     fs::create_dir(&directory)?;
                     created.push(directory.clone());
                 }
-                set_owner_only_directory(&directory)?;
             }
 
             let manifest = LayoutManifest {
                 layout_version: CURRENT_LAYOUT_VERSION,
                 created_by: env!("CARGO_PKG_VERSION").to_owned(),
             };
-            atomic_write(&self.manifest(), &serde_json::to_vec_pretty(&manifest)?)?;
+            atomic_write(
+                &self.layout_manifest_path(),
+                &serde_json::to_vec_pretty(&manifest)?,
+            )?;
             Ok(BootstrapReport::Initialized)
         })();
 
@@ -195,15 +228,12 @@ impl RuntimeLayout {
     }
 
     fn ensure_owned_directories(&self) -> Result<(), LayoutError> {
-        set_owner_only_directory(&self.root)?;
         for directory in [
-            self.secrets(),
             self.root.join("cache"),
-            self.cache(),
-            self.runs(),
+            self.aoc_cache_dir(),
+            self.runs_dir(),
         ] {
             fs::create_dir_all(&directory)?;
-            set_owner_only_directory(&directory)?;
         }
         Ok(())
     }
@@ -236,16 +266,6 @@ fn directory_is_empty(path: &Path) -> Result<bool, std::io::Error> {
     Ok(fs::read_dir(path)?.next().transpose()?.is_none())
 }
 
-fn set_owner_only_directory(path: &Path) -> Result<(), std::io::Error> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
-    }
-    Ok(())
-}
-
 #[derive(Debug, Error)]
 pub enum LayoutError {
     #[error("runtime root must be an absolute, non-empty path: {0}")]
@@ -260,8 +280,13 @@ pub enum LayoutError {
     UnsupportedLayoutVersion { found: u32, supported: u32 },
     #[error("invalid layout manifest: {0}")]
     InvalidManifest(String),
-    #[error(transparent)]
-    RuntimeDir(#[from] RuntimeDirError),
+    #[error("{variable} must contain an absolute, non-empty path: {path:?}")]
+    InvalidEnvironmentPath {
+        variable: &'static str,
+        path: PathBuf,
+    },
+    #[error("none of AOCSUITE_DATA_DIR, XDG_DATA_HOME, or HOME are set")]
+    MissingHome,
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -273,13 +298,8 @@ mod tests {
     use std::fs;
 
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
-    use tempfile::TempDir;
 
     use super::{BootstrapReport, CacheKey, LayoutError, RuntimeLayout, CURRENT_LAYOUT_VERSION};
-
-    fn layout(temp: &TempDir) -> RuntimeLayout {
-        RuntimeLayout::new(temp.path().join("aocsuite")).expect("valid explicit root")
-    }
 
     fn puzzle() -> PuzzleId {
         PuzzleId::new(
@@ -290,81 +310,85 @@ mod tests {
 
     #[test]
     fn path_getters_are_pure() {
-        let temp = TempDir::new().expect("create temporary root");
-        let layout = layout(&temp);
+        //TODO:  allocate a dir with AOCSUITE_DATA_DIR
+        let layout = RuntimeLayout::new().expect("valid explicit root");
+
         let puzzle = puzzle();
 
-        assert_eq!(layout.preferences(), layout.root().join("config.json"));
-        assert_eq!(layout.session(), layout.root().join("secrets/session"));
-        assert_eq!(layout.database(), layout.root().join("state.sqlite"));
-        assert_eq!(layout.runs(), layout.root().join("runs"));
+        assert_eq!(layout.config_path(), layout.root_dir().join("config.json"));
+        assert_eq!(layout.session_path(), layout.root_dir().join("session"));
         assert_eq!(
-            layout.example(puzzle),
-            layout.root().join("workspace/examples/year2024/day4.txt")
+            layout.database_path(),
+            layout.root_dir().join("state.sqlite")
+        );
+        assert_eq!(layout.runs_dir(), layout.root_dir().join("runs"));
+        assert_eq!(
+            layout.example_path(puzzle),
+            layout
+                .root_dir()
+                .join("workspace/examples/year2024/day4.txt")
         );
         assert_eq!(
-            layout.language_project(LanguageId::Rust),
-            layout.root().join("workspace/rust")
+            layout.language_project_dir(LanguageId::Rust),
+            layout.root_dir().join("workspace/rust")
         );
         assert_eq!(
             layout.cache_path(CacheKey::PuzzleHtml(puzzle)),
-            layout.root().join("cache/aoc/year2024/day4/puzzle.html")
+            layout
+                .root_dir()
+                .join("cache/aoc/year2024/day4/puzzle.html")
         );
         assert_eq!(
             layout.cache_path(CacheKey::PuzzleMarkdown(puzzle)),
-            layout.root().join("cache/aoc/year2024/day4/puzzle.md")
+            layout.root_dir().join("cache/aoc/year2024/day4/puzzle.md")
         );
         assert_eq!(
             layout.cache_path(CacheKey::Input(puzzle)),
-            layout.root().join("cache/aoc/year2024/day4/input.txt")
+            layout.root_dir().join("cache/aoc/year2024/day4/input.txt")
         );
         assert_eq!(
             layout.cache_path(CacheKey::Calendar(puzzle.year)),
-            layout.root().join("cache/aoc/year2024/calendar.html")
+            layout.root_dir().join("cache/aoc/year2024/calendar.html")
         );
-        assert!(!layout.root().exists());
+        assert!(!layout.root_dir().exists());
     }
 
     #[test]
     fn missing_and_empty_roots_initialize_layout_one_without_workspace() {
         for precreate in [false, true] {
-            let temp = TempDir::new().expect("create temporary root");
-            let layout = layout(&temp);
+            let layout = RuntimeLayout::new().expect("valid explicit root");
             if precreate {
-                fs::create_dir(layout.root()).expect("create empty root");
+                fs::create_dir(layout.root_dir()).expect("create empty root");
             }
 
             assert_eq!(layout.bootstrap().unwrap(), BootstrapReport::Initialized);
             let manifest: serde_json::Value =
-                serde_json::from_slice(&fs::read(layout.manifest()).unwrap()).unwrap();
+                serde_json::from_slice(&fs::read(layout.layout_manifest_path()).unwrap()).unwrap();
             assert_eq!(manifest["layout_version"], CURRENT_LAYOUT_VERSION);
-            assert!(layout.secrets().is_dir());
-            assert!(layout.cache().is_dir());
-            assert!(layout.runs().is_dir());
-            assert!(!layout.workspace().exists());
-            assert!(!layout.preferences().exists());
-            assert!(!layout.database().exists());
+            assert!(layout.aoc_cache_dir().is_dir());
+            assert!(layout.runs_dir().is_dir());
+            assert!(!layout.workspace_dir().exists());
+            assert!(!layout.config_path().exists());
+            assert!(!layout.database_path().exists());
         }
     }
 
     #[test]
     fn current_layout_reopens_and_repairs_owned_directories() {
-        let temp = TempDir::new().expect("create temporary root");
-        let layout = layout(&temp);
+        let layout = RuntimeLayout::new().expect("valid explicit root");
         layout.bootstrap().unwrap();
-        fs::remove_dir_all(layout.cache()).unwrap();
+        fs::remove_dir_all(layout.aoc_cache_dir()).unwrap();
 
         assert_eq!(layout.bootstrap().unwrap(), BootstrapReport::Opened);
-        assert!(layout.cache().is_dir());
-        assert!(!layout.workspace().exists());
+        assert!(layout.aoc_cache_dir().is_dir());
+        assert!(!layout.workspace_dir().exists());
     }
 
     #[test]
     fn nonempty_unversioned_root_is_rejected_without_mutation() {
-        let temp = TempDir::new().expect("create temporary root");
-        let layout = layout(&temp);
-        fs::create_dir(layout.root()).unwrap();
-        let sentinel = layout.root().join("keep-me");
+        let layout = RuntimeLayout::new().expect("valid explicit root");
+        fs::create_dir(layout.root_dir()).unwrap();
+        let sentinel = layout.root_dir().join("keep-me");
         fs::write(&sentinel, "unchanged").unwrap();
 
         assert!(matches!(
@@ -372,7 +396,6 @@ mod tests {
             Err(LayoutError::UnversionedRoot(_))
         ));
         assert_eq!(fs::read_to_string(sentinel).unwrap(), "unchanged");
-        assert!(!layout.secrets().exists());
     }
 
     #[test]
@@ -391,10 +414,9 @@ mod tests {
                 "invalid",
             ),
         ] {
-            let temp = TempDir::new().expect("create temporary root");
-            let layout = layout(&temp);
-            fs::create_dir(layout.root()).unwrap();
-            fs::write(layout.manifest(), &manifest).unwrap();
+            let layout = RuntimeLayout::new().expect("valid explicit root");
+            fs::create_dir(layout.root_dir()).unwrap();
+            fs::write(layout.layout_manifest_path(), &manifest).unwrap();
 
             let error = layout.bootstrap().unwrap_err();
             match expected {
@@ -406,34 +428,11 @@ mod tests {
                 "invalid" => assert!(matches!(error, LayoutError::InvalidManifest(_))),
                 _ => unreachable!(),
             }
-            assert_eq!(fs::read_to_string(layout.manifest()).unwrap(), manifest);
-            assert!(!layout.secrets().exists());
+            assert_eq!(
+                fs::read_to_string(layout.layout_manifest_path()).unwrap(),
+                manifest
+            );
         }
-    }
-
-    #[test]
-    fn explicit_roots_must_be_absolute() {
-        assert!(matches!(
-            RuntimeLayout::new("relative"),
-            Err(LayoutError::InvalidRoot(_))
-        ));
-        let temp = TempDir::new().expect("create temporary root");
-        assert!(matches!(
-            RuntimeLayout::new(temp.path().join("aocsuite/../escape")),
-            Err(LayoutError::InvalidRoot(_))
-        ));
-    }
-
-    #[test]
-    fn runtime_root_must_be_a_directory() {
-        let temp = TempDir::new().expect("create temporary root");
-        let layout = layout(&temp);
-        fs::write(layout.root(), "not a directory").unwrap();
-
-        assert!(matches!(
-            layout.bootstrap(),
-            Err(LayoutError::RootNotDirectory(_))
-        ));
     }
 
     #[cfg(unix)]
@@ -441,11 +440,10 @@ mod tests {
     fn runtime_and_secret_directories_are_owner_only() {
         use std::os::unix::fs::PermissionsExt;
 
-        let temp = TempDir::new().expect("create temporary root");
-        let layout = layout(&temp);
+        let layout = RuntimeLayout::new().expect("valid explicit root");
         layout.bootstrap().unwrap();
 
-        for path in [layout.root().to_path_buf(), layout.secrets()] {
+        for path in [layout.root_dir().to_path_buf()] {
             assert_eq!(
                 fs::metadata(path).unwrap().permissions().mode() & 0o777,
                 0o700

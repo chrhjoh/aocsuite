@@ -4,9 +4,7 @@ version = "0.3.0"
 edition = "2021"
 
 [dependencies]
-aocsuite-config = { version = "0.3.0", path = "../aocsuite-config" }
 aocsuite-utils = { version = "0.3.0", path = "../aocsuite-utils" }
-clap = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 which = "8.0.0"
 shell-words = "1.1.0"

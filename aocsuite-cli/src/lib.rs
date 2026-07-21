@@ -3,7 +3,8 @@ use aocsuite_config::AocConfigError;
 use aocsuite_editor::AocEditorError;
 use aocsuite_fs::AocFileError;
 use aocsuite_lang::AocLanguageError;
-use aocsuite_utils::{ReleaseError, RuntimeDirError};
+use aocsuite_storage::LayoutError;
+use aocsuite_utils::ReleaseError;
 use git::AocGitError;
 use thiserror::Error;
 mod app;
@@ -12,7 +13,7 @@ mod git;
 
 pub use app::run_aocsuite;
 
-pub use commands::{AocCommand, ConfigCommand};
+pub use commands::{AocCommand, ConfigCommand, ConfigCommandKey};
 
 #[derive(Error, Debug)]
 pub enum AocCliError {
@@ -29,10 +30,13 @@ pub enum AocCliError {
     Unreleased(#[from] ReleaseError),
 
     #[error(transparent)]
-    RuntimeDir(#[from] RuntimeDirError),
+    Config(#[from] AocConfigError),
 
     #[error(transparent)]
-    Config(#[from] AocConfigError),
+    Storage(#[from] LayoutError),
+
+    #[error("environment error: {0}")]
+    Environment(#[from] std::env::VarError),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),

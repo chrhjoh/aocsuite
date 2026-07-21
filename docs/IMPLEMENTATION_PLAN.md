@@ -19,8 +19,8 @@ The application assumes one AoC Suite process per runtime root. Do not add norma
 2. Remove configuration discovery from `aocsuite-client`, `aocsuite-lang`, and the launcher boundary. Construct services with explicit settings, paths, environment snapshots, and executors.
 3. Add a broad `aocsuite-storage` crate replacing `aocsuite-fs`. It owns `RuntimeLayout`, bootstrap/versioning, SQLite, AoC content lifecycle, workspace Git, transient run allocation, uninstall, and typed cleanup scopes.
 4. Keep storage internally layered: layout/database modules do not call HTTP/parser code; only the content module depends on the configuration-independent client and semantic parser.
-5. Implement pure discovered-root and explicit-root layout constructors. Path getters must not create directories, migrate state, fetch content, or launch commands.
-6. Establish layout version 1 with non-secret preferences, owner-only session storage, SQLite state, disposable AoC cache, transient runs, and a lazily created Git workspace.
+5. Implement `RuntimeLayout::new` for an explicit root. Keep environment-based root selection in storage's `get_aocsuite_dir`, with `AOCSUITE_DATA_DIR` as the direct-root override. Path getters must not create directories, migrate state, fetch content, or launch commands.
+6. Establish layout version 1 with non-secret configuration values, owner-only session storage, SQLite state, disposable AoC cache, transient runs, and a lazily created Git workspace.
 7. Bootstrap every application invocation before configuration/service construction. Reject nonempty unversioned roots and newer unsupported layouts without mutation; legacy import is out of scope.
 8. Split noninteractive typed configuration and session reads/writes from CLI prompting. Remove `template_dir`, preserve remaining `AOC_*` precedence, and add a configurable run-history limit defaulting to 10.
 9. Add explicit-root and fake-executor behavior tests for layout validation, initialization, unsupported roots, permissions, failed writes, malformed manifests, and configuration precedence.

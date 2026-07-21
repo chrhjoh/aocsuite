@@ -1,6 +1,36 @@
-use aocsuite_config::ConfigOpt;
+use aocsuite_config::ConfigKey;
 use aocsuite_utils::{LanguageId, PuzzlePart};
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ConfigCommandKey {
+    Language,
+    Year,
+    Editor,
+    RunHistoryLimit,
+    Session,
+}
+
+impl ConfigCommandKey {
+    pub fn config_key(self) -> Option<ConfigKey> {
+        match self {
+            Self::Language => Some(ConfigKey::Language),
+            Self::Year => Some(ConfigKey::Year),
+            Self::Editor => Some(ConfigKey::Editor),
+            Self::RunHistoryLimit => Some(ConfigKey::RunHistoryLimit),
+            Self::Session => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ConfigCommandKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.config_key() {
+            Some(key) => key.fmt(formatter),
+            None => formatter.write_str("session"),
+        }
+    }
+}
 
 #[derive(Subcommand, Debug)]
 pub enum AocCommand {
@@ -98,12 +128,12 @@ pub enum ConfigCommand {
     /// Get a configuration value
     Get {
         #[arg(value_enum)]
-        key: ConfigOpt,
+        key: ConfigCommandKey,
     },
     /// Set a configuration value
     Set {
         #[arg(value_enum)]
-        key: ConfigOpt,
+        key: ConfigCommandKey,
     },
 }
 

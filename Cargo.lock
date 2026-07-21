@@ -113,8 +113,10 @@ dependencies = [
  "aocsuite-fs",
  "aocsuite-lang",
  "aocsuite-parser",
+ "aocsuite-storage",
  "aocsuite-utils",
  "clap",
+ "rpassword",
  "thiserror 2.0.12",
 ]
 
@@ -132,10 +134,9 @@ name = "aocsuite-config"
 version = "0.3.0"
 dependencies = [
  "aocsuite-utils",
- "clap",
- "rpassword",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.12",
 ]
 
@@ -143,9 +144,7 @@ dependencies = [
 name = "aocsuite-editor"
 version = "0.3.0"
 dependencies = [
- "aocsuite-config",
  "aocsuite-utils",
- "clap",
  "shell-words",
  "thiserror 2.0.12",
  "which",
@@ -167,7 +166,6 @@ dependencies = [
 name = "aocsuite-lang"
 version = "0.3.0"
 dependencies = [
- "aocsuite-config",
  "aocsuite-utils",
  "serde",
  "serde_json",

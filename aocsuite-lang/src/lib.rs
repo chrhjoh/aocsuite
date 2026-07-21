@@ -11,8 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use aocsuite_config::{get_config_val, ConfigOpt};
-use aocsuite_utils::{get_aocsuite_dir, LanguageId, PartSelection, PuzzleDay, PuzzleYear};
+use aocsuite_utils::{LanguageId, PartSelection, PuzzleDay, PuzzleYear};
 use utils::{
     handle_command_output, new_result_file_path, read_result, with_result_file, ExerciseOutput,
     LanguageRunner,
@@ -23,16 +22,17 @@ pub struct Language {
     name: String,
     language_type: LanguageId,
     runner: LanguageRunner,
+    runs_dir: PathBuf,
 }
 
 impl Language {
-    pub fn resolve(language: &Option<LanguageId>) -> AocLanguageResult<Self> {
-        let language = get_config_val(&ConfigOpt::Language, None, *language)?;
-        Ok(Self {
+    pub fn new(language: LanguageId, project_root: PathBuf, runs_dir: PathBuf) -> Self {
+        Self {
             name: language.to_string(),
             language_type: language,
-            runner: languages::to_runner(language)?,
-        })
+            runner: languages::to_runner(language, project_root),
+            runs_dir,
+        }
     }
 
     pub fn run(
@@ -43,7 +43,7 @@ impl Language {
         input: &Path,
     ) -> AocLanguageResult<ExerciseOutput> {
         self.setup_solution(day, year)?;
-        let output_file = new_result_file_path(&get_aocsuite_dir()?.join("runs"))?;
+        let output_file = new_result_file_path(&self.runs_dir)?;
         with_result_file(&output_file, |output_file| {
             let output = self.runner.run(day, year, part, input, output_file)?;
             handle_command_output(output)?;

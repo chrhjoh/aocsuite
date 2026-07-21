@@ -4,35 +4,43 @@ use std::{
 };
 
 use crate::{
-    commands::{CleanAction, EnvAction, LibAction},
+    commands::{CleanAction, ConfigCommandKey, EnvAction, LibAction},
     git::{get_gitignore_path, run_git_command},
     AocCliResult, AocCommand, ConfigCommand,
 };
 use aocsuite_client::{AocClient, AocClientOptions, AocPage};
-use aocsuite_config::{get_config_val, set_config_val, AocConfigError, ConfigOpt};
+use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
 use aocsuite_editor::{open_browser, open_solution_files};
 use aocsuite_fs::{update_cache_status, AocContentFile};
 use aocsuite_lang::{Language, SolverFile};
 use aocsuite_parser::{parse, parse_submission_result, ParserType};
+use aocsuite_storage::RuntimeLayout;
 use aocsuite_utils::{
-    get_aocsuite_dir, valid_puzzle_release, valid_year_release, PartSelection, PuzzleDay, PuzzleId,
+    valid_puzzle_release, valid_year_release, LanguageId, PartSelection, PuzzleDay, PuzzleId,
     PuzzlePart, PuzzleYear,
 };
 
-pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> AocCliResult<()> {
+pub fn run_aocsuite(
+    command: AocCommand,
+    day: PuzzleDay,
+    year: PuzzleYear,
+    layout: &RuntimeLayout,
+    config: &mut Configuration,
+) -> AocCliResult<()> {
     match command {
         AocCommand::Config { command } => match command {
             ConfigCommand::Get { key } => {
                 ensure_config_read_allowed(&key)?;
-                let val: String = get_config_val(&key, None, None)?;
+                let val = config.get::<String>(key.config_key().expect("session rejected"))?;
                 println!("{key}: {val}");
             }
-            ConfigCommand::Set { key } => set_config_val(&key)?,
+            ConfigCommand::Set { key } => set_config_value(config, key)?,
         },
 
         AocCommand::Calendar => {
             valid_year_release(day, year)?;
-            let calendar = AocContentFile::calendar(year).load(&resolve_aoc_client()?)?;
+            let calendar = AocContentFile::calendar(layout.aoc_cache_dir(), year)
+                .load(&resolve_aoc_client(config)?)?;
             let parsed_calendar = parse(&calendar, ParserType::Colored);
             println!("{parsed_calendar}");
         }
@@ -48,9 +56,16 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                 Some(answer) => answer,
                 None => prompt_answer()?,
             };
-            let output = resolve_aoc_client()?.submit(PuzzleId::new(day, year), part, &answer)?;
+            let output =
+                resolve_aoc_client(config)?.submit(PuzzleId::new(day, year), part, &answer)?;
             let result = parse_submission_result(&output);
-            update_cache_status(&result, day, year, part == PuzzlePart::One)?;
+            update_cache_status(
+                layout.aoc_cache_dir(),
+                &result,
+                day,
+                year,
+                part == PuzzlePart::One,
+            )?;
             println!("{result}");
         }
 
@@ -64,15 +79,16 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             let path = match test {
                 Some(file) => {
                     if file.is_empty() {
-                        require_input_file(AocContentFile::example(day, year).path()?)?
+                        require_input_file(layout.example_path(PuzzleId::new(day, year)))?
                     } else {
                         resolve_custom_input_path(&file, &std::env::current_dir()?)?
                     }
                 }
-                None => AocContentFile::input(day, year).materialize(&resolve_aoc_client()?)?,
+                None => AocContentFile::input(layout.aoc_cache_dir(), day, year)
+                    .materialize(&resolve_aoc_client(config)?)?,
             };
 
-            let language = Language::resolve(&language)?;
+            let language = resolve_language(config, layout, language)?;
             language.compile(day, year)?;
             let result = language.run(day, year, part, path.as_ref())?;
             println!("{result}");
@@ -80,22 +96,23 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
 
         AocCommand::Open { language } => {
             valid_puzzle_release(day, year)?;
-            let client = resolve_aoc_client()?;
-            let language = Language::resolve(&language)?;
+            let client = resolve_aoc_client(config)?;
+            let language = resolve_language(config, layout, language)?;
             let solve_path =
                 language.prepare_solver_file(&SolverFile::ActiveSolution(day, year))?;
             let env_vars = language.editor_environment_vars()?;
 
             open_solution_files(
-                &AocContentFile::puzzle(day, year).materialize(&client)?,
-                &AocContentFile::example(day, year).path()?,
+                &resolve_editor(config)?,
+                &AocContentFile::puzzle(layout.aoc_cache_dir(), day, year).materialize(&client)?,
+                &layout.example_path(PuzzleId::new(day, year)),
                 &solve_path,
-                &AocContentFile::input(day, year).materialize(&client)?,
+                &AocContentFile::input(layout.aoc_cache_dir(), day, year).materialize(&client)?,
                 Some(env_vars),
             )?;
         }
         AocCommand::Template { language, reset } => {
-            let language = Language::resolve(&language)?;
+            let language = resolve_language(config, layout, language)?;
             if reset {
                 let template_path = language.prepare_solver_file(&SolverFile::SolutionTemplate)?;
                 if user_confirm(
@@ -109,20 +126,20 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             // Ensure the template exists before opening it; recreate it after a confirmed reset.
             let path = language.prepare_solver_file(&SolverFile::SolutionTemplate)?;
             let env_vars = language.editor_environment_vars()?;
-            aocsuite_editor::open(&path, Some(env_vars))?;
+            aocsuite_editor::open(&resolve_editor(config)?, &path, Some(env_vars))?;
         }
         AocCommand::Git { args } => {
-            let output = run_git_command(&args)?;
+            let output = run_git_command(&args, &layout.workspace_dir())?;
             if !output.is_empty() {
                 println!("{}", output);
             }
         }
         AocCommand::GitIgnore => {
-            let path = get_gitignore_path()?;
-            aocsuite_editor::open(&path, None)?;
+            let path = get_gitignore_path(&layout.workspace_dir())?;
+            aocsuite_editor::open(&resolve_editor(config)?, &path, None)?;
         }
         AocCommand::Env { action, language } => {
-            let language = Language::resolve(&language)?;
+            let language = resolve_language(config, layout, language)?;
             match action {
                 EnvAction::Add { package } => {
                     language.add_package(&package)?;
@@ -154,12 +171,12 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             }
         }
         AocCommand::Lib { action, language } => {
-            let language = Language::resolve(&language)?;
+            let language = resolve_language(config, layout, language)?;
             match action {
                 LibAction::Edit { lib } => {
                     let path = language.get_lib_filepath(&lib)?;
                     let env_vars = language.editor_environment_vars()?;
-                    aocsuite_editor::open(&path, Some(env_vars))?;
+                    aocsuite_editor::open(&resolve_editor(config)?, &path, Some(env_vars))?;
                 }
                 LibAction::Remove { lib, all, force } => {
                     let language_name = language.name();
@@ -244,16 +261,20 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
                 }
                 if user_confirm_or_force(
                     &format!(
-                        "Do you want to delete {file_prompt} (puzzles, inputs, examples and calendar) (Y/n) : ",
+                        "Do you want to delete {file_prompt} (puzzles, inputs and calendar) (Y/n) : ",
                     ),
                     force,
                 )? {
-                    aocsuite_fs::clean_cache(clean_year_opt, clean_day)?;
+                    aocsuite_fs::clean_cache(
+                        layout.aoc_cache_dir(),
+                        clean_year_opt,
+                        clean_day,
+                    )?;
                 }
             }
 
             CleanAction::Lang { language, force } => {
-                let language = Language::resolve(&language)?;
+                let language = resolve_language(config, layout, language)?;
                 let language_name = language.name();
                 if user_confirm_or_force(
                     &format!(
@@ -268,7 +289,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
         },
 
         AocCommand::Uninstall => {
-            let aocsuite_dir = get_aocsuite_dir()?;
+            let aocsuite_dir = layout.root_dir();
             println!(
                 "Ensure you have backed up any solutions. Files can be found at {:?}",
                 aocsuite_dir
@@ -286,8 +307,8 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
     Ok(())
 }
 
-fn ensure_config_read_allowed(key: &ConfigOpt) -> AocCliResult<()> {
-    if matches!(key, ConfigOpt::Session) {
+fn ensure_config_read_allowed(key: &ConfigCommandKey) -> AocCliResult<()> {
+    if matches!(key, ConfigCommandKey::Session) {
         return Err(crate::AocCliError::NotAllowed(
             "reading the session configuration value",
         ));
@@ -295,16 +316,58 @@ fn ensure_config_read_allowed(key: &ConfigOpt) -> AocCliResult<()> {
     Ok(())
 }
 
-fn resolve_aoc_client() -> AocCliResult<AocClient> {
-    let session = match get_config_val::<String>(&ConfigOpt::Session, None, None) {
-        Ok(session) => Some(session),
-        Err(AocConfigError::NotFound { .. }) => None,
-        Err(error) => return Err(error.into()),
-    };
+fn resolve_aoc_client(config: &Configuration) -> AocCliResult<AocClient> {
+    let session = config.session().ok();
     Ok(AocClient::new(
         session.as_deref(),
         AocClientOptions::default(),
     )?)
+}
+
+fn resolve_language(
+    config: &Configuration,
+    layout: &RuntimeLayout,
+    cli_arg: Option<LanguageId>,
+) -> AocCliResult<Language> {
+    let language_id = cli_arg
+        .map(Ok)
+        .unwrap_or_else(|| config.get(ConfigKey::Language))?;
+    Ok(Language::new(
+        language_id,
+        layout.language_project_dir(language_id),
+        layout.runs_dir(),
+    ))
+}
+
+fn resolve_editor(config: &Configuration) -> AocCliResult<String> {
+    match config.get::<String>(ConfigKey::Editor) {
+        Ok(editor) => Ok(editor),
+        Err(AocConfigError::NotFound { .. }) => Ok(std::env::var("EDITOR")?),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn set_config_value(config: &mut Configuration, key: ConfigCommandKey) -> AocCliResult<()> {
+    if matches!(key, ConfigCommandKey::Session) {
+        let value = rpassword::prompt_password("Enter value for session: ")?;
+        config.set_session((!value.trim().is_empty()).then_some(value.as_str()))?;
+        return Ok(());
+    }
+
+    let config_key = key.config_key().expect("session handled separately");
+    match config.get::<String>(config_key) {
+        Ok(value) => print!("Enter value for {key} [{value}]: "),
+        Err(AocConfigError::NotFound { .. }) => print!("Enter value for {key}: "),
+        Err(error) => return Err(error.into()),
+    }
+    std::io::stdout().flush()?;
+    let mut value = String::new();
+    std::io::stdin().read_line(&mut value)?;
+    config.set(
+        config_key,
+        (!value.trim().is_empty()).then_some(value.as_str()),
+    )?;
+    Ok(())
 }
 
 fn user_confirm(
@@ -380,10 +443,9 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use aocsuite_config::ConfigOpt;
-
     use super::{
         ensure_config_read_allowed, require_input_file, resolve_custom_input_path, user_confirm,
+        ConfigCommandKey,
     };
 
     static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -477,10 +539,10 @@ mod tests {
     #[test]
     fn session_config_reads_are_not_allowed() {
         assert!(matches!(
-            ensure_config_read_allowed(&ConfigOpt::Session),
+            ensure_config_read_allowed(&ConfigCommandKey::Session),
             Err(crate::AocCliError::NotAllowed(_))
         ));
-        assert!(ensure_config_read_allowed(&ConfigOpt::Language).is_ok());
+        assert!(ensure_config_read_allowed(&ConfigCommandKey::Language).is_ok());
     }
 
     #[test]

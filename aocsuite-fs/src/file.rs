@@ -18,40 +18,45 @@ pub enum AocFileType {
     Example,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct AocContentFile {
+    cache_dir: PathBuf,
     pub file_type: AocFileType,
     pub day: Option<PuzzleDay>,
     pub year: PuzzleYear,
 }
 
 impl AocContentFile {
-    pub fn puzzle(day: PuzzleDay, year: PuzzleYear) -> Self {
+    pub fn puzzle(cache_dir: PathBuf, day: PuzzleDay, year: PuzzleYear) -> Self {
         Self {
+            cache_dir,
             file_type: AocFileType::Puzzle,
             day: Some(day),
             year,
         }
     }
 
-    pub fn calendar(year: PuzzleYear) -> Self {
+    pub fn calendar(cache_dir: PathBuf, year: PuzzleYear) -> Self {
         Self {
+            cache_dir,
             file_type: AocFileType::Calendar,
             day: None,
             year,
         }
     }
 
-    pub fn input(day: PuzzleDay, year: PuzzleYear) -> Self {
+    pub fn input(cache_dir: PathBuf, day: PuzzleDay, year: PuzzleYear) -> Self {
         Self {
+            cache_dir,
             file_type: AocFileType::Input,
             day: Some(day),
             year,
         }
     }
 
-    pub fn example(day: PuzzleDay, year: PuzzleYear) -> Self {
+    pub fn example(cache_dir: PathBuf, day: PuzzleDay, year: PuzzleYear) -> Self {
         Self {
+            cache_dir,
             file_type: AocFileType::Example,
             day: Some(day),
             year,
@@ -80,7 +85,7 @@ impl AocContentFile {
         Ok(path)
     }
     pub fn path(&self) -> AocFileResult<PathBuf> {
-        let dir = AocCacheDir::new()?;
+        let dir = AocCacheDir::new(self.cache_dir.clone());
         let filename = self.filename();
 
         match self.day {
@@ -216,6 +221,7 @@ fn page_from_file(file: &AocContentFile) -> AocFileResult<AocPage> {
 }
 
 pub fn update_cache_status(
+    cache_dir: PathBuf,
     result: &AocSubmissionResult,
     day: PuzzleDay,
     year: PuzzleYear,
@@ -223,12 +229,12 @@ pub fn update_cache_status(
 ) -> AocFileResult<()> {
     if result == &AocSubmissionResult::Correct {
         // set the calendar cache to false for year
-        let calendar_file = AocContentFile::calendar(year);
+        let calendar_file = AocContentFile::calendar(cache_dir.clone(), year);
         calendar_file.set_cache_status(false)?;
 
         if update_puzzle {
             // set the puzzle cache to false for day
-            let puzzle_file = AocContentFile::puzzle(day, year);
+            let puzzle_file = AocContentFile::puzzle(cache_dir, day, year);
             puzzle_file.set_cache_status(false)?;
         }
     }
@@ -304,6 +310,7 @@ mod tests {
     fn puzzle_and_input_without_a_day_return_errors() {
         for file_type in [AocFileType::Puzzle, AocFileType::Input] {
             let file = AocContentFile {
+                cache_dir: test_dir(),
                 file_type,
                 day: None,
                 year: PuzzleYear::new(2024).expect("valid test year"),

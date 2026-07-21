@@ -13,7 +13,7 @@
 - `aocsuite-utils` owns validated UI-neutral puzzle/language values, release calculations, atomic filesystem primitives, environment/clock seams where needed, and the shared synchronous process executor. Shared values must not derive Clap traits.
 - Add broad `aocsuite-storage`, replacing `aocsuite-fs`. It owns `RuntimeLayout`, bootstrap/versioning, SQLite, AoC fetch/parse/cache lifecycle, shared examples, workspace Git, run allocation, submission counts, timing retention, cleanup, and uninstall safety.
 - Keep storage internally layered. Layout/database modules do not call HTTP or parser code; only the content module depends on the configuration-independent client and semantic parser. Storage never depends on config, language, launcher, CLI, or TUI.
-- `aocsuite-config` owns typed non-secret preferences, environment precedence, and session persistence. It receives explicit paths, performs no prompting, and must not create files during reads. Remove the unused `template_dir`/`AOC_TEMPLATE_DIR` setting.
+- `aocsuite-config` owns typed non-secret configuration values and session persistence. It receives explicit paths, performs no prompting, and must not create files during reads. Remove the unused `template_dir`/`AOC_TEMPLATE_DIR` setting.
 - `aocsuite-client` owns blocking AoC HTTP transport, URL/auth/status behavior, timeout/retry policy, and HTTP validators. It receives an optional session explicitly and must not read config, storage, or environment state.
 - `aocsuite-parser` owns pure fallible puzzle/calendar/submission transformations. Return semantic calendar cells/stars and submission outcomes; ANSI, emoji, and frontend prose do not belong here.
 - `aocsuite-lang` owns complete tracked Rust/Python projects, versioned generated harnesses, solutions/templates/libraries, active links, Cargo/pip dependencies, compile/run, structured reports, and language cleanup. It receives explicit paths/settings/executor and must not read config or discover the runtime root.
@@ -44,11 +44,11 @@
 
 ## Current Implementation Hazards
 
-- The current root is still `$XDG_DATA_HOME/aocsuite`, falling back to `$HOME/.local/share/aocsuite`. The README's `.local/data` path is stale. Use temporary explicit roots or `XDG_DATA_HOME` for isolated manual tests until injected layout APIs exist.
-- Current config precedence is explicit override, then `<runtime-root>/config.json`, then `AOC_*`, then caller default. Rust does not load `.envrc` or dotenv files.
-- Never run or log `config get session`, and avoid live submission/download verification. The current implementation still stores the session in `config.json`; the target moves it to `secrets/session`.
-- Current `aocsuite-fs::AocContentFile::to_path()` may download, parse, write metadata, and mutate permissions. Current examples also live under disposable cache paths.
-- Current client, language, and editor crates discover configuration internally. Current language and Git code independently discover runtime paths. Remove these hidden globals before introducing storage dependencies that could cycle.
+- The CLI resolves the complete root from `AOCSUITE_DATA_DIR`, then `$XDG_DATA_HOME/aocsuite`, then `$HOME/.local/share/aocsuite`, and passes it to `RuntimeLayout::new` before loading configuration. The README's `.local/data` path is stale. Use `AOCSUITE_DATA_DIR` for isolated manual tests.
+- Config precedence is explicit override, then `<runtime-root>/config.json`, then `AOC_*`, then caller default. Reads are non-mutating, prompting is CLI-owned, and Rust does not load `.envrc` or dotenv files.
+- Never run or log `config get session`, and avoid live submission/download verification. Persisted sessions now live in owner-only `secrets/session`.
+- `aocsuite-fs` temporarily receives an explicit cache directory, but `AocContentFile::materialize()` still combines download, parse, metadata, and permission mutation. Remove this transitional crate while absorbing content behavior into storage.
+- Client, language, editor, filesystem, and Git inputs no longer discover the runtime root or configuration globally. Git still lives in the CLI and must move into storage workspace services.
 - Current parser calendar output embeds ANSI, language result fields are not publicly inspectable, and language helpers may print. Do not scrape these outputs; fix the owning APIs.
 - Current Git scope is the whole runtime root. Current target design scopes Git to lazy `workspace/` and regenerates its `.gitignore`.
 - Current language runs use unique transient result files and activate the requested day/year, but active links remain shared mutable state. Keep activation/build/run serialized.

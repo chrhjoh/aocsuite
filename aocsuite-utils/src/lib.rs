@@ -1,9 +1,7 @@
 use std::{
-    env,
-    ffi::OsString,
     fs::{self, OpenOptions},
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -28,18 +26,6 @@ pub enum ReleaseError {
     #[error("Advent of code has not started yet for {0}")]
     Year(PuzzleYear),
 }
-
-#[derive(Debug, Error)]
-pub enum RuntimeDirError {
-    #[error("XDG_DATA_HOME must be an absolute, non-empty path")]
-    InvalidXdgDataHome,
-    #[error("HOME must be an absolute, non-empty path")]
-    InvalidHome,
-    #[error("Neither XDG_DATA_HOME nor HOME environment variables are set")]
-    MissingHome,
-}
-
-pub type RuntimeDirResult<T> = Result<T, RuntimeDirError>;
 
 static ATOMIC_WRITE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -196,41 +182,13 @@ pub fn default_puzzle_date_at(now_utc: DateTime<Utc>) -> (PuzzleDay, PuzzleYear)
     )
 }
 
-pub fn get_aocsuite_dir() -> RuntimeDirResult<PathBuf> {
-    get_aocsuite_dir_from(env::var_os("XDG_DATA_HOME"), env::var_os("HOME"))
-}
-
-fn get_aocsuite_dir_from(
-    xdg_data_home: Option<OsString>,
-    home: Option<OsString>,
-) -> RuntimeDirResult<PathBuf> {
-    if let Some(xdg_data_home) = xdg_data_home {
-        let base = PathBuf::from(xdg_data_home);
-        return valid_runtime_base(base, RuntimeDirError::InvalidXdgDataHome)
-            .map(|base| base.join("aocsuite"));
-    }
-
-    let home = home.ok_or(RuntimeDirError::MissingHome)?;
-    valid_runtime_base(PathBuf::from(home), RuntimeDirError::InvalidHome)
-        .map(|home| home.join(".local").join("share").join("aocsuite"))
-}
-
-fn valid_runtime_base(base: PathBuf, error: RuntimeDirError) -> RuntimeDirResult<PathBuf> {
-    if base.as_os_str().is_empty() || !base.is_absolute() {
-        return Err(error);
-    }
-    Ok(base)
-}
-
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};
 
-    use std::{ffi::OsString, path::PathBuf};
-
     use super::{
-        default_puzzle_date_at, get_aocsuite_dir_from, valid_puzzle_release_at,
-        valid_year_release_at, PuzzleDay, PuzzleYear, ReleaseError, RuntimeDirError,
+        default_puzzle_date_at, valid_puzzle_release_at, valid_year_release_at, PuzzleDay,
+        PuzzleYear, ReleaseError,
     };
 
     fn puzzle(day: u32, year: i32) -> (PuzzleDay, PuzzleYear) {
@@ -305,54 +263,6 @@ mod tests {
             valid_year_release_at(year(2027), now),
             Err(ReleaseError::Year(_))
         ));
-    }
-
-    #[test]
-    fn runtime_dir_prefers_an_absolute_xdg_data_home() {
-        assert_eq!(
-            get_aocsuite_dir_from(Some(OsString::from("/var/aoc-data")), None).unwrap(),
-            PathBuf::from("/var/aoc-data/aocsuite")
-        );
-    }
-
-    #[test]
-    fn runtime_dir_uses_home_when_xdg_data_home_is_absent() {
-        assert_eq!(
-            get_aocsuite_dir_from(None, Some(OsString::from("/Users/tester"))).unwrap(),
-            PathBuf::from("/Users/tester/.local/share/aocsuite")
-        );
-    }
-
-    #[test]
-    fn runtime_dir_rejects_empty_and_relative_environment_values() {
-        assert!(matches!(
-            get_aocsuite_dir_from(Some(OsString::new()), Some(OsString::from("/Users/tester"))),
-            Err(RuntimeDirError::InvalidXdgDataHome)
-        ));
-        assert!(matches!(
-            get_aocsuite_dir_from(None, Some(OsString::from("relative-home"))),
-            Err(RuntimeDirError::InvalidHome)
-        ));
-    }
-
-    #[test]
-    fn runtime_dir_handles_missing_and_non_unicode_environment_values() {
-        assert!(matches!(
-            get_aocsuite_dir_from(None, None),
-            Err(RuntimeDirError::MissingHome)
-        ));
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::ffi::OsStringExt;
-
-            let home = OsString::from_vec(vec![b'/', b't', 0x80]);
-            assert_eq!(
-                get_aocsuite_dir_from(None, Some(home)).unwrap(),
-                PathBuf::from(OsString::from_vec(vec![b'/', b't', 0x80]))
-                    .join(".local/share/aocsuite")
-            );
-        }
     }
 
     #[test]

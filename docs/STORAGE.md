@@ -20,7 +20,7 @@ Keep strict internal layers even though they share one crate:
 Other crates consume an injected `RuntimeLayout` or storage handle instead of independently appending paths to `get_aocsuite_dir()`:
 
 - `aocsuite-utils` owns validated domain values and the injectable process executor.
-- `aocsuite-config` owns typed preferences, environment precedence, and session access.
+- `aocsuite-config` owns typed non-secret configuration values, and session access.
 - `aocsuite-client` owns configuration-independent blocking AoC HTTP transport.
 - `aocsuite-parser` owns pure semantic parsing and Markdown conversion.
 - `aocsuite-lang` owns language projects, generated harness contents, package commands, compilation, and execution.
@@ -44,7 +44,7 @@ Use one hardened runtime root. Keep user work and complete language projects as 
 ```text
 aocsuite/
   .aocsuite-layout.json      # Physical layout version
-  config.json                # Typed non-secret preferences
+  config.json                # Typed non-secret configuration values
   secrets/
     session                  # Owner-only AoC session token
   state.sqlite               # Metadata and bounded application state
@@ -63,13 +63,13 @@ Do not store source files, templates, libraries, Cargo files, Python environment
 
 ## Runtime Layout API
 
-`aocsuite-storage` exposes a cloneable `RuntimeLayout` with discovery and explicit-root constructors. Tests use explicit temporary roots and do not mutate process-global environment variables.
+`aocsuite-storage` exposes cloneable `RuntimeLayout::new(root_dir)` and a separate `get_aocsuite_dir()` root resolver. The resolver treats `AOCSUITE_DATA_DIR` as a complete root, then falls back to `$XDG_DATA_HOME/aocsuite` and `$HOME/.local/share/aocsuite`. Its environment mapping is tested through a private seam; storage tests otherwise use explicit temporary roots.
 
 Path getters are pure. They never create directories, fetch content, migrate data, initialize projects, or launch commands. Bootstrap and mutation are separate explicit operations.
 
 The layout provides typed paths for at least:
 
-- Layout manifest, preferences, session, database, cache, runs, and workspace.
+- Layout manifest, configuration, session, database, cache, runs, and workspace paths.
 - Shared examples by year/day.
 - Rust and Python project roots.
 - Cache bodies by content type and puzzle date.
@@ -199,7 +199,7 @@ If the database is missing or corrupt, scan recognized cache paths, rebuild thei
 
 Path lookup, status lookup, cached reads, fetch, refresh, invalidation, and cleanup are separate APIs. Asking for a cache path must not perform HTTP or filesystem mutation.
 
-Downloaded AoC content is disposable. Cache cleaning does not remove preferences, secrets, examples, workspaces, or run history.
+Downloaded AoC content is disposable. Cache cleaning does not remove configuration, secrets, examples, workspaces, or run history.
 
 ## SQLite State
 
@@ -237,11 +237,11 @@ SQLite may mirror the layout version for diagnostics.
 
 ## Configuration And Secrets
 
-`config.json` contains typed non-secret preferences and is written atomically. It includes the run-history limit with a default of 10. Configuration reads do not create files; initialization and writes are explicit.
+`config.json` contains typed non-secret configuration values and is written atomically. It includes the run-history limit with a default of 10. Configuration reads do not create files; initialization and writes are explicit.
 
 The session token is stored separately in `secrets/session` with owner-only file and directory permissions. `AOC_SESSION` remains a nonpersistent configuration source. Prompting belongs to the frontend, not `aocsuite-config`.
 
-Remove the unused `template_dir` preference and `AOC_TEMPLATE_DIR`; templates are tracked inside each language project. Configuration, language, client, and launcher services receive explicit paths/settings and do not independently discover global configuration.
+Remove the unused `template_dir` configuration and `AOC_TEMPLATE_DIR`; templates are tracked inside each language project. Configuration, language, client, and launcher services receive explicit paths/settings and do not independently discover global configuration.
 
 ## Launcher And Frontend Boundaries
 
