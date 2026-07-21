@@ -47,10 +47,10 @@ fn resolve_puzzle_date(
     let day = requested_day.unwrap_or_else(|| {
         if year == default.1 {
             default.0
-        } else if year == 2025 {
-            12
+        } else if year.get() == 2025 {
+            PuzzleDay::new(12).expect("valid final puzzle day for 2025")
         } else {
-            25
+            PuzzleDay::new(25).expect("valid final puzzle day")
         }
     });
     (day, year)
@@ -62,7 +62,14 @@ mod tests {
 
     use super::{resolve_puzzle_date, AocCli};
     use aocsuite_cli::AocCommand;
-    use aocsuite_utils::Exercise;
+    use aocsuite_utils::{PuzzleDay, PuzzlePart, PuzzleYear};
+
+    fn puzzle(day: u32, year: i32) -> (PuzzleDay, PuzzleYear) {
+        (
+            PuzzleDay::new(day).expect("valid test day"),
+            PuzzleYear::new(year).expect("valid test year"),
+        )
+    }
 
     #[test]
     fn run_part_uses_the_documented_long_option() {
@@ -72,7 +79,7 @@ mod tests {
         assert!(matches!(
             cli.command,
             AocCommand::Run {
-                part: Some(Exercise::One),
+                part: Some(PuzzlePart::One),
                 ..
             }
         ));
@@ -86,7 +93,7 @@ mod tests {
         assert!(matches!(
             cli.command,
             AocCommand::Submit {
-                part: Exercise::Two,
+                part: PuzzlePart::Two,
                 answer: None,
             }
         ));
@@ -98,19 +105,28 @@ mod tests {
             AocCli::try_parse_from(["aocsuite-cli", "--day", "4", "--year", "2024", "calendar"])
                 .expect("parse explicit puzzle date");
 
-        assert_eq!(cli.day, Some(4));
-        assert_eq!(cli.year, Some(2024));
+        let (day, year) = puzzle(4, 2024);
+        assert_eq!(cli.day, Some(day));
+        assert_eq!(cli.year, Some(year));
+    }
+
+    #[test]
+    fn invalid_puzzle_values_are_rejected_during_parsing() {
+        assert!(AocCli::try_parse_from(["aocsuite-cli", "--day", "0", "calendar"]).is_err());
+        assert!(
+            AocCli::try_parse_from(["aocsuite-cli", "--year", "2014", "calendar"]).is_err()
+        );
     }
 
     #[test]
     fn configured_year_overrides_the_default_year() {
         assert_eq!(
-            resolve_puzzle_date(None, Some(2024), (20, 2026)),
-            (25, 2024)
+            resolve_puzzle_date(None, Some(puzzle(1, 2024).1), puzzle(20, 2026)),
+            puzzle(25, 2024)
         );
         assert_eq!(
-            resolve_puzzle_date(None, Some(2025), (20, 2026)),
-            (12, 2025)
+            resolve_puzzle_date(None, Some(puzzle(1, 2025).1), puzzle(20, 2026)),
+            puzzle(12, 2025)
         );
     }
 }

@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use aocsuite_config::{AocConfigError, ConfigOpt, get_config_val};
-use aocsuite_utils::{Exercise, PuzzleDay, PuzzleYear};
+use aocsuite_utils::{PuzzleDay, PuzzlePart, PuzzleYear};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{COOKIE, HeaderMap, HeaderValue};
 use thiserror::Error;
@@ -91,7 +91,7 @@ fn ensure_browser_success(status: std::process::ExitStatus) -> AocClientResult<(
 }
 pub fn post_answer(
     answer: &str,
-    level: &Exercise,
+    level: &PuzzlePart,
     day: PuzzleDay,
     year: PuzzleYear,
 ) -> AocClientResult<String> {
@@ -163,11 +163,19 @@ mod tests {
     };
 
     use reqwest::blocking::Client;
+    use aocsuite_utils::{PuzzleDay, PuzzleYear};
 
     use super::{
         AocClientError, AocPage, build_http_client_with_session, download_file_from,
         ensure_browser_success,
     };
+
+    fn puzzle() -> (PuzzleDay, PuzzleYear) {
+        (
+            PuzzleDay::new(1).expect("valid test day"),
+            PuzzleYear::new(2024).expect("valid test year"),
+        )
+    }
 
     fn serve_once(status: u16, body: &'static str) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
@@ -213,7 +221,8 @@ mod tests {
     #[test]
     fn failed_http_statuses_return_typed_errors() {
         let client = Client::new();
-        let page = AocPage::Puzzle(1, 2024);
+        let (day, year) = puzzle();
+        let page = AocPage::Puzzle(day, year);
 
         for (status, expected) in [
             (302, "status"),
@@ -235,7 +244,8 @@ mod tests {
     #[test]
     fn successful_login_page_returns_an_authentication_error() {
         let base_url = serve_once(200, "Please log in to get your puzzle input.");
-        let error = download_file_from(&AocPage::Input(1, 2024), &Client::new(), &base_url)
+        let (day, year) = puzzle();
+        let error = download_file_from(&AocPage::Input(day, year), &Client::new(), &base_url)
             .expect_err("login page is rejected");
 
         assert!(matches!(error, AocClientError::Authentication));

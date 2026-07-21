@@ -15,7 +15,8 @@ use aocsuite_fs::{update_cache_status, AocContentFile};
 use aocsuite_lang::{Language, SolverFile};
 use aocsuite_parser::{parse, parse_submission_result, ParserType};
 use aocsuite_utils::{
-    get_aocsuite_dir, valid_puzzle_release, valid_year_release, Exercise, PuzzleDay, PuzzleYear,
+    get_aocsuite_dir, valid_puzzle_release, valid_year_release, PartSelection, PuzzleDay,
+    PuzzlePart, PuzzleYear,
 };
 
 pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> AocCliResult<()> {
@@ -49,7 +50,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             };
             let output = post_answer(&answer, &part, day, year)?;
             let result = parse_submission_result(&output);
-            update_cache_status(&result, day, year, part == Exercise::One)?;
+            update_cache_status(&result, day, year, part == PuzzlePart::One)?;
             println!("{result}");
         }
 
@@ -59,7 +60,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
             test,
         } => {
             valid_puzzle_release(day, year)?;
-            let part = part.map_or("both".to_string(), |exercise| exercise.to_string());
+            let part = part.map_or(PartSelection::Both, PartSelection::from);
             let path = match test {
                 Some(file) => {
                     if file == "" {
@@ -73,7 +74,7 @@ pub fn run_aocsuite(command: AocCommand, day: PuzzleDay, year: PuzzleYear) -> Ao
 
             let language = Language::resolve(&language)?;
             language.compile(day, year)?;
-            let result = language.run(day, year, &part, path.as_ref())?;
+            let result = language.run(day, year, part, path.as_ref())?;
             println!("{result}");
         }
 

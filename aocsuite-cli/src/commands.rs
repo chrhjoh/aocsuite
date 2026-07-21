@@ -1,6 +1,5 @@
 use aocsuite_config::ConfigOpt;
-use aocsuite_lang::LanguageType;
-use aocsuite_utils::Exercise;
+use aocsuite_utils::{LanguageId, PuzzlePart};
 use clap::Subcommand;
 
 #[derive(Subcommand, Debug)]
@@ -14,7 +13,7 @@ pub enum AocCommand {
     /// Open the day in editor
     Open {
         #[arg(long)]
-        language: Option<LanguageType>,
+        language: Option<LanguageId>,
     },
     /// Manage library files
     Env {
@@ -22,7 +21,7 @@ pub enum AocCommand {
         action: EnvAction,
 
         #[arg(long)]
-        language: Option<LanguageType>,
+        language: Option<LanguageId>,
     },
     /// Manage library files
     Lib {
@@ -30,12 +29,12 @@ pub enum AocCommand {
         action: LibAction,
 
         #[arg(long)]
-        language: Option<LanguageType>,
+        language: Option<LanguageId>,
     },
     /// Edit template file
     Template {
         #[arg(long)]
-        language: Option<LanguageType>,
+        language: Option<LanguageId>,
 
         #[arg(long)]
         reset: bool,
@@ -44,11 +43,11 @@ pub enum AocCommand {
     /// Run the day
     Run {
         #[arg(long)]
-        language: Option<LanguageType>,
+        language: Option<LanguageId>,
 
         /// Puzzle part
         #[arg(long)]
-        part: Option<Exercise>,
+        part: Option<PuzzlePart>,
 
         /// Input file to use instead of AoC input. AocSuite Example file can be used by supplying
         /// --test with no arg
@@ -60,7 +59,7 @@ pub enum AocCommand {
     Submit {
         /// Puzzle part
         #[arg(long)]
-        part: Exercise,
+        part: PuzzlePart,
 
         /// Puzzle answer. Will prompt if not specified
         answer: Option<String>,
@@ -174,7 +173,7 @@ pub enum CleanAction {
     Lang {
         /// Language to clean files for
         #[arg(long)]
-        language: Option<LanguageType>,
+        language: Option<LanguageId>,
         /// Force removal without confirmation
         #[arg(long, short)]
         force: bool,

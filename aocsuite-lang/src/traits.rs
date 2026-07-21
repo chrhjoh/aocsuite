@@ -5,7 +5,7 @@ use std::{
     process::Output,
 };
 
-use aocsuite_utils::{PuzzleDay, PuzzleYear};
+use aocsuite_utils::{PartSelection, PuzzleDay, PuzzleYear};
 
 use crate::utils::{symlink_file, AocLanguageResult, SolverFile};
 
@@ -18,7 +18,7 @@ pub trait Solver {
         &self,
         day: PuzzleDay,
         year: PuzzleYear,
-        part: &str,
+        part: PartSelection,
         input: &Path,
         output: &std::path::Path,
     ) -> AocLanguageResult<Output>;

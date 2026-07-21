@@ -12,8 +12,7 @@ use std::{
 };
 
 use aocsuite_config::{get_config_val, ConfigOpt};
-use aocsuite_utils::{get_aocsuite_dir, PuzzleDay, PuzzleYear};
-pub use languages::LanguageType;
+use aocsuite_utils::{get_aocsuite_dir, LanguageId, PartSelection, PuzzleDay, PuzzleYear};
 use utils::{
     handle_command_output, new_result_file_path, read_result, with_result_file, ExerciseOutput,
     LanguageRunner,
@@ -22,17 +21,17 @@ pub use utils::{AocLanguageError, AocLanguageResult, SolverFile};
 
 pub struct Language {
     name: String,
-    language_type: LanguageType,
+    language_type: LanguageId,
     runner: LanguageRunner,
 }
 
 impl Language {
-    pub fn resolve(language: &Option<LanguageType>) -> AocLanguageResult<Self> {
+    pub fn resolve(language: &Option<LanguageId>) -> AocLanguageResult<Self> {
         let language = get_config_val(&ConfigOpt::Language, None, language.clone())?;
         Ok(Self {
             name: language.to_string(),
             language_type: language.clone(),
-            runner: language.to_runner()?,
+            runner: languages::to_runner(language)?,
         })
     }
 
@@ -40,7 +39,7 @@ impl Language {
         &self,
         day: PuzzleDay,
         year: PuzzleYear,
-        part: &str,
+        part: PartSelection,
         input: &Path,
     ) -> AocLanguageResult<ExerciseOutput> {
         self.setup_solution(day, year)?;
@@ -138,7 +137,7 @@ impl Language {
     }
 }
 
-fn validate_user_lib(lib_name: &str, language: &LanguageType) -> AocLanguageResult<()> {
+fn validate_user_lib(lib_name: &str, language: &LanguageId) -> AocLanguageResult<()> {
     if lib_name.is_empty() {
         return Err(AocLanguageError::LibInvalid(
             "Library name cannot be empty".to_string(),
@@ -156,8 +155,8 @@ fn validate_user_lib(lib_name: &str, language: &LanguageType) -> AocLanguageResu
     }
 
     let reserved_names = match language {
-        LanguageType::Rust => RUST_RESERVED_NAMES,
-        LanguageType::Python => PYTHON_RESERVED_NAMES,
+        LanguageId::Rust => RUST_RESERVED_NAMES,
+        LanguageId::Python => PYTHON_RESERVED_NAMES,
     };
     if reserved_names
         .iter()
@@ -236,8 +235,23 @@ mod tests {
         rust::RustRunner,
         traits::{DepManager, LanguageHandler, Solver},
         utils::{handle_command_output, new_result_file_path, read_result, with_result_file},
-        AocLanguageError, LanguageType, SolverFile,
+        AocLanguageError, SolverFile,
     };
+    use aocsuite_utils::{LanguageId, PartSelection, PuzzleDay, PuzzleYear};
+
+    fn puzzle_solution(day: u32) -> SolverFile {
+        SolverFile::PuzzleSolution(
+            PuzzleDay::new(day).expect("valid test day"),
+            PuzzleYear::new(2024).expect("valid test year"),
+        )
+    }
+
+    fn active_solution(day: u32) -> SolverFile {
+        SolverFile::ActiveSolution(
+            PuzzleDay::new(day).expect("valid test day"),
+            PuzzleYear::new(2024).expect("valid test year"),
+        )
+    }
 
     fn test_root(language: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -253,20 +267,20 @@ mod tests {
     #[test]
     fn library_names_follow_language_identifier_rules() {
         let cases = [
-            (LanguageType::Rust, "day2", true),
-            (LanguageType::Rust, "snake_case", true),
-            (LanguageType::Rust, "match", false),
-            (LanguageType::Rust, "Main", false),
-            (LanguageType::Rust, "two-words", false),
-            (LanguageType::Rust, "2fast", false),
-            (LanguageType::Rust, "café", false),
-            (LanguageType::Python, "day2", true),
-            (LanguageType::Python, "snake_case", true),
-            (LanguageType::Python, "class", false),
-            (LanguageType::Python, "venv", false),
-            (LanguageType::Python, "two-words", false),
-            (LanguageType::Python, "2fast", false),
-            (LanguageType::Python, "café", false),
+            (LanguageId::Rust, "day2", true),
+            (LanguageId::Rust, "snake_case", true),
+            (LanguageId::Rust, "match", false),
+            (LanguageId::Rust, "Main", false),
+            (LanguageId::Rust, "two-words", false),
+            (LanguageId::Rust, "2fast", false),
+            (LanguageId::Rust, "café", false),
+            (LanguageId::Python, "day2", true),
+            (LanguageId::Python, "snake_case", true),
+            (LanguageId::Python, "class", false),
+            (LanguageId::Python, "venv", false),
+            (LanguageId::Python, "two-words", false),
+            (LanguageId::Python, "2fast", false),
+            (LanguageId::Python, "café", false),
         ];
 
         for (language, name, valid) in cases {
@@ -292,29 +306,29 @@ mod tests {
 
     fn assert_requested_solution_is_active(runner: &dyn LanguageHandler) {
         let first_solution = runner
-            .ensure_solver_file(&SolverFile::PuzzleSolution(1, 2024))
+            .ensure_solver_file(&puzzle_solution(1))
             .expect("create first solution");
         fs::write(&first_solution, "first solution").expect("write first solution");
         runner
-            .ensure_solver_file(&SolverFile::ActiveSolution(1, 2024))
+            .ensure_solver_file(&active_solution(1))
             .expect("activate first solution");
 
-        let active_solution = runner.solver_file_path(&SolverFile::ActiveSolution(1, 2024));
+        let active_path = runner.solver_file_path(&active_solution(1));
         assert_eq!(
-            fs::read_to_string(&active_solution).expect("read active first solution"),
+            fs::read_to_string(&active_path).expect("read active first solution"),
             "first solution"
         );
 
         let second_solution = runner
-            .ensure_solver_file(&SolverFile::PuzzleSolution(2, 2024))
+            .ensure_solver_file(&puzzle_solution(2))
             .expect("create second solution");
         fs::write(&second_solution, "second solution").expect("write second solution");
         runner
-            .ensure_solver_file(&SolverFile::ActiveSolution(2, 2024))
+            .ensure_solver_file(&active_solution(2))
             .expect("activate second solution");
 
         assert_eq!(
-            fs::read_to_string(&active_solution).expect("read active second solution"),
+            fs::read_to_string(&active_path).expect("read active second solution"),
             "second solution"
         );
     }
@@ -377,7 +391,7 @@ mod tests {
             .migrate_runtime()
             .expect("migrate fresh Python runtime");
         let solution = runner
-            .ensure_solver_file(&SolverFile::PuzzleSolution(1, 2024))
+            .ensure_solver_file(&puzzle_solution(1))
             .expect("create Python solution");
         fs::write(
             &solution,
@@ -385,7 +399,7 @@ mod tests {
         )
         .expect("write Python solution");
         runner
-            .ensure_solver_file(&SolverFile::ActiveSolution(1, 2024))
+            .ensure_solver_file(&active_solution(1))
             .expect("activate Python solution");
         runner
             .setup_env()
@@ -393,7 +407,13 @@ mod tests {
         fs::write(&input, "example\n").expect("write input");
 
         let command = runner
-            .run(1, 2024, "both", &input, &output)
+            .run(
+                PuzzleDay::new(1).unwrap(),
+                PuzzleYear::new(2024).unwrap(),
+                PartSelection::Both,
+                &input,
+                &output,
+            )
             .expect("run Python solution");
         handle_command_output(command).expect("Python solution succeeds");
         let result = read_result(&output).expect("parse Python result");
@@ -482,7 +502,7 @@ mod tests {
         let runner = PythonRunner::new(root.clone());
 
         let solution = runner
-            .ensure_solver_file(&SolverFile::PuzzleSolution(1, 2024))
+            .ensure_solver_file(&puzzle_solution(1))
             .expect("create Python solution from template");
         let contents = fs::read_to_string(solution).expect("read generated Python solution");
 

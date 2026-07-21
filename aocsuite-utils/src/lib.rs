@@ -9,27 +9,15 @@ use std::{
 
 use chrono::{DateTime, Datelike, TimeZone, Utc};
 use chrono_tz::{Tz, US::Eastern};
-use clap::ValueEnum;
 use thiserror::Error;
 
-pub type PuzzleDay = u32;
-pub type PuzzleYear = i32;
+pub mod domain;
+pub mod process;
 
-#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
-pub enum Exercise {
-    #[clap(alias = "1")]
-    One,
-    #[clap(alias = "2")]
-    Two,
-}
-impl ToString for Exercise {
-    fn to_string(&self) -> String {
-        match self {
-            Exercise::One => "1".to_string(),
-            Exercise::Two => "2".to_string(),
-        }
-    }
-}
+pub use domain::{
+    DomainError, LanguageId, PartSelection, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear,
+};
+pub use process::{ProcessExecutor, ProcessMode, ProcessRequest, SystemProcessExecutor};
 
 type AocReleaseResult<T> = Result<T, ReleaseError>;
 
@@ -129,19 +117,19 @@ fn valid_puzzle_release_at(
     year: PuzzleYear,
     now_utc: DateTime<Utc>,
 ) -> AocReleaseResult<()> {
-    if !valid_puzzle_day(day, year) || year < 2015 {
+    if !valid_puzzle_day(day, year) {
         return Err(ReleaseError::Puzzle(day, year));
     }
     let now_eastern = now_utc.with_timezone(&Eastern);
-    if year > now_eastern.year() {
+    if year.get() > now_eastern.year() {
         return Err(ReleaseError::Puzzle(day, year));
     }
-    if year < now_eastern.year() {
+    if year.get() < now_eastern.year() {
         return Ok(());
     }
 
     let release_date = Eastern
-        .with_ymd_and_hms(year, 12, day, 0, 0, 0)
+        .with_ymd_and_hms(year.get(), 12, u32::from(day.get()), 0, 0, 0)
         .single()
         .ok_or(ReleaseError::Puzzle(day, year))?;
 
@@ -153,7 +141,7 @@ fn valid_puzzle_release_at(
 }
 
 fn valid_puzzle_day(day: PuzzleDay, year: PuzzleYear) -> bool {
-    (1..=if year == 2025 { 12 } else { 25 }).contains(&day)
+    year.get() != 2025 || day.get() <= 12
 }
 
 pub fn valid_year_release(_day: PuzzleDay, year: PuzzleYear) -> AocReleaseResult<()> {
@@ -164,12 +152,12 @@ fn valid_year_release_at(year: PuzzleYear, now_utc: DateTime<Utc>) -> AocRelease
     let now_eastern = now_utc.with_timezone(&Eastern);
     let now_year = now_eastern.year();
 
-    if year < 2015 || year > now_year {
+    if year.get() > now_year {
         return Err(ReleaseError::Year(year));
     }
-    if year == now_year {
+    if year.get() == now_year {
         let release_date = Eastern
-            .with_ymd_and_hms(year, 12, 1, 0, 0, 0)
+            .with_ymd_and_hms(year.get(), 12, 1, 0, 0, 0)
             .single()
             .ok_or(ReleaseError::Year(year))?;
         if now_eastern < release_date {
@@ -183,14 +171,6 @@ pub fn today() -> DateTime<Tz> {
     let now_utc = Utc::now();
     now_utc.with_timezone(&Eastern)
 }
-pub fn today_day() -> PuzzleDay {
-    let now_utc = Utc::now();
-    now_utc.with_timezone(&Eastern).day()
-}
-pub fn today_year() -> PuzzleYear {
-    let now_utc = Utc::now();
-    now_utc.with_timezone(&Eastern).year()
-}
 
 /// Returns the most recently released puzzle date in US/Eastern time.
 pub fn default_puzzle_date() -> (PuzzleDay, PuzzleYear) {
@@ -201,11 +181,19 @@ pub fn default_puzzle_date_at(now_utc: DateTime<Utc>) -> (PuzzleDay, PuzzleYear)
     let now = now_utc.with_timezone(&Eastern);
     if now.month() == 12 {
         let year = now.year();
-        return (now.day().min(if year == 2025 { 12 } else { 25 }), year);
+        return (
+            PuzzleDay::new(now.day().min(if year == 2025 { 12 } else { 25 }))
+                .expect("December day is a valid puzzle day"),
+            PuzzleYear::new(year).expect("current year supports Advent of Code"),
+        );
     }
 
     let year = now.year() - 1;
-    (if year == 2025 { 12 } else { 25 }, year)
+    (
+        PuzzleDay::new(if year == 2025 { 12 } else { 25 })
+            .expect("default day is a valid puzzle day"),
+        PuzzleYear::new(year).expect("previous year supports Advent of Code"),
+    )
 }
 
 pub fn get_aocsuite_dir() -> RuntimeDirResult<PathBuf> {
@@ -242,8 +230,19 @@ mod tests {
 
     use super::{
         default_puzzle_date_at, get_aocsuite_dir_from, valid_puzzle_release_at,
-        valid_year_release_at, ReleaseError, RuntimeDirError,
+        valid_year_release_at, PuzzleDay, PuzzleYear, ReleaseError, RuntimeDirError,
     };
+
+    fn puzzle(day: u32, year: i32) -> (PuzzleDay, PuzzleYear) {
+        (
+            PuzzleDay::new(day).expect("valid test puzzle day"),
+            PuzzleYear::new(year).expect("valid test puzzle year"),
+        )
+    }
+
+    fn year(year: i32) -> PuzzleYear {
+        PuzzleYear::new(year).expect("valid test puzzle year")
+    }
 
     fn utc(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> chrono::DateTime<Utc> {
         Utc.with_ymd_and_hms(year, month, day, hour, minute, 0)
@@ -252,65 +251,59 @@ mod tests {
     }
 
     #[test]
-    fn invalid_puzzle_days_return_errors_without_panicking() {
-        let now = utc(2026, 12, 26, 5, 0);
-
-        for day in [0, 26, u32::MAX] {
-            assert!(matches!(
-                valid_puzzle_release_at(day, 2026, now),
-                Err(ReleaseError::Puzzle(_, _))
-            ));
-        }
-    }
-
-    #[test]
     fn releases_in_2025_are_limited_to_twelve_days() {
-        assert!(valid_puzzle_release_at(12, 2025, utc(2025, 12, 12, 5, 0)).is_ok());
+        let (day12, year2025) = puzzle(12, 2025);
+        let (day13, _) = puzzle(13, 2025);
+        assert!(valid_puzzle_release_at(day12, year2025, utc(2025, 12, 12, 5, 0)).is_ok());
         assert!(matches!(
-            valid_puzzle_release_at(12, 2025, utc(2025, 12, 12, 4, 59)),
-            Err(ReleaseError::Puzzle(12, 2025))
+            valid_puzzle_release_at(day12, year2025, utc(2025, 12, 12, 4, 59)),
+            Err(ReleaseError::Puzzle(_, _))
         ));
         assert!(matches!(
-            valid_puzzle_release_at(13, 2025, utc(2025, 12, 13, 5, 0)),
-            Err(ReleaseError::Puzzle(13, 2025))
+            valid_puzzle_release_at(day13, year2025, utc(2025, 12, 13, 5, 0)),
+            Err(ReleaseError::Puzzle(_, _))
         ));
     }
 
     #[test]
     fn puzzle_releases_at_eastern_midnight() {
+        let (day, year) = puzzle(2, 2026);
         assert!(matches!(
-            valid_puzzle_release_at(2, 2026, utc(2026, 12, 2, 4, 59)),
-            Err(ReleaseError::Puzzle(2, 2026))
+            valid_puzzle_release_at(day, year, utc(2026, 12, 2, 4, 59)),
+            Err(ReleaseError::Puzzle(_, _))
         ));
-        assert!(valid_puzzle_release_at(2, 2026, utc(2026, 12, 2, 5, 0)).is_ok());
+        assert!(valid_puzzle_release_at(day, year, utc(2026, 12, 2, 5, 0)).is_ok());
     }
 
     #[test]
     fn default_puzzle_date_uses_the_latest_released_event() {
-        assert_eq!(default_puzzle_date_at(utc(2026, 7, 20, 12, 0)), (12, 2025));
-        assert_eq!(default_puzzle_date_at(utc(2026, 12, 2, 5, 0)), (2, 2026));
+        assert_eq!(
+            default_puzzle_date_at(utc(2026, 7, 20, 12, 0)),
+            puzzle(12, 2025)
+        );
+        assert_eq!(
+            default_puzzle_date_at(utc(2026, 12, 2, 5, 0)),
+            puzzle(2, 2026)
+        );
     }
 
     #[test]
     fn calendar_release_is_independent_of_selected_day() {
+        let year = year(2026);
         assert!(matches!(
-            valid_year_release_at(2026, utc(2026, 12, 1, 4, 59)),
-            Err(ReleaseError::Year(2026))
+            valid_year_release_at(year, utc(2026, 12, 1, 4, 59)),
+            Err(ReleaseError::Year(_))
         ));
-        assert!(valid_year_release_at(2026, utc(2026, 12, 1, 5, 0)).is_ok());
+        assert!(valid_year_release_at(year, utc(2026, 12, 1, 5, 0)).is_ok());
     }
 
     #[test]
-    fn invalid_and_future_years_return_errors() {
+    fn future_years_return_errors() {
         let now = utc(2026, 12, 1, 5, 0);
 
         assert!(matches!(
-            valid_year_release_at(2014, now),
-            Err(ReleaseError::Year(2014))
-        ));
-        assert!(matches!(
-            valid_year_release_at(2027, now),
-            Err(ReleaseError::Year(2027))
+            valid_year_release_at(year(2027), now),
+            Err(ReleaseError::Year(_))
         ));
     }
 

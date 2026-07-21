@@ -247,6 +247,8 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use aocsuite_utils::PuzzleYear;
+
     use super::{
         is_cache_valid, page_from_file, parse_puzzle_content, update_cache, AocContentFile,
         AocFileError, AocFileType, CACHE_FILE,
@@ -305,7 +307,7 @@ mod tests {
             let file = AocContentFile {
                 file_type,
                 day: None,
-                year: 2024,
+                year: PuzzleYear::new(2024).expect("valid test year"),
             };
 
             assert!(matches!(

@@ -21,7 +21,7 @@ impl Solver for RustRunner {
         &self,
         _day: aocsuite_utils::PuzzleDay,
         _year: aocsuite_utils::PuzzleYear,
-        part: &str,
+        part: aocsuite_utils::PartSelection,
         input: &std::path::Path,
         output: &std::path::Path,
     ) -> AocLanguageResult<std::process::Output> {
@@ -30,7 +30,7 @@ impl Solver for RustRunner {
         let output = std::process::Command::new(&binary_path)
             .arg(input)
             .arg(output)
-            .arg(part)
+            .arg(part.to_string())
             .current_dir(&self.root_dir)
             .output()?;
 
