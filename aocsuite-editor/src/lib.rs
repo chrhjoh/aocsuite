@@ -2,11 +2,14 @@ mod arg_builder;
 mod editor;
 mod editor_types;
 
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use aocsuite_config::{get_config_val, AocConfigError, ConfigOpt};
 use editor::Editor;
-use editor_types::EditorType;
+use editor_types::EditorCommand;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -28,20 +31,21 @@ pub enum AocEditorError {
 
     #[error("editor {0} exited unexpectedly")]
     RunProgram(String),
+
+    #[error("editor cannot use non-Unicode path {0}")]
+    InvalidPath(PathBuf),
 }
 
 pub type AocEditorResult<T> = Result<T, AocEditorError>;
 
-fn resolve_editor_type() -> AocEditorResult<EditorType> {
-    let editor_type = get_config_val(&ConfigOpt::Editor, None, None);
-    match editor_type {
-        Ok(t) => Ok(t),
-        Err(AocConfigError::NotFound { .. }) => {
-            let program = std::env::var("EDITOR")?;
-            Ok(program.parse()?)
-        }
-        Err(error) => Err(error.into()),
-    }
+fn resolve_editor() -> AocEditorResult<Editor> {
+    let editor_command = get_config_val(&ConfigOpt::Editor, None, None);
+    let command = match editor_command {
+        Ok(command) => command,
+        Err(AocConfigError::NotFound { .. }) => std::env::var("EDITOR")?,
+        Err(error) => return Err(error.into()),
+    };
+    Ok(Editor::new(EditorCommand::parse(&command)?))
 }
 pub fn open_solution_files(
     puzzlefile: &Path,
@@ -50,20 +54,12 @@ pub fn open_solution_files(
     inputfile: &Path,
     env_vars: Option<HashMap<String, String>>,
 ) -> AocEditorResult<()> {
-    let editor_type = resolve_editor_type()?;
-    let editor = Editor::new(&editor_type)?;
-    editor.open_solution(
-        puzzlefile.to_str().unwrap(),
-        examplefile.to_str().unwrap(),
-        libfile.to_str().unwrap(),
-        inputfile.to_str().unwrap(),
-        env_vars,
-    )?;
+    let editor = resolve_editor()?;
+    editor.open_solution(puzzlefile, examplefile, libfile, inputfile, env_vars)?;
     Ok(())
 }
 pub fn open(file: &Path, env_vars: Option<HashMap<String, String>>) -> AocEditorResult<()> {
-    let editor_type = resolve_editor_type()?;
-    let editor = Editor::new(&editor_type)?;
-    editor.open(file.to_str().unwrap(), env_vars)?;
+    let editor = resolve_editor()?;
+    editor.open(file, env_vars)?;
     Ok(())
 }

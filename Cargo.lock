@@ -135,6 +135,7 @@ version = "0.3.0"
 dependencies = [
  "aocsuite-config",
  "clap",
+ "shell-words",
  "thiserror 2.0.12",
  "which",
 ]
@@ -1705,6 +1706,12 @@ checksum = "204ea332803bd95a0b60388590d59cf6468ec9becf626e2451f1d26a1d972de4"
 dependencies = [
  "stable_deref_trait",
 ]
+
+[[package]]
+name = "shell-words"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shlex"
