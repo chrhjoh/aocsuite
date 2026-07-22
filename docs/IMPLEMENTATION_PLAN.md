@@ -52,7 +52,7 @@ The application assumes one AoC Suite process per runtime root. Do not add norma
 2. Require sessions for inputs, submissions, and private leaderboards. Permit public puzzle, calendar, and global leaderboard requests without one, attaching a session if available.
 3. Return typed HTTP/status/auth errors and reject invalid response bodies before writing cache files. Preserve valid cached files on failed requests.
 4. Complete the split between pure cache-path/status queries and explicit fetch/refresh actions. Fix input validity, cache invalidation, and idempotent clean behavior.
-5. Replace string parser dispatch with separate fallible typed puzzle, calendar, and submission APIs. Calendar parsing returns semantic cells/styles; CLI ANSI and future Ratatui rendering are separate adapters.
+5. Replace string parser dispatch with separate fallible typed puzzle, calendar, and submission APIs. Calendar parsing returns semantic cells, styles, and validated puzzle dates; CLI ANSI and future Ratatui rendering are separate adapters.
 6. Preserve sanitized server text for unknown submission responses, recognize rate-limit variants, and fail visibly on missing/changed puzzle/calendar structure.
 7. Add local HTTP mock-server and parser-fixture coverage in `aocsuite-client`, `aocsuite-storage`, and `aocsuite-parser`.
 

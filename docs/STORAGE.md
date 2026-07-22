@@ -258,7 +258,7 @@ Remove the unused `template_dir` configuration and `AOC_TEMPLATE_DIR`; templates
 
 Rename `aocsuite-editor` to `aocsuite-launcher`. It owns editor aliases, browser platform commands, executable resolution, argument construction, environment forwarding, and process result handling. It does not read configuration, inspect storage, print output, or suspend terminals. CLI/TUI resolve the effective launcher setting and own terminal suspend/restore around foreground launches.
 
-Libraries return presentation-neutral values. Parser output contains semantic calendar cells/stars and submission outcomes, while language execution returns public part results and command diagnostics. ANSI, emoji, box drawing, prompts, and user-facing prose remain frontend adapters.
+Libraries return presentation-neutral values. Parser output contains semantic calendar cells, stars, validated puzzle dates, and submission outcomes, while language execution returns public part results and command diagnostics. ANSI, emoji, box drawing, prompts, and user-facing prose remain frontend adapters.
 
 Destructive service APIs accept typed, already-confirmed scopes and return idempotent reports. Storage owns cache/example/workspace/uninstall deletion safety; language owns template/library/build/environment cleanup. No service accepts a `force` flag or prompts.
 
