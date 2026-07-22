@@ -55,7 +55,7 @@ aocsuite/
   workspace/                 # The only Git-managed area
     .git/
     .gitignore
-    .aocsuite-runs/          # Unique transient solver result files
+    .aocsuite-runs/          # Created by language result allocation; ignored by Git
     examples/                # Shared user-authored puzzle examples
     rust/                    # Complete portable Rust project
     python/                  # Complete portable Python project
