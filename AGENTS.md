@@ -16,7 +16,7 @@
 - `aocsuite-config` owns typed non-secret configuration values and session persistence. It receives explicit paths, performs no prompting, and must not create files during reads. Remove the unused `template_dir`/`AOC_TEMPLATE_DIR` setting.
 - `aocsuite-client` owns blocking AoC HTTP transport, URL/auth/status behavior, timeout/retry policy, and HTTP validators. It receives an optional session explicitly and must not read config, storage, or environment state.
 - `aocsuite-parser` owns pure fallible puzzle/calendar/submission transformations. Return semantic calendar cells/stars and submission outcomes; ANSI, emoji, and frontend prose do not belong here.
-- `aocsuite-lang` owns complete tracked Rust/Python projects, versioned generated harnesses, solutions/templates/libraries, active links, Cargo/pip dependencies, compile/run, structured reports, and language cleanup. It receives explicit paths/settings/executor and must not read config or discover the runtime root.
+- `aocsuite-lang` owns complete tracked Rust/Python projects, versioned generated harnesses, solutions/templates/libraries, active links, Cargo/pip dependencies, compile/run, structured reports, and language cleanup. It receives an explicit `Workspace`, settings, and executor; it must not read config or discover the runtime root.
 - Rename `aocsuite-editor` to `aocsuite-launcher`. It owns editor/browser resolution and process requests, but not config lookup, terminal suspend/restore, storage, or rendering.
 - Clap, `rpassword`, prompts, empty-line/EOF confirmation behavior, output formatting, and terminal lifecycle remain frontend concerns.
 

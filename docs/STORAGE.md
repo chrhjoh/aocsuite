@@ -73,7 +73,7 @@ The layout provides typed paths for at least:
 
 - Layout manifest, configuration, session, cache root, and workspace paths.
 
-`ContentStore` owns its cache keys, cache paths, and `cache/state.sqlite`. `Workspace` owns paths and creation under `workspace/examples`. Database contents must never direct reads or deletion outside the cache root.
+`ContentStore` owns its cache keys, cache paths, and `cache/state.sqlite`. `Workspace` owns paths and creation under `workspace/examples`, language project paths, and lazy allocation under `workspace/.aocsuite-runs`. Database contents must never direct reads or deletion outside the cache root.
 
 Every application invocation bootstraps and validates storage before reading configuration or constructing services, including creation of `workspace/`. Git clone runs into that bootstrapped directory. If CLI help/version must also bootstrap literally, use a non-exiting Clap parse flow rather than relying on `Parser::parse` to terminate first.
 
