@@ -8,11 +8,28 @@ mod utils;
 use std::path::{Path, PathBuf};
 
 use aocsuite_storage::Workspace;
-use aocsuite_utils::{CommandExecutor, LanguageId, PartSelection, PuzzleDay, PuzzleYear};
+use aocsuite_utils::{CommandExecutor, LanguageId, PartSelection, PuzzleId};
 use utils::{read_result, with_result_file, LanguageRunner};
 pub use utils::{
     AocLanguageError, AocLanguageResult, CompileOutput, PuzzleResult, RunOutput, SolverFile,
 };
+
+pub struct LanguageRunRequest<'input> {
+    pub puzzle: PuzzleId,
+    pub part: PartSelection,
+    pub input: &'input Path,
+}
+
+pub struct LanguageRunOutput {
+    pub compile: CompileOutput,
+    pub run: RunOutput,
+}
+
+impl std::fmt::Display for LanguageRunOutput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}{}", self.compile, self.run)
+    }
+}
 
 pub struct Language<'workspace, 'executor> {
     language_type: LanguageId,
@@ -36,14 +53,15 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
         }
     }
 
-    pub fn run(
-        &self,
-        day: PuzzleDay,
-        year: PuzzleYear,
-        part: PartSelection,
-        input: &Path,
-    ) -> AocLanguageResult<RunOutput> {
-        self.setup_solution(day, year)?;
+    pub fn execute(&self, request: LanguageRunRequest<'_>) -> AocLanguageResult<LanguageRunOutput> {
+        self.setup_solution(request.puzzle)?;
+        Ok(LanguageRunOutput {
+            compile: self.compile()?,
+            run: self.run_active(request.part, request.input)?,
+        })
+    }
+
+    fn run_active(&self, part: PartSelection, input: &Path) -> AocLanguageResult<RunOutput> {
         let output_file = self.workspace.allocate_run_result_file()?;
         with_result_file(&output_file, |output_file| {
             let output = self.runner.run(part, input, output_file)?;
@@ -51,12 +69,28 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
         })
     }
 
-    pub fn compile(&self) -> AocLanguageResult<CompileOutput> {
+    fn compile(&self) -> AocLanguageResult<CompileOutput> {
         Ok(self
             .runner
             .compile()?
             .map(CompileOutput::from_output)
             .unwrap_or_default())
+    }
+
+    #[cfg(test)]
+    fn run(
+        &self,
+        day: PuzzleDay,
+        year: PuzzleYear,
+        part: PartSelection,
+        input: &Path,
+    ) -> AocLanguageResult<RunOutput> {
+        self.setup_solution(PuzzleId::new(day, year))?;
+        let output_file = self.workspace.allocate_run_result_file()?;
+        with_result_file(&output_file, |output_file| {
+            let output = self.runner.run(part, input, output_file)?;
+            Ok(RunOutput::from_output(read_result(output_file)?, output))
+        })
     }
 
     pub fn ensure_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
@@ -133,10 +167,10 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
         self.runner.clean_env()
     }
 
-    fn setup_solution(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<()> {
+    fn setup_solution(&self, puzzle: PuzzleId) -> AocLanguageResult<()> {
         self.runner.migrate_runtime()?;
         self.runner
-            .ensure_solver_file(&SolverFile::ActiveSolution(day, year))?;
+            .ensure_solver_file(&SolverFile::ActiveSolution(puzzle))?;
         self.runner.setup_env()?;
         Ok(())
     }
@@ -245,24 +279,24 @@ mod tests {
     };
     use aocsuite_storage::Workspace;
     use aocsuite_utils::{
-        CommandExecutor, CommandRequest, LanguageId, PartSelection, PuzzleDay, PuzzleYear,
-        SystemCommandExecutor,
+        CommandExecutor, CommandRequest, LanguageId, PartSelection, PuzzleDay, PuzzleId,
+        PuzzleYear, SystemCommandExecutor,
     };
 
     static SYSTEM_EXECUTOR: SystemCommandExecutor = SystemCommandExecutor;
 
     fn puzzle_solution(day: u32) -> SolverFile {
-        SolverFile::PuzzleSolution(
+        SolverFile::PuzzleSolution(PuzzleId::new(
             PuzzleDay::new(day).expect("valid test day"),
             PuzzleYear::new(2024).expect("valid test year"),
-        )
+        ))
     }
 
     fn active_solution(day: u32) -> SolverFile {
-        SolverFile::ActiveSolution(
+        SolverFile::ActiveSolution(PuzzleId::new(
             PuzzleDay::new(day).expect("valid test day"),
             PuzzleYear::new(2024).expect("valid test year"),
-        )
+        ))
     }
 
     fn test_root(language: &str) -> PathBuf {

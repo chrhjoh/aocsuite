@@ -9,7 +9,7 @@ use crate::{
 };
 use aocsuite_client::{AocClient, AocClientOptions, AocPage};
 use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
-use aocsuite_lang::{Language, SolverFile};
+use aocsuite_lang::{Language, LanguageRunRequest, SolverFile};
 use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
 use aocsuite_storage::{get_aocsuite_dir, CacheCleanScope, ContentStore, GitMode, Workspace};
@@ -84,11 +84,14 @@ pub fn run_aocsuite(
             };
 
             let language = resolve_language(config, language, workspace, &executor)?;
-            let compile = language.compile()?;
-            let run = language.run(day, year, part, path.as_ref())?;
+            let run = language.execute(LanguageRunRequest {
+                puzzle: PuzzleId::new(day, year),
+                part,
+                input: path.as_ref(),
+            })?;
             let run_history_limit = config.get::<usize>(ConfigKey::RunHistoryLimit)?;
             for part in [PuzzlePart::One, PuzzlePart::Two] {
-                if let Some(result) = run.result.part(part) {
+                if let Some(result) = run.run.result.part(part) {
                     content.record_run_timing(
                         PuzzleId::new(day, year),
                         language.language_id(),
@@ -98,7 +101,7 @@ pub fn run_aocsuite(
                     )?;
                 }
             }
-            print!("{compile}{run}");
+            print!("{run}");
         }
 
         AocCommand::Open { language } => {
@@ -110,7 +113,7 @@ pub fn run_aocsuite(
             let request = OpenPuzzleRequest {
                 puzzle: content.ensure_puzzle_markdown(puzzle, &client)?,
                 example: workspace.ensure_example(puzzle)?,
-                solution: language.ensure_solver_file(&SolverFile::ActiveSolution(day, year))?,
+                solution: language.ensure_solver_file(&SolverFile::ActiveSolution(puzzle))?,
                 input: content.ensure_input(puzzle, &client)?,
                 working_directory: language.project_dir().to_path_buf(),
             };

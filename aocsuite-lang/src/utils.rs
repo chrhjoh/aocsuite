@@ -8,7 +8,7 @@ use std::{
 };
 
 use aocsuite_storage::WorkspaceError;
-use aocsuite_utils::{CommandError, PuzzleDay, PuzzleYear};
+use aocsuite_utils::{CommandError, PuzzleId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -16,9 +16,9 @@ use crate::traits::LanguageHandler;
 
 #[derive(Debug, Clone)]
 pub enum SolverFile {
-    PuzzleSolution(PuzzleDay, PuzzleYear),
+    PuzzleSolution(PuzzleId),
     Entrypoint,
-    ActiveSolution(PuzzleDay, PuzzleYear),
+    ActiveSolution(PuzzleId),
     SolutionTemplate,
 }
 

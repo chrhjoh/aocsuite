@@ -28,7 +28,7 @@ pub trait Solver {
     fn ensure_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
         let path = self.solver_file_path(file);
         match file {
-            SolverFile::PuzzleSolution(_, _) => {
+            SolverFile::PuzzleSolution(_) => {
                 if !path.exists() {
                     std::fs::create_dir_all(path.parent().expect("solve file is not root"))?;
                     let template_path = self.ensure_solver_file(&SolverFile::SolutionTemplate)?;
@@ -47,9 +47,8 @@ pub trait Solver {
                     std::fs::write(&path, self.template_contents())?;
                 }
             }
-            SolverFile::ActiveSolution(day, year) => {
-                let linked_path =
-                    self.ensure_solver_file(&SolverFile::PuzzleSolution(*day, *year))?;
+            SolverFile::ActiveSolution(puzzle) => {
+                let linked_path = self.ensure_solver_file(&SolverFile::PuzzleSolution(*puzzle))?;
                 std::fs::create_dir_all(path.parent().expect("solve file is not root"))?;
                 symlink_file(&linked_path, &path)?;
             }
