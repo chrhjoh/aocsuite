@@ -208,7 +208,7 @@ Cache writes follow this order:
 3. Record its size and fetch metadata.
 4. Commit the SQLite metadata row.
 
-If the database is missing or corrupt, scan recognized cache paths, rebuild their rows, and mark entries stale when fetch provenance cannot be verified. The content module reparses cached calendar HTML to rebuild stars. Unexpected files are reported or ignored, never deleted during indexing.
+Cache files without a valid SQLite metadata row are unmanaged disposable files. Do not scan or reconstruct metadata for them; fetch and validate a new body when content is needed, then publish its metadata row. If `cache/state.sqlite` is corrupt, return a typed error without modifying it.
 
 Path lookup, status lookup, cached reads, fetch, refresh, invalidation, and cleanup are separate APIs. Asking for a cache path must not perform HTTP or filesystem mutation.
 
@@ -219,11 +219,10 @@ Downloaded AoC content is disposable. Cache cleaning does not remove configurati
 The initial database stores only:
 
 - Cache metadata.
-- A rebuildable projection of stars parsed from calendar content.
 - Submission attempt count by year, day, and part.
 - The most recent solver runtimes by year, day, language, and part.
 
-Calendar content is the source of truth for completion status. Do not invent or store a duration from puzzle download to completion. A run requesting both parts records each reported part runtime independently.
+Calendar HTML remains the source of truth for current CLI completion rendering. Defer a typed cached calendar and persisted stars until TUI calendar update and rendering behavior is defined; it may then avoid reparsing HTML during TUI startup. Do not invent or store a duration from puzzle download to completion. A run requesting both parts records each reported part runtime independently.
 
 Retain the latest 10 runtimes per year/day/language/part by default. The limit is a typed non-secret preference. Prune older entries in the same transaction that inserts a new timing.
 

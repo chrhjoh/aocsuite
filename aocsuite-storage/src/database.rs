@@ -1,6 +1,6 @@
 use std::path::{Component, Path, PathBuf};
 
-use aocsuite_utils::PuzzleYear;
+use aocsuite_utils::{LanguageId, PuzzleId, PuzzlePart, PuzzleYear};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use thiserror::Error;
 
@@ -153,6 +153,82 @@ impl StateDatabase {
         )?;
         Ok(())
     }
+
+    pub(crate) fn increment_submission_count(
+        &self,
+        puzzle: PuzzleId,
+        part: PuzzlePart,
+        correct: bool,
+    ) -> DatabaseResult<()> {
+        let (correct_count, incorrect_count) = if correct { (1, 0) } else { (0, 1) };
+        self.connection.execute(
+            "
+            INSERT INTO submission_counts (year, day, part, correct_count, incorrect_count)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ON CONFLICT (year, day, part) DO UPDATE SET
+                correct_count = correct_count + excluded.correct_count,
+                incorrect_count = incorrect_count + excluded.incorrect_count
+            ",
+            params![
+                puzzle.year.get(),
+                puzzle.day.get(),
+                puzzle_part_value(part),
+                correct_count,
+                incorrect_count,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn record_run_timing(
+        &self,
+        puzzle: PuzzleId,
+        language: LanguageId,
+        part: PuzzlePart,
+        duration_nanos: u64,
+        retention_limit: usize,
+        recorded_at: i64,
+    ) -> DatabaseResult<()> {
+        let duration_nanos = i64::try_from(duration_nanos)
+            .map_err(|_| DatabaseError::InvalidTiming("duration exceeds SQLite range"))?;
+        let retention_limit = i64::try_from(retention_limit)
+            .map_err(|_| DatabaseError::InvalidTiming("retention limit exceeds SQLite range"))?;
+        let transaction = self.connection.unchecked_transaction()?;
+        transaction.execute(
+            "
+            INSERT INTO run_timings (year, day, language, part, duration_nanos, recorded_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            ",
+            params![
+                puzzle.year.get(),
+                puzzle.day.get(),
+                language.to_string(),
+                puzzle_part_value(part),
+                duration_nanos,
+                recorded_at,
+            ],
+        )?;
+        transaction.execute(
+            "
+            DELETE FROM run_timings
+            WHERE id IN (
+                SELECT id FROM run_timings
+                WHERE year = ?1 AND day = ?2 AND language = ?3 AND part = ?4
+                ORDER BY recorded_at DESC, id DESC
+                LIMIT -1 OFFSET ?5
+            )
+            ",
+            params![
+                puzzle.year.get(),
+                puzzle.day.get(),
+                language.to_string(),
+                puzzle_part_value(part),
+                retention_limit,
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
 }
 
 fn cache_key_parts(key: CacheKey) -> (&'static str, i32, i64) {
@@ -169,6 +245,13 @@ fn cache_key_parts(key: CacheKey) -> (&'static str, i32, i64) {
         ),
         CacheKey::Input(puzzle) => ("input", puzzle.year.get(), i64::from(puzzle.day.get())),
         CacheKey::Calendar(year) => ("calendar", year.get(), 0),
+    }
+}
+
+fn puzzle_part_value(part: PuzzlePart) -> i64 {
+    match part {
+        PuzzlePart::One => 1,
+        PuzzlePart::Two => 2,
     }
 }
 
@@ -273,6 +356,8 @@ pub(crate) enum DatabaseError {
     CorruptDatabase { result: String },
     #[error("invalid cache entry: {0}")]
     InvalidCacheEntry(&'static str),
+    #[error("invalid run timing: {0}")]
+    InvalidTiming(&'static str),
     #[error(transparent)]
     Sql(#[from] rusqlite::Error),
 }

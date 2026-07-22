@@ -27,8 +27,8 @@ Completed foundations:
 
 Remaining pre-TUI blockers:
 
-- Finish storage lifecycle policy: strict unversioned-root rejection, cache recovery/validation, stars, submission counts, timing retention, typed cleanup, and uninstall safety.
-- Complete portable language-project behavior: activate and migrate before compilation, one serialized typed run operation, public structured results, tracked Cargo preservation, and Python requirements persistence.
+- Finish storage lifecycle policy: strict unversioned-root rejection, cache validation, typed cleanup, and uninstall safety. Defer persisted typed calendar state until TUI calendar behavior is defined.
+- Complete portable language-project behavior: activate and migrate before compilation, one serialized typed run operation, and public structured results.
 - Reduce CLI orchestration to frontend mapping over injectable domain services.
 - Expand CI beyond its baseline only when explicitly requested test work establishes the required deterministic coverage.
 
@@ -38,7 +38,7 @@ Current local verification: `cargo check --workspace --locked`, `cargo test --wo
 
 - Work one issue or tightly coupled boundary at a time. Do not add or modify tests unless explicitly requested.
 - Keep `aocsuite-cli` functional throughout. Preserve command names and normal successful workflows unless migration makes a documented change unavoidable.
-- Keep source files, templates, libraries, complete language projects, Python environments, examples, and cached AoC bodies as filesystem artifacts. SQLite stores cache indexes, calendar-derived stars, submission counts, and bounded recent run timings.
+- Keep source files, templates, libraries, complete language projects, Python environments, examples, and cached AoC bodies as filesystem artifacts. SQLite stores cache indexes, submission counts, and bounded recent run timings. Defer typed calendar state and derived stars until TUI work defines their update and rendering behavior.
 - Do not begin `aocsuite-tui` until the pre-TUI milestone below is complete.
 
 ## Phase 1: Runtime Layout And Configuration (In Progress)
@@ -62,23 +62,23 @@ The domain/process foundation is complete. Storage, layout, and configuration wo
 3. Partially complete: add storage, bundled SQLite, layout manifests, database schema versioning, and initial bootstrap. Reject existing unversioned roots and newer-version layouts without mutation.
 4. Mostly complete: refactor config around an explicit directory, non-mutating reads, explicit writes, an owner-only session, and frontend prompting. Replace the remaining string-backed settings map with typed settings as configuration grows.
 5. Partially complete: remove `aocsuite-fs` and add initial typed cache keys. Expose pure path/status/read operations separately from load/refresh/invalidate/clean behavior.
-6. Partially complete: use flat cache paths, raw puzzle HTML, derived Markdown, and semantic parser output. Validate puzzle bodies before replacing cached data; add cache recovery and public lifecycle APIs.
+6. Partially complete: use flat cache paths, raw puzzle HTML, derived Markdown, and semantic parser output. Validate puzzle bodies before replacing cached data; leave files without valid cache metadata unmanaged and add public lifecycle APIs.
 7. Partially complete: use workspace Rust/Python roots, flat solutions, shared examples, and workspace-scoped Git. Ensure bootstrap also regenerates the workspace `.gitignore`.
 8. Partially complete: generate the owned `.gitignore` with the intended ignored paths. Complete tracked portable-project and dependency-file behavior in Phase 3.
 9. Complete: move captured/foreground Git operations into `aocsuite-storage::workspace`; preserve clone behavior rooted in the bootstrapped workspace.
-10. Partially complete: generated harnesses and runtime manifests exist and migrate atomically. Stop overwriting or deleting user Cargo/dependency files during migration or cleanup.
-11. Make Rust package operations edit tracked `Cargo.toml` semantically and track `Cargo.lock`. Add tracked Python `requirements.txt`; atomically persist `pip freeze` after successful package mutations.
+10. Complete: generated harnesses and runtime manifests migrate atomically without overwriting or deleting user Cargo/dependency files.
+11. Complete: Rust package operations update tracked `Cargo.toml` and `Cargo.lock`; Python tracks `requirements.txt` and atomically persists `pip freeze` after successful package mutations.
 12. Complete: rename `aocsuite-editor` to `aocsuite-launcher`, keep browser launching out of the HTTP client, and route editor/browser processes through the shared executor without config discovery or printing. Editor launches receive explicit project or workspace roots, and launcher resolves selected executables exactly without alias translation.
 13. Add SQLite bootstrap, integrity checks, typed corrupt-database errors, transactional schema upgrades, and newer-schema rejection.
-14. Replace `.aoccache.json` with SQLite cache metadata. Rebuild recognized entries as stale and reparse cached calendar HTML to restore stars.
-15. Add submission counts for correct/incorrect outcomes only and retain the latest configurable per-part runtimes, defaulting to 10.
+14. Complete: replace `.aoccache.json` with SQLite cache metadata. Do not reconstruct metadata for unindexed cache files; a later TUI design may add typed cached calendar state for fast loading.
+15. Complete: record correct/incorrect submission counts only and retain the latest configurable per-part runtimes, defaulting to 10.
 16. Expose a high-level structured language run API that owns activation through result consumption, records timings, and serializes all active-link-changing jobs.
 17. Add typed idempotent cleanup and uninstall plans/reports. Normal cache clean preserves examples; explicit example or comprehensive clean may remove them.
 18. Defer fixture-driven storage coverage until explicitly requested.
 
 ## Phase 2: HTTP, Cache, And Parser Boundaries (In Progress)
 
-Explicit sessions, status/auth errors, request timeouts, cache metadata, and semantic calendar/submission models are in place. Retry/validator policy, cache recovery, and invalid-body preservation remain.
+Explicit sessions, status/auth errors, request timeouts, cache metadata, and semantic calendar/submission models are in place. Retry/validator policy and invalid-body preservation remain; typed cached calendar state is deferred to TUI work.
 
 1. Partially complete: use an explicit optional session, finite timeout, AoC user agent, and local configurable-base tests. Add bounded retry/backoff for transient GET failures; never retry submissions.
 2. Complete: require sessions for inputs, submissions, and private leaderboards while permitting public requests without one.
@@ -97,7 +97,7 @@ Flat workspace paths, runtime manifests, active-link safety, and unique result f
 3. Complete: generate Python `main.py` in fresh workspaces and correct generated Python placeholder behavior.
 4. Complete: use a unique per-run temporary JSON path that is atomically written and cleared after validated consumption. Add serialized TUI job scheduling with the TUI.
 5. Partially complete: command diagnostics and typed part selection exist. Expose public structured run requests/results and remove remaining library-owned result presentation.
-6. Partially complete: generated harnesses and runtime manifests are versioned. Preserve tracked Rust Cargo files and add tracked Python `requirements.txt` with dependency persistence.
+6. Complete: generated harnesses and runtime manifests are versioned; tracked Rust Cargo files and Python `requirements.txt` are preserved with dependency persistence.
 7. Partially complete: active-link replacement, library validation, and process failure propagation are covered. Preserve project files during cleanup and serialize all active-link-changing jobs.
 8. Partially complete: existing tests cover path selection, active links, result cleanup, migrations, and templates. Defer further fake-executor coverage until explicitly requested.
 

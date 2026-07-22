@@ -111,6 +111,10 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
         self.language_type.to_string()
     }
 
+    pub fn language_id(&self) -> LanguageId {
+        self.language_type
+    }
+
     pub fn list_lib_files(&self) -> AocLanguageResult<Vec<String>> {
         let file_extention = self.runner.file_extention();
         let dir = self.runner.lib_dir();

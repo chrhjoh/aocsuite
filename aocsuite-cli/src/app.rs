@@ -15,7 +15,7 @@ use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Cal
 use aocsuite_storage::{get_aocsuite_dir, CacheCleanScope, ContentStore, GitMode, Workspace};
 use aocsuite_utils::{
     valid_puzzle_release, valid_year_release, CommandExecutor, LanguageId, PartSelection,
-    PuzzleDay, PuzzleId, PuzzleYear, SystemCommandExecutor,
+    PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear, SystemCommandExecutor,
 };
 use colored::Colorize;
 
@@ -59,7 +59,7 @@ pub fn run_aocsuite(
             let output =
                 resolve_aoc_client(config)?.submit(PuzzleId::new(day, year), part, &answer)?;
             let result = parse_submission(&output)?;
-            content.invalidate_after_submission(PuzzleId::new(day, year), part, &result)?;
+            content.record_submission(PuzzleId::new(day, year), part, &result)?;
             println!("{}", format_submission_result(&result));
         }
 
@@ -86,6 +86,18 @@ pub fn run_aocsuite(
             let language = resolve_language(config, language, workspace, &executor)?;
             let compile = language.compile()?;
             let run = language.run(day, year, part, path.as_ref())?;
+            let run_history_limit = config.get::<usize>(ConfigKey::RunHistoryLimit)?;
+            for part in [PuzzlePart::One, PuzzlePart::Two] {
+                if let Some(result) = run.result.part(part) {
+                    content.record_run_timing(
+                        PuzzleId::new(day, year),
+                        language.language_id(),
+                        part,
+                        result.runtime_ms(),
+                        run_history_limit,
+                    )?;
+                }
+            }
             print!("{compile}{run}");
         }
 

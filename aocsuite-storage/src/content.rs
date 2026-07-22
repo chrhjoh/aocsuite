@@ -7,7 +7,8 @@ use std::{
 use aocsuite_client::{AocClient, AocClientError, AocPage};
 use aocsuite_parser::{parse_puzzle_markdown, AocSubmissionResult, ParserError};
 use aocsuite_utils::{
-    atomic_write, set_owner_only_permissions, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear,
+    atomic_write, set_owner_only_permissions, LanguageId, PuzzleDay, PuzzleId, PuzzlePart,
+    PuzzleYear,
 };
 use thiserror::Error;
 
@@ -78,14 +79,27 @@ impl ContentStore {
         self.save(markdown_key, markdown.as_bytes())
     }
 
-    pub fn invalidate_after_submission(
+    pub fn record_submission(
         &self,
         puzzle: PuzzleId,
         part: PuzzlePart,
         result: &AocSubmissionResult,
     ) -> ContentResult<()> {
-        if !matches!(result, AocSubmissionResult::Correct) {
-            return Ok(());
+        match result {
+            AocSubmissionResult::Correct => {
+                self.database
+                    .increment_submission_count(puzzle, part, true)
+                    .map_err(ContentError::from_database)?;
+            }
+            AocSubmissionResult::Incorrect
+            | AocSubmissionResult::IncorrectTooHigh
+            | AocSubmissionResult::IncorrectTooLow => {
+                self.database
+                    .increment_submission_count(puzzle, part, false)
+                    .map_err(ContentError::from_database)?;
+                return Ok(());
+            }
+            _ => return Ok(()),
         }
 
         self.database
@@ -100,6 +114,33 @@ impl ContentStore {
                 .map_err(ContentError::from_database)?;
         }
         Ok(())
+    }
+
+    pub fn record_run_timing(
+        &self,
+        puzzle: PuzzleId,
+        language: LanguageId,
+        part: PuzzlePart,
+        runtime_ms: u128,
+        retention_limit: usize,
+    ) -> ContentResult<()> {
+        if retention_limit == 0 {
+            return Err(ContentError::InvalidRunHistoryLimit);
+        }
+        let duration_nanos = runtime_ms
+            .checked_mul(1_000_000)
+            .and_then(|duration| u64::try_from(duration).ok())
+            .ok_or(ContentError::InvalidRuntime)?;
+        self.database
+            .record_run_timing(
+                puzzle,
+                language,
+                part,
+                duration_nanos,
+                retention_limit,
+                current_unix_timestamp(),
+            )
+            .map_err(ContentError::from_database)
     }
 
     pub fn clean(&self, scope: CacheCleanScope) -> ContentResult<()> {
@@ -239,6 +280,10 @@ pub enum ContentError {
     CorruptStateDatabase { detail: String },
     #[error("content state error: {0}")]
     State(String),
+    #[error("run history limit must be greater than zero")]
+    InvalidRunHistoryLimit,
+    #[error("solver runtime is too large to store")]
+    InvalidRuntime,
     #[error(transparent)]
     Parser(#[from] ParserError),
     #[error(transparent)]

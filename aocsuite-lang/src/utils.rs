@@ -35,10 +35,25 @@ impl fmt::Display for PartResult {
     }
 }
 
+impl PartResult {
+    pub fn runtime_ms(&self) -> u128 {
+        self.runtime_ms
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct PuzzleResult {
     part1: Option<PartResult>,
     part2: Option<PartResult>,
+}
+
+impl PuzzleResult {
+    pub fn part(&self, part: aocsuite_utils::PuzzlePart) -> Option<&PartResult> {
+        match part {
+            aocsuite_utils::PuzzlePart::One => self.part1.as_ref(),
+            aocsuite_utils::PuzzlePart::Two => self.part2.as_ref(),
+        }
+    }
 }
 
 #[derive(Default)]
