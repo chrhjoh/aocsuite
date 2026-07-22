@@ -22,13 +22,13 @@ Completed foundations:
 - Parser calendar and submission APIs return semantic data, while CLI renders calendar presentation.
 - Workspace paths, examples, Git execution, generated `.gitignore`, and transient run-result allocation are storage-owned.
 - Language projects use flat solution paths, generated runtime manifests, safe active-link replacement, and unique atomic result files.
+- `aocsuite-launcher` owns browser/editor process execution, explicit editor working directories, typed puzzle-open requests, and generic fallback behavior for unrecognized exact editor executables.
 - Baseline GitHub Actions runs locked workspace check/test and the CLI help smoke test on Ubuntu.
 
 Remaining pre-TUI blockers:
 
 - Finish storage lifecycle policy: strict unversioned-root rejection, cache recovery/validation, stars, submission counts, timing retention, typed cleanup, and uninstall safety.
 - Complete portable language-project behavior: activate and migrate before compilation, one serialized typed run operation, public structured results, tracked Cargo preservation, and Python requirements persistence.
-- `aocsuite-launcher` owns editor/browser launches through `CommandExecutor`.
 - Reduce CLI orchestration to frontend mapping over injectable domain services.
 - Expand CI beyond its baseline only when explicitly requested test work establishes the required deterministic coverage.
 
@@ -46,7 +46,7 @@ Current local verification: `cargo check --workspace --locked`, `cargo test --wo
 The domain/process foundation is complete. Storage, layout, and configuration work remains incomplete until the lifecycle requirements below are met.
 
 1. Complete: add validated UI-neutral puzzle/language types and the shared process executor under `aocsuite-utils`; remove Clap derives from shared types.
-2. Partially complete: client and language receive explicit settings/paths/executors, and config is explicit-path based. Finish the launcher migration and remove its configuration discovery.
+2. Partially complete: client and language receive explicit settings/paths/executors, config is explicit-path based, and launcher migration is complete. Finish the remaining typed configuration values.
 3. Partially complete: `aocsuite-storage` replaces `aocsuite-fs` and owns initial `RuntimeLayout`, SQLite, content, workspace Git, and transient run allocation. Add uninstall safety and typed cleanup scopes.
 4. Complete for the initial storage modules: layout/database do not call HTTP/parser code, and content is the only module using the configuration-independent client and semantic parser. Preserve this direction as storage grows.
 5. Partially complete: `get_aocsuite_dir` and explicit `RuntimeLayout::new(root_dir)` exist with the required environment precedence. Make all remaining storage path getters pure and cover resolver/layout behavior with explicit-root tests.
@@ -68,7 +68,7 @@ The domain/process foundation is complete. Storage, layout, and configuration wo
 9. Complete: move captured/foreground Git operations into `aocsuite-storage::workspace`; preserve clone behavior rooted in the bootstrapped workspace.
 10. Partially complete: generated harnesses and runtime manifests exist and migrate atomically. Stop overwriting or deleting user Cargo/dependency files during migration or cleanup.
 11. Make Rust package operations edit tracked `Cargo.toml` semantically and track `Cargo.lock`. Add tracked Python `requirements.txt`; atomically persist `pip freeze` after successful package mutations.
-12. Complete: rename `aocsuite-editor` to `aocsuite-launcher`, keep browser launching out of the HTTP client, and route editor/browser processes through the shared executor without config discovery or printing.
+12. Complete: rename `aocsuite-editor` to `aocsuite-launcher`, keep browser launching out of the HTTP client, and route editor/browser processes through the shared executor without config discovery or printing. Editor launches receive explicit project or workspace roots, and launcher resolves selected executables exactly without alias translation.
 13. Add SQLite bootstrap, integrity checks, typed corrupt-database errors, transactional schema upgrades, and newer-schema rejection.
 14. Replace `.aoccache.json` with SQLite cache metadata. Rebuild recognized entries as stale and reparse cached calendar HTML to restore stars.
 15. Add submission counts for correct/incorrect outcomes only and retain the latest configurable per-part runtimes, defaulting to 10.
