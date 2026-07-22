@@ -44,11 +44,11 @@ Use one hardened runtime root. Keep user work and complete language projects as 
 ```text
 aocsuite/
   .aocsuite-layout.json      # Physical layout version
-  config.json                # Typed non-secret configuration values
-  session                    # Owner-only AoC session token
+  config/
+    config.json              # Typed non-secret configuration values
+    session                  # Owner-only AoC session token
   state.sqlite               # Metadata and bounded application state
-  cache/
-    aoc/                     # Disposable downloaded AoC content
+  cache/                     # Disposable downloaded AoC content
   runs/                      # Unique transient solver result files
   workspace/                 # The only Git-managed area
     .git/
@@ -75,7 +75,7 @@ The layout provides typed paths for at least:
 
 Database paths are stored as validated relative paths and resolved through the layout. Database contents must never direct reads or deletion outside their owning root.
 
-Every application invocation bootstraps and validates storage before reading configuration or constructing services. Root bootstrap does not create `workspace/`; workspace initialization is lazy so Git clone can target an absent directory. If CLI help/version must also bootstrap literally, use a non-exiting Clap parse flow rather than relying on `Parser::parse` to terminate first.
+Every application invocation bootstraps and validates storage before reading configuration or constructing services, including creation of `workspace/`. Git clone runs into that bootstrapped directory. If CLI help/version must also bootstrap literally, use a non-exiting Clap parse flow rather than relying on `Parser::parse` to terminate first.
 
 ## Git Workspace
 
@@ -123,7 +123,7 @@ python/solution.py
 
 Track Rust `Cargo.toml`, Rust `Cargo.lock`, Python `requirements.txt`, generated harnesses, language runtime manifests, solutions, templates, libraries, and examples.
 
-Storage owns Git command execution rooted at `workspace/`. Captured Git disables pagers and terminal prompts; foreground commands require explicit frontend terminal handoff. Root bootstrap leaves the workspace absent. Clone creates it, while non-clone workspace operations initialize it lazily. Cloning into an existing nonempty workspace returns a typed conflict.
+Storage owns Git command execution rooted at `workspace/`. Captured Git disables pagers and terminal prompts; foreground commands require explicit frontend terminal handoff. Bootstrap creates the workspace, and clone runs into it. Cloning into a nonempty workspace fails without modifying its contents.
 
 ## Generated Harnesses
 
@@ -153,7 +153,7 @@ All language jobs that may change the active link are serialized across activati
 
 ### Rust
 
-`workspace/rust/Cargo.toml` is the actual project manifest. AoC Suite uses `toml_edit` for package mutation and scaffold updates so unknown sections, comments, profiles, and user dependencies survive. Required harness dependencies may be inserted or repaired semantically, but the entire manifest is never regenerated during a harness migration.
+`workspace/rust/Cargo.toml` is the actual project manifest. Uses `cargo` package mutation and scaffold updates so unknown sections, comments, profiles, and user dependencies survive. Required harness dependencies may be inserted or repaired semantically, but the entire manifest is never regenerated during a harness migration.
 
 `Cargo.lock` is tracked because the solver is an executable project. Rust environment cleanup runs `cargo clean`; it does not remove either Cargo file.
 
@@ -173,7 +173,7 @@ One example file is shared between Rust and Python for each puzzle. Examples use
 
 Cleanup scopes are explicit and idempotent:
 
-- Normal cache cleaning removes only downloaded files under `cache/aoc` and their metadata.
+- Normal cache cleaning removes only downloaded files under `cache` and their metadata.
 - Example cleaning removes examples only when explicitly requested.
 - A comprehensive confirmed clean may include both cache and examples.
 - Language cache cleaning removes Rust build output or Python bytecode caches.
@@ -187,7 +187,7 @@ Cleanup scopes are explicit and idempotent:
 Puzzle HTML is the canonical downloaded body. Cache paths are flat within content-specific directories:
 
 ```text
-cache/aoc/
+cache/
   puzzles/
     year2024_day1.html
     year2024_day1.md
@@ -248,9 +248,9 @@ SQLite may mirror the layout version for diagnostics.
 
 ## Configuration And Secrets
 
-`config.json` contains typed non-secret configuration values and is written atomically. It includes the run-history limit with a default of 10. Configuration reads do not create files; initialization and writes are explicit.
+`config/config.json` contains typed non-secret configuration values and is written atomically. It includes the run-history limit with a default of 10. Configuration reads do not create files; initialization and writes are explicit.
 
-The session token is stored separately at `<runtime-root>/session` and explicitly set to mode `0600` on Unix. Session reads do not create or modify the file. `AOC_SESSION` and other `AOC_*` configuration sources are not supported. Prompting belongs to the frontend, not `aocsuite-config`.
+The session token is stored separately at `<runtime-root>/config/session` and explicitly set to mode `0600` on Unix. Session reads do not create or modify the file. `AOC_SESSION` and other `AOC_*` configuration sources are not supported. Prompting belongs to the frontend, not `aocsuite-config`.
 
 Remove the unused `template_dir` configuration and `AOC_TEMPLATE_DIR`; templates are tracked inside each language project. Configuration, language, client, and launcher services receive explicit paths/settings and do not independently discover global configuration.
 
