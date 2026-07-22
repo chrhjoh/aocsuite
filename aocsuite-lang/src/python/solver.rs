@@ -5,7 +5,7 @@ use crate::{
     utils::{AocLanguageResult, SolverFile},
     AocLanguageError,
 };
-use aocsuite_utils::{execute_command, CommandRequest, PuzzleId};
+use aocsuite_utils::{atomic_write, execute_command, CommandRequest, PuzzleId};
 
 use super::PythonRunner;
 
@@ -39,6 +39,12 @@ impl Solver for PythonRunner<'_> {
     }
 
     fn migrate_runtime(&self) -> AocLanguageResult<()> {
+        std::fs::create_dir_all(&self.root_dir)?;
+        let requirements_path = self.root_dir.join("requirements.txt");
+        if !requirements_path.exists() {
+            atomic_write(&requirements_path, b"")?;
+        }
+
         crate::runtime::migrate_runtime(
             &self.root_dir,
             vec![(

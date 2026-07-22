@@ -1,6 +1,6 @@
 use crate::traits::Solver;
 use crate::utils::{AocLanguageResult, SolverFile};
-use aocsuite_utils::{execute_command, CommandRequest, PuzzleId};
+use aocsuite_utils::{atomic_write, execute_command, CommandRequest, PuzzleId};
 
 use super::{cargo_contents, RustRunner};
 
@@ -34,15 +34,18 @@ impl Solver for RustRunner<'_> {
     }
 
     fn migrate_runtime(&self) -> AocLanguageResult<()> {
+        std::fs::create_dir_all(&self.root_dir)?;
+        let cargo_path = self.root_dir.join("Cargo.toml");
+        if !cargo_path.exists() {
+            atomic_write(&cargo_path, cargo_contents().as_bytes())?;
+        }
+
         crate::runtime::migrate_runtime(
             &self.root_dir,
-            vec![
-                (
-                    self.solver_file_path(&SolverFile::Entrypoint),
-                    self.main_contents(),
-                ),
-                (self.root_dir.join("Cargo.toml"), cargo_contents()),
-            ],
+            vec![(
+                self.solver_file_path(&SolverFile::Entrypoint),
+                self.main_contents(),
+            )],
         )
     }
     fn clean_cache(&self) -> AocLanguageResult<()> {

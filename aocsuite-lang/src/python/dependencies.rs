@@ -5,7 +5,7 @@ use crate::{
 use std::{path::PathBuf, process::Output};
 
 use super::PythonRunner;
-use aocsuite_utils::{execute_command, CommandRequest};
+use aocsuite_utils::{atomic_write, execute_command, CommandRequest};
 
 impl DepManager for PythonRunner<'_> {
     fn setup_env(&self) -> AocLanguageResult<Option<Output>> {
@@ -41,6 +41,7 @@ impl DepManager for PythonRunner<'_> {
                 .arg(package)
                 .current_dir(&self.root_dir),
         )?;
+        self.persist_requirements()?;
         Ok(())
     }
 
@@ -86,11 +87,23 @@ impl DepManager for PythonRunner<'_> {
                 .arg(package)
                 .current_dir(&self.root_dir),
         )?;
+        self.persist_requirements()?;
         Ok(())
     }
 }
 
 impl PythonRunner<'_> {
+    fn persist_requirements(&self) -> AocLanguageResult<()> {
+        let output = execute_command(
+            self.executor,
+            CommandRequest::new(self.get_pip_path())
+                .arg("freeze")
+                .current_dir(&self.root_dir),
+        )?;
+        atomic_write(&self.root_dir.join("requirements.txt"), &output.stdout)?;
+        Ok(())
+    }
+
     fn get_pip_path(&self) -> PathBuf {
         if cfg!(windows) {
             self.root_dir.join("venv").join("Scripts").join("pip.exe")

@@ -24,8 +24,13 @@ impl DepManager for RustRunner<'_> {
         Ok(())
     }
     fn clean_env(&self) -> AocLanguageResult<()> {
-        let cargo_path = self.root_dir.join("Cargo.toml");
-        std::fs::remove_file(cargo_path)?;
+        self.migrate_runtime()?;
+        execute_command(
+            self.executor,
+            CommandRequest::new("cargo")
+                .arg("clean")
+                .current_dir(&self.root_dir),
+        )?;
         Ok(())
     }
 
