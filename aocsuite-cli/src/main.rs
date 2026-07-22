@@ -1,6 +1,6 @@
 use aocsuite_cli::{run_aocsuite, AocCliError, AocCommand};
 use aocsuite_config::{ConfigKey, Configuration};
-use aocsuite_storage::{get_aocsuite_dir, ContentStore, ExampleStore, RuntimeLayout};
+use aocsuite_storage::{get_aocsuite_dir, ContentStore, RuntimeLayout, Workspace};
 use aocsuite_utils::{default_puzzle_date, PuzzleDay, PuzzleYear};
 
 use clap::Parser;
@@ -36,7 +36,7 @@ fn main() {
         .unwrap_or_else(|error| terminate_with_error(error.into()));
     let content = ContentStore::open(layout.cache_dir())
         .unwrap_or_else(|error| terminate_with_error(error.into()));
-    let examples = ExampleStore::new(layout.workspace_dir());
+    let workspace = Workspace::new(layout.workspace_dir());
     let args = parsed.unwrap_or_else(|error| error.exit());
     let mut config = Configuration::load(layout.config_dir())
         .unwrap_or_else(|error| terminate_with_error(error.into()));
@@ -55,7 +55,7 @@ fn main() {
         year,
         &layout,
         &content,
-        &examples,
+        &workspace,
         &mut config,
     ) {
         terminate_with_error(err);

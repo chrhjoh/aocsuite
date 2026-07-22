@@ -1,6 +1,10 @@
-use std::{path::PathBuf, process::Output};
+use std::{
+    fs::{self, OpenOptions},
+    path::PathBuf,
+    process::Output,
+};
 
-use aocsuite_utils::{atomic_write, ProcessExecutor, ProcessRequest};
+use aocsuite_utils::{atomic_write, ProcessExecutor, ProcessRequest, PuzzleId};
 use thiserror::Error;
 
 const GITIGNORE: &str = r#"rust/target/
@@ -32,6 +36,19 @@ impl Workspace {
         let path = self.directory.join(".gitignore");
         atomic_write(&path, GITIGNORE.as_bytes())?;
         Ok(path)
+    }
+
+    pub fn ensure_example(&self, puzzle: PuzzleId) -> WorkspaceResult<PathBuf> {
+        let examples_dir = self.directory.join("examples");
+        let path = examples_dir.join(format!("{puzzle}.txt"));
+        fs::create_dir_all(&examples_dir)?;
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && path.is_file() => {
+                Ok(path)
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub fn run_git(

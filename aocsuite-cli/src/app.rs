@@ -13,8 +13,7 @@ use aocsuite_editor::{open_browser, open_solution_files};
 use aocsuite_lang::{Language, SolverFile};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
 use aocsuite_storage::{
-    get_aocsuite_dir, CacheCleanScope, ContentStore, ExampleStore, GitMode, RuntimeLayout,
-    Workspace,
+    get_aocsuite_dir, CacheCleanScope, ContentStore, GitMode, RuntimeLayout, Workspace,
 };
 use aocsuite_utils::{
     valid_puzzle_release, valid_year_release, LanguageId, PartSelection, PuzzleDay, PuzzleId,
@@ -28,7 +27,7 @@ pub fn run_aocsuite(
     year: PuzzleYear,
     layout: &RuntimeLayout,
     content: &ContentStore,
-    examples: &ExampleStore,
+    workspace: &Workspace,
     config: &mut Configuration,
 ) -> AocCliResult<()> {
     match command {
@@ -75,7 +74,7 @@ pub fn run_aocsuite(
             let path = match test {
                 Some(file) => {
                     if file.is_empty() {
-                        examples.ensure(PuzzleId::new(day, year))?
+                        workspace.ensure_example(PuzzleId::new(day, year))?
                     } else {
                         resolve_custom_input_path(&file, &std::env::current_dir()?)?
                     }
@@ -95,7 +94,7 @@ pub fn run_aocsuite(
             let client = resolve_aoc_client(config)?;
             let language = resolve_language(config, language, layout.workspace_dir())?;
             let puzzle = PuzzleId::new(day, year);
-            let example_path = examples.ensure(puzzle)?;
+            let example_path = workspace.ensure_example(puzzle)?;
             let solve_path =
                 language.prepare_solver_file(&SolverFile::ActiveSolution(day, year))?;
             let env_vars = language.editor_environment_vars()?;
@@ -132,17 +131,13 @@ pub fn run_aocsuite(
             } else {
                 GitMode::Captured
             };
-            let output = Workspace::new(layout.workspace_dir()).run_git(
-                &args,
-                mode,
-                &SystemProcessExecutor,
-            )?;
+            let output = workspace.run_git(&args, mode, &SystemProcessExecutor)?;
             if !output.is_empty() {
                 println!("{}", output);
             }
         }
         AocCommand::GitIgnore => {
-            let path = Workspace::new(layout.workspace_dir()).gitignore_path()?;
+            let path = workspace.gitignore_path()?;
             aocsuite_editor::open(&resolve_editor(config)?, &path, None)?;
         }
         AocCommand::Env { action, language } => {

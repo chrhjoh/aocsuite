@@ -3,7 +3,7 @@ use aocsuite_config::AocConfigError;
 use aocsuite_editor::AocEditorError;
 use aocsuite_lang::AocLanguageError;
 use aocsuite_parser::ParserError;
-use aocsuite_storage::{ContentError, ExampleError, LayoutError};
+use aocsuite_storage::{ContentError, LayoutError};
 use aocsuite_utils::ReleaseError;
 use thiserror::Error;
 mod app;
@@ -35,9 +35,6 @@ pub enum AocCliError {
 
     #[error(transparent)]
     Content(#[from] ContentError),
-
-    #[error(transparent)]
-    Example(#[from] ExampleError),
 
     #[error(transparent)]
     Parser(#[from] ParserError),
