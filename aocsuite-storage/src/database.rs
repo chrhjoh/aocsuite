@@ -1,14 +1,25 @@
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
-use rusqlite::{Connection, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use thiserror::Error;
 
-use crate::RuntimeLayout;
+use crate::{CacheKey, RuntimeLayout};
 
 const SCHEMA_VERSION: u32 = 1;
 
 pub struct StateDatabase {
     connection: Connection,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CacheEntry {
+    pub key: CacheKey,
+    pub relative_path: PathBuf,
+    pub byte_size: u64,
+    pub fetched_at: Option<i64>,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+    pub is_valid: bool,
 }
 
 impl StateDatabase {
@@ -30,6 +41,142 @@ impl StateDatabase {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get(0))?)
     }
+
+    pub fn cache_entry(&self, key: CacheKey) -> DatabaseResult<Option<CacheEntry>> {
+        let (content_type, year, day) = cache_key_parts(key);
+        let entry = self
+            .connection
+            .query_row(
+                "
+                SELECT relative_path, byte_size, fetched_at, etag, last_modified, is_valid
+                FROM cache_entries
+                WHERE content_type = ?1 AND year = ?2 AND day = ?3
+                ",
+                params![content_type, year, day],
+                |row| {
+                    let relative_path = PathBuf::from(row.get::<_, String>(0)?);
+                    let byte_size = row.get::<_, i64>(1)?;
+                    let is_valid = row.get::<_, i64>(5)?;
+                    Ok((
+                        relative_path,
+                        byte_size,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        is_valid,
+                    ))
+                },
+            )
+            .optional()?;
+
+        entry
+            .map(
+                |(relative_path, byte_size, fetched_at, etag, last_modified, is_valid)| {
+                    let relative_path = validated_relative_path(relative_path)?;
+                    let byte_size = u64::try_from(byte_size)
+                        .map_err(|_| DatabaseError::InvalidCacheEntry("negative byte size"))?;
+                    let is_valid = match is_valid {
+                        0 => false,
+                        1 => true,
+                        _ => return Err(DatabaseError::InvalidCacheEntry("invalid validity flag")),
+                    };
+                    Ok(CacheEntry {
+                        key,
+                        relative_path,
+                        byte_size,
+                        fetched_at,
+                        etag,
+                        last_modified,
+                        is_valid,
+                    })
+                },
+            )
+            .transpose()
+    }
+
+    pub fn upsert_cache_entry(&self, entry: &CacheEntry) -> DatabaseResult<()> {
+        let relative_path = validated_relative_path(entry.relative_path.clone())?;
+        let byte_size = i64::try_from(entry.byte_size)
+            .map_err(|_| DatabaseError::InvalidCacheEntry("byte size exceeds SQLite range"))?;
+        let (content_type, year, day) = cache_key_parts(entry.key);
+        self.connection.execute(
+            "
+            INSERT INTO cache_entries (
+                content_type, year, day, relative_path, byte_size, fetched_at, etag, last_modified, is_valid
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            ON CONFLICT (content_type, year, day) DO UPDATE SET
+                relative_path = excluded.relative_path,
+                byte_size = excluded.byte_size,
+                fetched_at = excluded.fetched_at,
+                etag = excluded.etag,
+                last_modified = excluded.last_modified,
+                is_valid = excluded.is_valid
+            ",
+            params![
+                content_type,
+                year,
+                day,
+                relative_path.to_string_lossy(),
+                byte_size,
+                entry.fetched_at,
+                entry.etag,
+                entry.last_modified,
+                i64::from(entry.is_valid),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_cache_entry(&self, key: CacheKey) -> DatabaseResult<bool> {
+        let (content_type, year, day) = cache_key_parts(key);
+        Ok(self.connection.execute(
+            "DELETE FROM cache_entries WHERE content_type = ?1 AND year = ?2 AND day = ?3",
+            params![content_type, year, day],
+        )? > 0)
+    }
+
+    pub fn invalidate_cache_entry(&self, key: CacheKey) -> DatabaseResult<bool> {
+        let (content_type, year, day) = cache_key_parts(key);
+        Ok(self.connection.execute(
+            "
+            UPDATE cache_entries
+            SET is_valid = 0
+            WHERE content_type = ?1 AND year = ?2 AND day = ?3 AND is_valid = 1
+            ",
+            params![content_type, year, day],
+        )? > 0)
+    }
+}
+
+fn cache_key_parts(key: CacheKey) -> (&'static str, i32, i64) {
+    match key {
+        CacheKey::PuzzleHtml(puzzle) => (
+            "puzzle_html",
+            puzzle.year.get(),
+            i64::from(puzzle.day.get()),
+        ),
+        CacheKey::PuzzleMarkdown(puzzle) => (
+            "puzzle_markdown",
+            puzzle.year.get(),
+            i64::from(puzzle.day.get()),
+        ),
+        CacheKey::Input(puzzle) => ("input", puzzle.year.get(), i64::from(puzzle.day.get())),
+        CacheKey::Calendar(year) => ("calendar", year.get(), 0),
+    }
+}
+
+fn validated_relative_path(path: PathBuf) -> DatabaseResult<PathBuf> {
+    if path.as_os_str().is_empty()
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
+    {
+        return Err(DatabaseError::InvalidCacheEntry(
+            "cache path must be a non-empty relative path",
+        ));
+    }
+    Ok(path)
 }
 
 fn verify_integrity(connection: &Connection) -> DatabaseResult<()> {
@@ -117,6 +264,8 @@ pub enum DatabaseError {
     NewerSchema { found: u32, supported: u32 },
     #[error("state database is corrupt: {result}")]
     CorruptDatabase { result: String },
+    #[error("invalid cache entry: {0}")]
+    InvalidCacheEntry(&'static str),
     #[error(transparent)]
     Sql(#[from] rusqlite::Error),
 }
