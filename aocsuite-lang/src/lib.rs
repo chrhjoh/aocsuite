@@ -9,27 +9,28 @@ use std::{
     collections::HashMap,
     ffi::OsString,
     path::{Path, PathBuf},
+    process::Output,
 };
 
+use aocsuite_storage::Workspace;
 use aocsuite_utils::{LanguageId, PartSelection, PuzzleDay, PuzzleYear};
 use utils::{
-    handle_command_output, new_result_file_path, read_result, with_result_file, ExerciseOutput,
-    LanguageRunner,
+    ensure_command_success, read_result, with_result_file, ExerciseOutput, LanguageRunner,
 };
 pub use utils::{AocLanguageError, AocLanguageResult, SolverFile};
 
-pub struct Language {
+pub struct Language<'workspace> {
     language_type: LanguageId,
     runner: LanguageRunner,
-    runs_dir: PathBuf,
+    workspace: &'workspace Workspace,
 }
 
-impl Language {
-    pub fn new(language: LanguageId, workspace_dir: PathBuf) -> Self {
+impl<'workspace> Language<'workspace> {
+    pub fn new(language: LanguageId, workspace: &'workspace Workspace) -> Self {
         Self {
             language_type: language,
-            runner: languages::to_runner(language, workspace_dir.join(language.to_string())),
-            runs_dir: workspace_dir.join(".aocsuite-runs"),
+            runner: languages::to_runner(language, workspace.language_project_dir(language)),
+            workspace,
         }
     }
 
@@ -39,21 +40,24 @@ impl Language {
         year: PuzzleYear,
         part: PartSelection,
         input: &Path,
-    ) -> AocLanguageResult<ExerciseOutput> {
+    ) -> AocLanguageResult<(ExerciseOutput, Output)> {
         self.setup_solution(day, year)?;
-        let output_file = new_result_file_path(&self.runs_dir)?;
+        let output_file = self.workspace.allocate_run_result_file()?;
         with_result_file(&output_file, |output_file| {
             let output = self.runner.run(day, year, part, input, output_file)?;
-            handle_command_output(output)?;
-            read_result(output_file)
+            ensure_command_success(&output)?;
+            Ok((read_result(output_file)?, output))
         })
     }
 
-    pub fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<()> {
+    pub fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Option<Output>> {
         self.setup_solution(day, year)?;
         match self.runner.compile(day, year)? {
-            Some(output) => handle_command_output(output),
-            None => Ok(()),
+            Some(output) => {
+                ensure_command_success(&output)?;
+                Ok(Some(output))
+            }
+            None => Ok(None),
         }
     }
 
@@ -232,7 +236,7 @@ mod tests {
         python::PythonRunner,
         rust::RustRunner,
         traits::{DepManager, LanguageHandler, Solver},
-        utils::{handle_command_output, new_result_file_path, read_result, with_result_file},
+        utils::{ensure_command_success, read_result, with_result_file},
         AocLanguageError, SolverFile,
     };
     use aocsuite_utils::{LanguageId, PartSelection, PuzzleDay, PuzzleYear};
@@ -429,7 +433,7 @@ mod tests {
                 &output,
             )
             .expect("run Python solution");
-        handle_command_output(command).expect("Python solution succeeds");
+        ensure_command_success(&command).expect("Python solution succeeds");
         let result = read_result(&output).expect("parse Python result");
         assert!(result.to_string().contains("Answer: example"));
         assert!(result.to_string().contains("Answer: 8"));
@@ -527,14 +531,14 @@ mod tests {
     }
 
     #[test]
-    fn result_files_are_unique_and_cleaned_after_failures() {
+    fn result_files_are_cleaned_after_failures() {
         let root = test_root("results");
         let runs_dir = root.join(".aocsuite-runs");
         fs::create_dir_all(&runs_dir).expect("create runs directory");
         let stale_result = root.join("result.json");
         fs::write(&stale_result, "stale result").expect("write stale legacy result");
 
-        let malformed_result = new_result_file_path(&runs_dir).expect("allocate result path");
+        let malformed_result = runs_dir.join("malformed.json");
         assert_ne!(malformed_result, stale_result);
         assert!(!malformed_result.exists());
         fs::write(&malformed_result, "not JSON").expect("write malformed result");
@@ -542,7 +546,7 @@ mod tests {
         assert!(!malformed_result.exists());
         assert!(stale_result.exists());
 
-        let failed_result = new_result_file_path(&runs_dir).expect("allocate result path");
+        let failed_result = runs_dir.join("failed.json");
         fs::write(&failed_result, "partial result").expect("write partial result");
         let failure: crate::AocLanguageResult<()> = with_result_file(&failed_result, |_| {
             Err(AocLanguageError::Command("solver failed".to_string()))

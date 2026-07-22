@@ -49,15 +49,7 @@ fn main() {
         },
     };
     let (day, year) = resolve_puzzle_date(args.day, configured_year, default_puzzle_date());
-    if let Err(err) = run_aocsuite(
-        args.command,
-        day,
-        year,
-        &layout,
-        &content,
-        &workspace,
-        &mut config,
-    ) {
+    if let Err(err) = run_aocsuite(args.command, day, year, &content, &workspace, &mut config) {
         terminate_with_error(err);
     }
 }

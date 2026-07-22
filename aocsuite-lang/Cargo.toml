@@ -4,6 +4,7 @@ version = "0.3.0"
 edition = "2021"
 
 [dependencies]
+aocsuite-storage = { version = "0.3.0", path = "../aocsuite-storage" }
 aocsuite-utils = { version = "0.3.0", path = "../aocsuite-utils" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

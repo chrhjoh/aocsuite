@@ -5,9 +5,9 @@ use std::{
     path::{Path, PathBuf},
     process::Output,
     sync::atomic::{AtomicU64, Ordering},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
+use aocsuite_storage::WorkspaceError;
 use aocsuite_utils::{PuzzleDay, PuzzleYear};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -65,34 +65,7 @@ impl fmt::Display for ExerciseOutput {
     }
 }
 
-static RESULT_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static LINK_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-pub fn new_result_file_path(runs_dir: &Path) -> AocLanguageResult<PathBuf> {
-    fs::create_dir_all(runs_dir)?;
-
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time is after the Unix epoch")
-        .as_nanos();
-
-    for _ in 0..16 {
-        let sequence = RESULT_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = runs_dir.join(format!(
-            "result-{}-{timestamp}-{sequence}.json",
-            std::process::id()
-        ));
-        if !path.exists() {
-            return Ok(path);
-        }
-    }
-
-    Err(std::io::Error::new(
-        std::io::ErrorKind::AlreadyExists,
-        "could not allocate a unique result file",
-    )
-    .into())
-}
 
 pub fn with_result_file<T>(
     result_file: &Path,
@@ -109,15 +82,6 @@ pub fn with_result_file<T>(
 pub fn read_result(result_file: &Path) -> AocLanguageResult<ExerciseOutput> {
     let reader = BufReader::new(File::open(result_file)?);
     Ok(serde_json::from_reader(reader)?)
-}
-
-pub fn handle_command_output(output: Output) -> AocLanguageResult<()> {
-    ensure_command_success(&output)?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    if !stdout.is_empty() {
-        println!("Standard out from exercise {}", stdout)
-    }
-    Ok(())
 }
 
 pub(crate) fn ensure_command_success(output: &Output) -> AocLanguageResult<()> {
@@ -250,6 +214,9 @@ pub enum AocLanguageError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Workspace(#[from] WorkspaceError),
 
     #[error("Error parsing result json file: {0}")]
     ResultJson(#[from] serde_json::Error),

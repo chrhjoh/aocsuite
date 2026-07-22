@@ -2,9 +2,11 @@ use std::{
     fs::{self, OpenOptions},
     path::PathBuf,
     process::Output,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use aocsuite_utils::{atomic_write, ProcessExecutor, ProcessRequest, PuzzleId};
+use aocsuite_utils::{atomic_write, LanguageId, ProcessExecutor, ProcessRequest, PuzzleId};
 use thiserror::Error;
 
 const GITIGNORE: &str = r#"rust/target/
@@ -15,6 +17,8 @@ python/solution.py
 **/__pycache__/
 *.pyc
 "#;
+
+static RESULT_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub struct Workspace {
     directory: PathBuf,
@@ -36,6 +40,37 @@ impl Workspace {
         let path = self.directory.join(".gitignore");
         atomic_write(&path, GITIGNORE.as_bytes())?;
         Ok(path)
+    }
+
+    pub fn language_project_dir(&self, language: LanguageId) -> PathBuf {
+        self.directory.join(language.to_string())
+    }
+
+    pub fn allocate_run_result_file(&self) -> WorkspaceResult<PathBuf> {
+        let runs_dir = self.directory.join(".aocsuite-runs");
+        fs::create_dir_all(&runs_dir)?;
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time is after the Unix epoch")
+            .as_nanos();
+
+        for _ in 0..16 {
+            let sequence = RESULT_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let path = runs_dir.join(format!(
+                "result-{}-{timestamp}-{sequence}.json",
+                std::process::id()
+            ));
+            if !path.exists() {
+                return Ok(path);
+            }
+        }
+
+        Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "could not allocate a unique result file",
+        )
+        .into())
     }
 
     pub fn ensure_example(&self, puzzle: PuzzleId) -> WorkspaceResult<PathBuf> {
@@ -127,7 +162,8 @@ pub type WorkspaceResult<T> = Result<T, WorkspaceError>;
 
 #[cfg(test)]
 mod tests {
-    use super::{is_simple_clone, WorkspaceError, GITIGNORE};
+    use super::{is_simple_clone, Workspace, WorkspaceError, GITIGNORE};
+    use aocsuite_utils::LanguageId;
 
     #[test]
     fn empty_args_are_not_a_clone() {
@@ -152,5 +188,29 @@ mod tests {
         assert!(GITIGNORE.contains("python/venv/"));
         assert!(!GITIGNORE.contains("Cargo.lock"));
         assert!(!GITIGNORE.contains("config.json"));
+    }
+
+    #[test]
+    fn workspace_allocates_unique_result_files_in_its_ignored_runs_directory() {
+        let temp = tempfile::tempdir().expect("create temporary workspace");
+        let workspace = Workspace::new(temp.path().to_path_buf());
+
+        assert_eq!(
+            workspace.language_project_dir(LanguageId::Rust),
+            temp.path().join("rust")
+        );
+
+        let first = workspace
+            .allocate_run_result_file()
+            .expect("allocate first result path");
+        let second = workspace
+            .allocate_run_result_file()
+            .expect("allocate second result path");
+        let runs_dir = temp.path().join(".aocsuite-runs");
+
+        assert_ne!(first, second);
+        assert_eq!(first.parent(), Some(runs_dir.as_path()));
+        assert!(first.parent().expect("result parent").is_dir());
+        assert!(!first.exists());
     }
 }

@@ -154,6 +154,7 @@ dependencies = [
 name = "aocsuite-lang"
 version = "0.3.0"
 dependencies = [
+ "aocsuite-storage",
  "aocsuite-utils",
  "serde",
  "serde_json",
