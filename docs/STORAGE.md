@@ -45,8 +45,7 @@ Use one hardened runtime root. Keep user work and complete language projects as 
 aocsuite/
   .aocsuite-layout.json      # Physical layout version
   config.json                # Typed non-secret configuration values
-  secrets/
-    session                  # Owner-only AoC session token
+  session                    # Owner-only AoC session token
   state.sqlite               # Metadata and bounded application state
   cache/
     aoc/                     # Disposable downloaded AoC content
@@ -63,7 +62,7 @@ Do not store source files, templates, libraries, Cargo files, Python environment
 
 ## Runtime Layout API
 
-`aocsuite-storage` exposes cloneable `RuntimeLayout::new(root_dir)` and a separate `get_aocsuite_dir()` root resolver. The resolver treats `AOCSUITE_DATA_DIR` as a complete root, then falls back to `$XDG_DATA_HOME/aocsuite` and `$HOME/.local/share/aocsuite`. Its environment mapping is tested through a private seam; storage tests otherwise use explicit temporary roots.
+`aocsuite-storage` exposes public `get_aocsuite_dir()` and cloneable `RuntimeLayout::new(root_dir)`. The resolver treats `AOCSUITE_DATA_DIR` as a complete-root override, then falls back to `$XDG_DATA_HOME/aocsuite` and `$HOME/.local/share/aocsuite`. Application code resolves once and passes the path explicitly; storage tests construct layouts from temporary roots without changing process-global environment state.
 
 Path getters are pure. They never create directories, fetch content, migrate data, initialize projects, or launch commands. Bootstrap and mutation are separate explicit operations.
 
@@ -85,15 +84,14 @@ Every application invocation bootstraps and validates storage before reading con
 ```text
 workspace/
   examples/
-    year2024/
-      day1.txt
+    year2024_day1.txt
   rust/
     .aocsuite-runtime.json
     Cargo.toml
     Cargo.lock
     template.rs
-    year2024/
-      day1.rs
+    solutions/
+      year2024_day1.rs
     src/
       main.rs
       solution.rs            # Generated active link, ignored by Git
@@ -105,8 +103,8 @@ workspace/
     main.py
     template.py
     solution.py              # Generated active link, ignored by Git
-    year2024/
-      day1.py
+    solutions/
+      year2024_day1.py
     helpers.py
     venv/                    # Ignored by Git
     __pycache__/             # Ignored by Git
@@ -171,7 +169,7 @@ Migration of dependencies from the current unversioned layout is out of scope.
 
 ## Examples And Cleanup
 
-One example file is shared between Rust and Python for each puzzle. Examples live under `workspace/examples`, are user-owned and Git-managed, and are not cache content.
+One example file is shared between Rust and Python for each puzzle. Examples use the flat `workspace/examples/year{year}_day{day}.txt` shape, are user-owned and Git-managed, and are not cache content. Explicit `ensure_example` creation creates an empty file only when absent and never overwrites user content.
 
 Cleanup scopes are explicit and idempotent:
 
@@ -186,7 +184,20 @@ Cleanup scopes are explicit and idempotent:
 
 `state.sqlite` indexes cache entries by content type, year, day, validated relative path, size, fetch time, HTTP validation data, and validity/error state. Cache files are canonical; their database rows are rebuildable indexes.
 
-Puzzle HTML is the canonical downloaded body. Store raw `puzzle.html` plus disposable derived `puzzle.md` for editor and CLI workflows. Validate and convert the raw body before replacing a previously valid entry. If Markdown is missing after an interrupted write or parser upgrade, regenerate it from the cached HTML without another request. Calendar HTML and input text remain canonical raw bodies.
+Puzzle HTML is the canonical downloaded body. Cache paths are flat within content-specific directories:
+
+```text
+cache/aoc/
+  puzzles/
+    year2024_day1.html
+    year2024_day1.md
+  inputs/
+    year2024_day1.txt
+  calendars/
+    year2024.html
+```
+
+Store raw puzzle HTML plus disposable derived Markdown for editor and CLI workflows. Validate and convert the raw body before replacing a previously valid entry. If Markdown is missing after an interrupted write or parser upgrade, regenerate it from the cached HTML without another request. Calendar HTML and input text remain canonical raw bodies.
 
 Cache writes follow this order:
 
@@ -239,7 +250,7 @@ SQLite may mirror the layout version for diagnostics.
 
 `config.json` contains typed non-secret configuration values and is written atomically. It includes the run-history limit with a default of 10. Configuration reads do not create files; initialization and writes are explicit.
 
-The session token is stored separately in `secrets/session` with owner-only file and directory permissions. `AOC_SESSION` remains a nonpersistent configuration source. Prompting belongs to the frontend, not `aocsuite-config`.
+The session token is stored separately at `<runtime-root>/session` and explicitly set to mode `0600` on Unix. Session reads do not create or modify the file. `AOC_SESSION` and other `AOC_*` configuration sources are not supported. Prompting belongs to the frontend, not `aocsuite-config`.
 
 Remove the unused `template_dir` configuration and `AOC_TEMPLATE_DIR`; templates are tracked inside each language project. Configuration, language, client, and launcher services receive explicit paths/settings and do not independently discover global configuration.
 

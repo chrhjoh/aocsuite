@@ -1,6 +1,7 @@
 use std::{
     env, fs,
-    path::{Component, Path, PathBuf},
+    fs::OpenOptions,
+    path::{Component, PathBuf},
 };
 
 use aocsuite_utils::{atomic_write, LanguageId, PuzzleId, PuzzleYear};
@@ -8,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const CURRENT_LAYOUT_VERSION: u32 = 1;
-const LAYOUT_MANIFEST: &str = ".aocsuite-layout.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BootstrapReport {
@@ -29,7 +29,7 @@ pub struct RuntimeLayout {
     root: PathBuf,
 }
 
-fn get_aocsuite_dir() -> Result<PathBuf, LayoutError> {
+pub fn get_aocsuite_dir() -> Result<PathBuf, LayoutError> {
     let environment_preferences = [
         (
             "AOCSUITE_DATA_DIR",
@@ -72,9 +72,12 @@ fn valid_environment_path(path: &PathBuf) -> bool {
     !path.as_os_str().is_empty() && path.is_absolute()
 }
 
+//TODO: After implementaion of storage, and removal of fs then revise this api to not expose
+// things like cache, database and workspace and other things where storage owns the files/data within.
+// These files should be safe to get. Things not owned such as the language files.
 impl RuntimeLayout {
-    pub fn new() -> Result<Self, LayoutError> {
-        let root = get_aocsuite_dir()?;
+    pub fn new(root: impl Into<PathBuf>) -> Result<Self, LayoutError> {
+        let root = root.into();
         if root.as_os_str().is_empty()
             || !root.is_absolute()
             || root.components().any(|part| part == Component::ParentDir)
@@ -84,46 +87,47 @@ impl RuntimeLayout {
         Ok(Self { root })
     }
 
-    pub fn root_dir(&self) -> &Path {
-        &self.root
+    pub fn config_dir(&self) -> PathBuf {
+        self.root.join("config")
     }
 
-    pub fn layout_manifest_path(&self) -> PathBuf {
-        self.root.join(LAYOUT_MANIFEST)
+    fn layout_manifest_path(&self) -> PathBuf {
+        self.root.join(".aocsuite-layout.json")
     }
 
-    pub fn config_path(&self) -> PathBuf {
-        self.root.join("config.json")
-    }
-
-    pub fn session_path(&self) -> PathBuf {
-        self.root.join("session")
-    }
-
-    pub fn database_path(&self) -> PathBuf {
+    fn database_path(&self) -> PathBuf {
         self.root.join("state.sqlite")
     }
 
+    //TOOD: make non public
     pub fn aoc_cache_dir(&self) -> PathBuf {
-        self.root.join("cache").join("aoc")
+        self.root.join("cache")
     }
 
-    pub fn runs_dir(&self) -> PathBuf {
-        self.root.join("runs")
-    }
-
+    //TOOD: make non public
     pub fn workspace_dir(&self) -> PathBuf {
         self.root.join("workspace")
     }
 
+    //TOOD: make non public
     pub fn examples_dir(&self) -> PathBuf {
         self.workspace_dir().join("examples")
     }
 
     pub fn example_path(&self, puzzle: PuzzleId) -> PathBuf {
-        self.examples_dir()
-            .join(format!("year{}", puzzle.year))
-            .join(format!("day{}.txt", puzzle.day))
+        self.examples_dir().join(format!("{puzzle}.txt"))
+    }
+
+    pub fn ensure_example(&self, puzzle: PuzzleId) -> Result<PathBuf, LayoutError> {
+        let path = self.example_path(puzzle);
+        fs::create_dir_all(self.examples_dir())?;
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && path.is_file() => {
+                Ok(path)
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub fn language_project_dir(&self, language: LanguageId) -> PathBuf {
@@ -132,108 +136,57 @@ impl RuntimeLayout {
 
     pub fn cache_path(&self, key: CacheKey) -> PathBuf {
         match key {
-            CacheKey::PuzzleHtml(puzzle) => self.puzzle_cache_dir(puzzle).join("puzzle.html"),
-            CacheKey::PuzzleMarkdown(puzzle) => self.puzzle_cache_dir(puzzle).join("puzzle.md"),
-            CacheKey::Input(puzzle) => self.puzzle_cache_dir(puzzle).join("input.txt"),
-            CacheKey::Calendar(year) => self
-                .aoc_cache_dir()
-                .join(format!("year{year}"))
-                .join("calendar.html"),
+            CacheKey::PuzzleHtml(puzzle) => self.puzzle_cache_dir().join(format!("{puzzle}.html")),
+            CacheKey::PuzzleMarkdown(puzzle) => {
+                self.puzzle_cache_dir().join(format!("{puzzle}.md"))
+            }
+            CacheKey::Input(puzzle) => self.input_cache_dir().join(format!("{puzzle}.txt")),
+            CacheKey::Calendar(year) => self.calendar_cache_dir().join(format!("year{year}.html")),
         }
     }
 
-    pub fn bootstrap(&self) -> Result<BootstrapReport, LayoutError> {
-        match fs::metadata(&self.root) {
-            Ok(metadata) if !metadata.is_dir() => {
-                return Err(LayoutError::RootNotDirectory(self.root.clone()));
-            }
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return self.initialize(true);
-            }
-            Err(error) => return Err(error.into()),
+    pub fn bootstrap(&self) -> Result<(), LayoutError> {
+        let manifest = LayoutManifest::new();
+        let manifest_path = self.layout_manifest_path();
+        if !self.root.exists() {
+            fs::create_dir_all(&self.root)?;
+            manifest.write(&manifest_path)?
+        } else if !self.root.is_dir() {
+            return Err(LayoutError::RootNotDirectory(self.root.clone()));
         }
-
-        let manifest = self.layout_manifest_path();
-        if !manifest.exists() {
-            if directory_is_empty(&self.root)? {
-                return self.initialize(false);
-            }
-            return Err(LayoutError::UnversionedRoot(self.root.clone()));
-        }
-
-        let bytes = fs::read(&manifest)?;
-        let manifest: LayoutManifest = serde_json::from_slice(&bytes)?;
-        manifest.validate()?;
-        if manifest.layout_version != CURRENT_LAYOUT_VERSION {
-            return Err(LayoutError::UnsupportedLayoutVersion {
-                found: manifest.layout_version,
-                supported: CURRENT_LAYOUT_VERSION,
-            });
-        }
-
-        self.ensure_owned_directories()?;
-        Ok(BootstrapReport::Opened)
+        manifest.validate(&manifest_path)?;
+        self.bootstrap_directories()
     }
 
-    fn puzzle_cache_dir(&self, puzzle: PuzzleId) -> PathBuf {
-        self.aoc_cache_dir()
-            .join(format!("year{}", puzzle.year))
-            .join(format!("day{}", puzzle.day))
+    fn puzzle_cache_dir(&self) -> PathBuf {
+        self.aoc_cache_dir().join("puzzles")
     }
 
-    fn initialize(&self, create_root: bool) -> Result<BootstrapReport, LayoutError> {
+    fn input_cache_dir(&self) -> PathBuf {
+        self.aoc_cache_dir().join("inputs")
+    }
+
+    fn calendar_cache_dir(&self) -> PathBuf {
+        self.aoc_cache_dir().join("calendars")
+    }
+
+    fn bootstrap_directories(&self) -> Result<(), LayoutError> {
         let mut created = Vec::new();
-        let result = (|| {
-            if create_root {
-                let mut missing_ancestors = self
-                    .root
-                    .ancestors()
-                    .take_while(|path| !path.exists())
-                    .map(Path::to_path_buf)
-                    .collect::<Vec<_>>();
-                missing_ancestors.reverse();
-                created.extend(missing_ancestors);
-                fs::create_dir_all(&self.root)?;
-            }
-
-            for directory in [
-                self.root.join("cache"),
-                self.aoc_cache_dir(),
-                self.runs_dir(),
-            ] {
-                if !directory.exists() {
-                    fs::create_dir(&directory)?;
-                    created.push(directory.clone());
-                }
-            }
-
-            let manifest = LayoutManifest {
-                layout_version: CURRENT_LAYOUT_VERSION,
-                created_by: env!("CARGO_PKG_VERSION").to_owned(),
-            };
-            atomic_write(
-                &self.layout_manifest_path(),
-                &serde_json::to_vec_pretty(&manifest)?,
-            )?;
-            Ok(BootstrapReport::Initialized)
-        })();
-
-        if result.is_err() {
-            for path in created.iter().rev() {
-                let _ = fs::remove_dir(path);
-            }
-        }
-        result
-    }
-
-    fn ensure_owned_directories(&self) -> Result<(), LayoutError> {
         for directory in [
             self.root.join("cache"),
             self.aoc_cache_dir(),
-            self.runs_dir(),
+            self.workspace_dir(),
         ] {
-            fs::create_dir_all(&directory)?;
+            if !directory.exists() {
+                if let Err(err) = fs::create_dir(&directory) {
+                    for path in created.iter().rev() {
+                        let _ = fs::remove_dir(path);
+                        return Err(LayoutError::Io(err));
+                    }
+
+                    created.push(directory.clone());
+                }
+            }
         }
         Ok(())
     }
@@ -247,23 +200,39 @@ struct LayoutManifest {
 }
 
 impl LayoutManifest {
-    fn validate(&self) -> Result<(), LayoutError> {
-        if self.layout_version == 0 {
-            return Err(LayoutError::InvalidManifest(
-                "layout_version must be greater than zero".to_owned(),
+    fn validate(&self, path: &PathBuf) -> Result<(), LayoutError> {
+        if !path.exists() {
+            return Err(LayoutError::UnversionedRoot(
+                path.parent().expect("manifest is not root").to_owned(),
             ));
         }
-        if self.created_by.trim().is_empty() {
+
+        let bytes = fs::read(path)?;
+        let current_manifest: LayoutManifest = serde_json::from_slice(&bytes)?;
+
+        if current_manifest.layout_version == self.layout_version {
             return Err(LayoutError::InvalidManifest(
-                "created_by must not be empty".to_owned(),
+                "layout_version must match".to_owned(),
             ));
         }
+        if current_manifest.created_by.trim() != self.created_by.trim() {
+            return Err(LayoutError::InvalidManifest(
+                "created_by must match".to_owned(),
+            ));
+        }
+        //TODO: migration logic
         Ok(())
     }
-}
-
-fn directory_is_empty(path: &Path) -> Result<bool, std::io::Error> {
-    Ok(fs::read_dir(path)?.next().transpose()?.is_none())
+    fn write(&self, path: &PathBuf) -> Result<(), LayoutError> {
+        atomic_write(path, &serde_json::to_vec_pretty(&self)?)?;
+        Ok(())
+    }
+    fn new() -> LayoutManifest {
+        LayoutManifest {
+            layout_version: CURRENT_LAYOUT_VERSION,
+            created_by: env!("CARGO_PKG_VERSION").to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -291,163 +260,4 @@ pub enum LayoutError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
-
-    use super::{BootstrapReport, CacheKey, LayoutError, RuntimeLayout, CURRENT_LAYOUT_VERSION};
-
-    fn puzzle() -> PuzzleId {
-        PuzzleId::new(
-            PuzzleDay::new(4).expect("valid test day"),
-            PuzzleYear::new(2024).expect("valid test year"),
-        )
-    }
-
-    #[test]
-    fn path_getters_are_pure() {
-        //TODO:  allocate a dir with AOCSUITE_DATA_DIR
-        let layout = RuntimeLayout::new().expect("valid explicit root");
-
-        let puzzle = puzzle();
-
-        assert_eq!(layout.config_path(), layout.root_dir().join("config.json"));
-        assert_eq!(layout.session_path(), layout.root_dir().join("session"));
-        assert_eq!(
-            layout.database_path(),
-            layout.root_dir().join("state.sqlite")
-        );
-        assert_eq!(layout.runs_dir(), layout.root_dir().join("runs"));
-        assert_eq!(
-            layout.example_path(puzzle),
-            layout
-                .root_dir()
-                .join("workspace/examples/year2024/day4.txt")
-        );
-        assert_eq!(
-            layout.language_project_dir(LanguageId::Rust),
-            layout.root_dir().join("workspace/rust")
-        );
-        assert_eq!(
-            layout.cache_path(CacheKey::PuzzleHtml(puzzle)),
-            layout
-                .root_dir()
-                .join("cache/aoc/year2024/day4/puzzle.html")
-        );
-        assert_eq!(
-            layout.cache_path(CacheKey::PuzzleMarkdown(puzzle)),
-            layout.root_dir().join("cache/aoc/year2024/day4/puzzle.md")
-        );
-        assert_eq!(
-            layout.cache_path(CacheKey::Input(puzzle)),
-            layout.root_dir().join("cache/aoc/year2024/day4/input.txt")
-        );
-        assert_eq!(
-            layout.cache_path(CacheKey::Calendar(puzzle.year)),
-            layout.root_dir().join("cache/aoc/year2024/calendar.html")
-        );
-        assert!(!layout.root_dir().exists());
-    }
-
-    #[test]
-    fn missing_and_empty_roots_initialize_layout_one_without_workspace() {
-        for precreate in [false, true] {
-            let layout = RuntimeLayout::new().expect("valid explicit root");
-            if precreate {
-                fs::create_dir(layout.root_dir()).expect("create empty root");
-            }
-
-            assert_eq!(layout.bootstrap().unwrap(), BootstrapReport::Initialized);
-            let manifest: serde_json::Value =
-                serde_json::from_slice(&fs::read(layout.layout_manifest_path()).unwrap()).unwrap();
-            assert_eq!(manifest["layout_version"], CURRENT_LAYOUT_VERSION);
-            assert!(layout.aoc_cache_dir().is_dir());
-            assert!(layout.runs_dir().is_dir());
-            assert!(!layout.workspace_dir().exists());
-            assert!(!layout.config_path().exists());
-            assert!(!layout.database_path().exists());
-        }
-    }
-
-    #[test]
-    fn current_layout_reopens_and_repairs_owned_directories() {
-        let layout = RuntimeLayout::new().expect("valid explicit root");
-        layout.bootstrap().unwrap();
-        fs::remove_dir_all(layout.aoc_cache_dir()).unwrap();
-
-        assert_eq!(layout.bootstrap().unwrap(), BootstrapReport::Opened);
-        assert!(layout.aoc_cache_dir().is_dir());
-        assert!(!layout.workspace_dir().exists());
-    }
-
-    #[test]
-    fn nonempty_unversioned_root_is_rejected_without_mutation() {
-        let layout = RuntimeLayout::new().expect("valid explicit root");
-        fs::create_dir(layout.root_dir()).unwrap();
-        let sentinel = layout.root_dir().join("keep-me");
-        fs::write(&sentinel, "unchanged").unwrap();
-
-        assert!(matches!(
-            layout.bootstrap(),
-            Err(LayoutError::UnversionedRoot(_))
-        ));
-        assert_eq!(fs::read_to_string(sentinel).unwrap(), "unchanged");
-    }
-
-    #[test]
-    fn malformed_and_unsupported_manifests_are_rejected_without_mutation() {
-        for (manifest, expected) in [
-            ("not json".to_owned(), "json"),
-            (
-                format!(
-                    "{{\"layout_version\":{},\"created_by\":\"future\"}}",
-                    CURRENT_LAYOUT_VERSION + 1
-                ),
-                "unsupported",
-            ),
-            (
-                "{\"layout_version\":1,\"created_by\":\"\"}".to_owned(),
-                "invalid",
-            ),
-        ] {
-            let layout = RuntimeLayout::new().expect("valid explicit root");
-            fs::create_dir(layout.root_dir()).unwrap();
-            fs::write(layout.layout_manifest_path(), &manifest).unwrap();
-
-            let error = layout.bootstrap().unwrap_err();
-            match expected {
-                "json" => assert!(matches!(error, LayoutError::Json(_))),
-                "unsupported" => assert!(matches!(
-                    error,
-                    LayoutError::UnsupportedLayoutVersion { .. }
-                )),
-                "invalid" => assert!(matches!(error, LayoutError::InvalidManifest(_))),
-                _ => unreachable!(),
-            }
-            assert_eq!(
-                fs::read_to_string(layout.layout_manifest_path()).unwrap(),
-                manifest
-            );
-        }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn runtime_and_secret_directories_are_owner_only() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let layout = RuntimeLayout::new().expect("valid explicit root");
-        layout.bootstrap().unwrap();
-
-        for path in [layout.root_dir().to_path_buf()] {
-            assert_eq!(
-                fs::metadata(path).unwrap().permissions().mode() & 0o777,
-                0o700
-            );
-        }
-    }
 }

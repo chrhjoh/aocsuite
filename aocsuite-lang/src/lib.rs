@@ -334,6 +334,22 @@ mod tests {
     }
 
     #[test]
+    fn puzzle_solutions_use_flat_language_solution_directories() {
+        let rust_root = test_root("rust-path");
+        let python_root = test_root("python-path");
+        let solution = puzzle_solution(4);
+
+        assert_eq!(
+            RustRunner::new(rust_root.clone()).solver_file_path(&solution),
+            rust_root.join("solutions/year2024_day4.rs")
+        );
+        assert_eq!(
+            PythonRunner::new(python_root.clone()).solver_file_path(&solution),
+            python_root.join("solutions/year2024_day4.py")
+        );
+    }
+
+    #[test]
     fn rust_activation_selects_the_requested_solution() {
         let root = test_root("rust");
         let runner = RustRunner::new(root.clone());
@@ -432,7 +448,7 @@ mod tests {
         let solution = root.join("src/solution.rs");
         let library = root.join("src/helpers.rs");
         let template = root.join("template.rs");
-        let puzzle = root.join("year2024/day1.rs");
+        let puzzle = root.join("solutions/year2024_day1.rs");
         fs::create_dir_all(main.parent().expect("main parent")).expect("create source directory");
         fs::create_dir_all(puzzle.parent().expect("puzzle parent"))
             .expect("create puzzle directory");
@@ -470,7 +486,7 @@ mod tests {
         let solution = root.join("solution.py");
         let library = root.join("helpers.py");
         let template = root.join("template.py");
-        let puzzle = root.join("year2024/day1.py");
+        let puzzle = root.join("solutions/year2024_day1.py");
         fs::create_dir_all(puzzle.parent().expect("puzzle parent"))
             .expect("create puzzle directory");
         for path in [&main, &solution, &library, &template, &puzzle] {

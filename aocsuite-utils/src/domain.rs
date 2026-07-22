@@ -129,6 +129,12 @@ impl PuzzleId {
     }
 }
 
+impl fmt::Display for PuzzleId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "year{}_day{}", self.year, self.day)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PuzzlePart {
     One,
@@ -238,6 +244,7 @@ mod tests {
         let id = PuzzleId::new(PuzzleDay::new(4).unwrap(), PuzzleYear::new(2024).unwrap());
         assert_eq!(id.day.get(), 4);
         assert_eq!(id.year.get(), 2024);
+        assert_eq!(id.to_string(), "year2024_day4");
         assert!("not-a-day".parse::<PuzzleDay>().is_err());
     }
 

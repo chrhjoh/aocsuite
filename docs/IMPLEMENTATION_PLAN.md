@@ -19,21 +19,21 @@ The application assumes one AoC Suite process per runtime root. Do not add norma
 2. Remove configuration discovery from `aocsuite-client`, `aocsuite-lang`, and the launcher boundary. Construct services with explicit settings, paths, environment snapshots, and executors.
 3. Add a broad `aocsuite-storage` crate replacing `aocsuite-fs`. It owns `RuntimeLayout`, bootstrap/versioning, SQLite, AoC content lifecycle, workspace Git, transient run allocation, uninstall, and typed cleanup scopes.
 4. Keep storage internally layered: layout/database modules do not call HTTP/parser code; only the content module depends on the configuration-independent client and semantic parser.
-5. Implement `RuntimeLayout::new` for an explicit root. Keep environment-based root selection in storage's `get_aocsuite_dir`, with `AOCSUITE_DATA_DIR` as the direct-root override. Path getters must not create directories, migrate state, fetch content, or launch commands.
+5. Implement public storage-owned `get_aocsuite_dir` resolution and pass its result into explicit `RuntimeLayout::new(root_dir)`. Treat `AOCSUITE_DATA_DIR` as the complete-root override before XDG/HOME defaults. Path getters must not create directories, migrate state, fetch content, or launch commands.
 6. Establish layout version 1 with non-secret configuration values, owner-only session storage, SQLite state, disposable AoC cache, transient runs, and a lazily created Git workspace.
 7. Bootstrap every application invocation before configuration/service construction. Reject nonempty unversioned roots and newer unsupported layouts without mutation; legacy import is out of scope.
-8. Split noninteractive typed configuration and session reads/writes from CLI prompting. Remove `template_dir`, preserve remaining `AOC_*` precedence, and add a configurable run-history limit defaulting to 10.
-9. Add explicit-root and fake-executor behavior tests for layout validation, initialization, unsupported roots, permissions, failed writes, malformed manifests, and configuration precedence.
+8. Split noninteractive typed configuration and session reads/writes from CLI prompting. Remove `template_dir` and all `AOC_*` configuration sources, and add a configurable run-history limit defaulting to 10.
+9. Add explicit-temporary-root and fake-executor behavior tests for layout validation, initialization, unsupported roots, permissions, failed writes, and malformed manifests.
 
 ## Storage Implementation Sequence
 
 1. Add shared validated domain types and a synchronous captured/foreground `ProcessExecutor` to `aocsuite-utils`.
 2. Refactor `aocsuite-client` to accept an optional session and request options explicitly, then remove its config dependency so storage can depend on it without a cycle.
 3. Add `aocsuite-storage` with bundled `rusqlite` and `walkdir`; add `tempfile` for tests. Implement `RuntimeLayout`, `.aocsuite-layout.json`, fresh bootstrap, and unversioned-root rejection before SQLite/content behavior.
-4. Refactor `aocsuite-config` around layout-provided paths, non-mutating reads, explicit writes, `secrets/session`, and frontend-owned prompts. Remove Clap, `rpassword`, and `template_dir` from the library.
+4. Refactor `aocsuite-config` around layout-provided paths, non-mutating reads, explicit writes, an owner-only root-level session file, and frontend-owned prompts. Remove Clap, `rpassword`, `template_dir`, and environment configuration sources from the library.
 5. Absorb `aocsuite-fs` into storage. Replace invalid `AocContentFile` states and side-effecting `to_path()` with typed cache keys, pure paths/status/reads, and explicit load/refresh/invalidate/clean methods; then remove the old crate.
-6. Store raw puzzle HTML canonically and derived Markdown as a disposable editor artifact. Return semantic calendar/submission models from parser APIs and keep terminal formatting in frontends.
-7. Move language roots to `workspace/rust` and `workspace/python`, shared examples to `workspace/examples`, and Git scope to a lazily created `workspace/`.
+6. Store raw puzzle HTML canonically and derived Markdown as a disposable editor artifact. Use flat content-specific cache directories keyed by `year{year}_day{day}`, with calendars keyed by year. Return semantic calendar/submission models from parser APIs and keep terminal formatting in frontends.
+7. Move language roots to `workspace/rust` and `workspace/python`, flat solution files to each project's `solutions/`, shared flat examples to `workspace/examples`, and Git scope to a lazily created `workspace/`.
 8. Track complete portable language projects. Regenerate the AoC Suite-owned `.gitignore`; ignore only Rust build output, Python virtual environments/caches, and active solution links.
 9. Move typed captured/foreground Git operations into `aocsuite-storage::workspace`. Clone targets an absent workspace; other operations initialize it lazily.
 10. Keep generated harnesses and `.aocsuite-runtime.json` tracked. Version-only migrations overwrite AoC Suite-owned harnesses atomically and preserve solutions, templates, libraries, examples, and dependency files.

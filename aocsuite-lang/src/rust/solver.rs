@@ -1,5 +1,6 @@
 use crate::traits::Solver;
 use crate::utils::{AocLanguageResult, SolverFile};
+use aocsuite_utils::PuzzleId;
 
 use super::{cargo_contents, RustRunner};
 
@@ -65,8 +66,8 @@ impl Solver for RustRunner {
             SolverFile::ActiveSolution(_, _) => self.src_dir().join("solution.rs"),
             SolverFile::PuzzleSolution(day, year) => self
                 .root_dir
-                .join(format!("year{year}"))
-                .join(format!("day{day}.rs")),
+                .join("solutions")
+                .join(format!("{}.rs", PuzzleId::new(*day, *year))),
         }
     }
     fn template_contents(&self) -> String {

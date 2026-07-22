@@ -22,14 +22,14 @@
 
 ## Storage And Workspace Decisions
 
-- The target root contains `.aocsuite-layout.json`, `config.json`, `secrets/session`, `state.sqlite`, `cache/aoc`, `runs`, and a lazily created `workspace` Git root. See `docs/STORAGE.md` for the authoritative layout.
+- The target root contains `.aocsuite-layout.json`, `config.json`, an owner-only `session` file, `state.sqlite`, `cache/aoc`, `runs`, and a lazily created `workspace` Git root. See `docs/STORAGE.md` for the authoritative layout.
 - Bootstrap storage on every application invocation before reading config or constructing services. Root bootstrap must not create `workspace/`; clone targets an absent workspace and other workspace operations initialize it lazily.
 - There are no active users requiring import of the current unversioned layout. Reject nonempty unversioned roots without mutation and provide manual-removal guidance. Future versioned migrations use retained backups and resumable phases.
-- `workspace/rust` and `workspace/python` are complete portable projects. Track harnesses, `.aocsuite-runtime.json`, `Cargo.toml`, `Cargo.lock`, `requirements.txt`, solutions, templates, libraries, and shared `workspace/examples`.
+- `workspace/rust` and `workspace/python` are complete portable projects. Track harnesses, `.aocsuite-runtime.json`, `Cargo.toml`, `Cargo.lock`, `requirements.txt`, flat `solutions/year{year}_day{day}` files, templates, libraries, and flat shared `workspace/examples/year{year}_day{day}.txt` files.
 - Generated harnesses are strictly AoC Suite-owned. Version-only migrations atomically overwrite them and then update the tracked manifest; no hashes or manual-edit detection are required.
 - Ignore only disposable state such as Rust `target/`, Python `venv`/bytecode caches, and active solution links. The workspace `.gitignore` is AoC Suite-owned and regenerated completely.
 - Persist Python package changes by atomically replacing tracked `requirements.txt` with `pip freeze` after successful pip mutation. Python environment cleanup preserves requirements. Rust cleanup preserves tracked Cargo files.
-- Cache raw puzzle HTML canonically and materialize disposable Markdown for editor/CLI use. Normal cache cleaning never deletes examples; example/comprehensive cleanup is explicit and confirmed by the frontend.
+- Cache flat date-keyed files by content type under `cache/aoc/puzzles`, `cache/aoc/inputs`, and `cache/aoc/calendars`. Raw puzzle HTML is canonical and Markdown is a disposable editor/CLI artifact. Normal cache cleaning never deletes examples; example/comprehensive cleanup is explicit and confirmed by the frontend.
 - SQLite stores cache metadata, calendar-derived stars, correct/incorrect submission counts, and the latest configurable per-part runtimes (default 10). Store no answers, answer hashes, cooldowns, private leaderboard data, or detailed submission events.
 
 ## API And Process Rules
@@ -44,9 +44,9 @@
 
 ## Current Implementation Hazards
 
-- The CLI resolves the complete root from `AOCSUITE_DATA_DIR`, then `$XDG_DATA_HOME/aocsuite`, then `$HOME/.local/share/aocsuite`, and passes it to `RuntimeLayout::new` before loading configuration. The README's `.local/data` path is stale. Use `AOCSUITE_DATA_DIR` for isolated manual tests.
-- Config precedence is explicit override, then `<runtime-root>/config.json`, then `AOC_*`, then caller default. Reads are non-mutating, prompting is CLI-owned, and Rust does not load `.envrc` or dotenv files.
-- Never run or log `config get session`, and avoid live submission/download verification. Persisted sessions now live in owner-only `secrets/session`.
+- `get_aocsuite_dir` resolves the complete root from `AOCSUITE_DATA_DIR`, then `$XDG_DATA_HOME/aocsuite`, then `$HOME/.local/share/aocsuite`; callers pass that path to `RuntimeLayout::new`. Tests construct layouts from explicit temporary roots without changing process-global environment state.
+- CLI flags override applicable values from `<runtime-root>/config.json`; remaining values use caller defaults. `AOC_*` configuration variables, dotenv files, and `.envrc` loading are not supported. Reads are non-mutating and prompting is CLI-owned.
+- Never run or log `config get session`, and avoid live submission/download verification. Persisted sessions live at `<runtime-root>/session` with mode `0600` on Unix.
 - `aocsuite-fs` temporarily receives an explicit cache directory, but `AocContentFile::materialize()` still combines download, parse, metadata, and permission mutation. Remove this transitional crate while absorbing content behavior into storage.
 - Client, language, editor, filesystem, and Git inputs no longer discover the runtime root or configuration globally. Git still lives in the CLI and must move into storage workspace services.
 - Current parser calendar output embeds ANSI, language result fields are not publicly inspectable, and language helpers may print. Do not scrape these outputs; fix the owning APIs.

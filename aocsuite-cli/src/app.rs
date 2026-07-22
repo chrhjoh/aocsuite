@@ -98,6 +98,8 @@ pub fn run_aocsuite(
             valid_puzzle_release(day, year)?;
             let client = resolve_aoc_client(config)?;
             let language = resolve_language(config, layout, language)?;
+            let puzzle = PuzzleId::new(day, year);
+            let example_path = layout.ensure_example(puzzle)?;
             let solve_path =
                 language.prepare_solver_file(&SolverFile::ActiveSolution(day, year))?;
             let env_vars = language.editor_environment_vars()?;
@@ -105,7 +107,7 @@ pub fn run_aocsuite(
             open_solution_files(
                 &resolve_editor(config)?,
                 &AocContentFile::puzzle(layout.aoc_cache_dir(), day, year).materialize(&client)?,
-                &layout.example_path(PuzzleId::new(day, year)),
+                &example_path,
                 &solve_path,
                 &AocContentFile::input(layout.aoc_cache_dir(), day, year).materialize(&client)?,
                 Some(env_vars),
@@ -244,32 +246,29 @@ pub fn run_aocsuite(
                 let clean_day: Option<PuzzleDay>;
                 let clean_year_opt: Option<PuzzleYear>;
                 let file_prompt: String;
+                let content_prompt: &str;
 
                 if all {
                     clean_day = None;
                     clean_year_opt = None;
-                    file_prompt = "all cached AoC files".to_string()
+                    file_prompt = "all cached AoC files".to_string();
+                    content_prompt = "puzzles, inputs and calendars";
                 } else if year_all {
                     clean_day = None;
                     clean_year_opt = Some(year);
-                    file_prompt = format!("all cached AoC files for {year}").to_string()
+                    file_prompt = format!("all cached AoC files for {year}");
+                    content_prompt = "puzzles, inputs and calendar";
                 } else {
                     clean_day = Some(day);
                     clean_year_opt = Some(year);
-                    file_prompt =
-                        format!("all cached AoC files for day {day} in {year}").to_string()
+                    file_prompt = format!("all cached AoC files for day {day} in {year}");
+                    content_prompt = "puzzle and input";
                 }
                 if user_confirm_or_force(
-                    &format!(
-                        "Do you want to delete {file_prompt} (puzzles, inputs and calendar) (Y/n) : ",
-                    ),
+                    &format!("Do you want to delete {file_prompt} ({content_prompt}) (Y/n) : ",),
                     force,
                 )? {
-                    aocsuite_fs::clean_cache(
-                        layout.aoc_cache_dir(),
-                        clean_year_opt,
-                        clean_day,
-                    )?;
+                    aocsuite_fs::clean_cache(layout.aoc_cache_dir(), clean_year_opt, clean_day)?;
                 }
             }
 
@@ -317,7 +316,11 @@ fn ensure_config_read_allowed(key: &ConfigCommandKey) -> AocCliResult<()> {
 }
 
 fn resolve_aoc_client(config: &Configuration) -> AocCliResult<AocClient> {
-    let session = config.session().ok();
+    let session = match config.session() {
+        Ok(session) => Some(session),
+        Err(AocConfigError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
     Ok(AocClient::new(
         session.as_deref(),
         AocClientOptions::default(),
@@ -444,9 +447,10 @@ mod tests {
     };
 
     use super::{
-        ensure_config_read_allowed, require_input_file, resolve_custom_input_path, user_confirm,
-        ConfigCommandKey,
+        ensure_config_read_allowed, require_input_file, resolve_aoc_client,
+        resolve_custom_input_path, user_confirm, ConfigCommandKey,
     };
+    use aocsuite_config::{AocConfigError, Configuration};
 
     static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -543,6 +547,24 @@ mod tests {
             Err(crate::AocCliError::NotAllowed(_))
         ));
         assert!(ensure_config_read_allowed(&ConfigCommandKey::Language).is_ok());
+    }
+
+    #[test]
+    fn missing_session_is_allowed_but_other_read_errors_propagate() {
+        let root = test_root();
+        fs::create_dir_all(&root).expect("create test runtime");
+        let session_path = root.join("session");
+        let config = Configuration::load(root.join("config.json"), &session_path).unwrap();
+
+        assert!(resolve_aoc_client(&config).is_ok());
+
+        fs::create_dir(&session_path).expect("create invalid session directory");
+        assert!(matches!(
+            resolve_aoc_client(&config),
+            Err(crate::AocCliError::Config(AocConfigError::Io(_)))
+        ));
+
+        fs::remove_dir_all(root).expect("remove test runtime");
     }
 
     #[test]

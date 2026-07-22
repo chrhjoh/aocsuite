@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
-      XDG_DATA_HOME: ${{ runner.temp }}/aocsuite-xdg
+      AOCSUITE_DATA_DIR: ${{ runner.temp }}/aocsuite-data
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683

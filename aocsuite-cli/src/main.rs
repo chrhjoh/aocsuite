@@ -1,6 +1,6 @@
 use aocsuite_cli::{run_aocsuite, AocCliError, AocCommand};
 use aocsuite_config::{ConfigKey, Configuration};
-use aocsuite_storage::RuntimeLayout;
+use aocsuite_storage::{get_aocsuite_dir, RuntimeLayout};
 use aocsuite_utils::{default_puzzle_date, PuzzleDay, PuzzleYear};
 
 use clap::Parser;
@@ -28,7 +28,9 @@ fn terminate_with_error(err: AocCliError) -> ! {
 
 fn main() {
     let parsed = AocCli::try_parse();
-    let layout = RuntimeLayout::new().unwrap_or_else(|error| terminate_with_error(error.into()));
+    let root = get_aocsuite_dir().unwrap_or_else(|error| terminate_with_error(error.into()));
+    let layout =
+        RuntimeLayout::new(root).unwrap_or_else(|error| terminate_with_error(error.into()));
     layout
         .bootstrap()
         .unwrap_or_else(|error| terminate_with_error(error.into()));

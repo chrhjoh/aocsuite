@@ -18,7 +18,7 @@ Add `.github/workflows/ci.yml` on pull requests and pushes to the default branch
 - `cargo test --workspace --locked`
 - `cargo run -p aocsuite-cli --locked -- --help`
 
-Run this initial job on Ubuntu with an explicit temporary `XDG_DATA_HOME` because the target application bootstraps storage on every invocation. Do not make formatting or strict Clippy required until the existing unrelated failures recorded in `IMPLEMENTATION_NOTES.md` are fixed.
+Run this initial job on Ubuntu with an explicit temporary `AOCSUITE_DATA_DIR` because the target application bootstraps storage on every invocation. Do not make formatting or strict Clippy required until the existing unrelated failures recorded in `IMPLEMENTATION_NOTES.md` are fixed.
 
 Use workflow concurrency to cancel superseded runs for the same branch. Grant read-only repository permissions and no secrets.
 
@@ -75,7 +75,7 @@ Keep these separate from the OS matrix so failures are easy to classify and redu
 ### `feature-boundaries`
 
 - Verify the workspace compiles without frontend-only features leaking into shared crates where practical.
-- Verify no normal test requires `AOC_SESSION`.
+- Verify no normal test requires a configured AoC session.
 - Verify generated test roots remain inside temporary directories.
 
 The boundary checks may initially be ordinary Rust tests rather than shell scripts. Prefer behavior assertions in the owning crate.

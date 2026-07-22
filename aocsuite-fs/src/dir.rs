@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use aocsuite_utils::{PuzzleDay, PuzzleYear};
-
 pub struct AocCacheDir {
     base: PathBuf,
 }
@@ -10,10 +8,15 @@ impl AocCacheDir {
         AocCacheDir { base }
     }
 
-    pub fn yearly_data_dir(&self, year: PuzzleYear) -> PathBuf {
-        self.base.join(format!("year{year}"))
+    pub fn puzzles_dir(&self) -> PathBuf {
+        self.base.join("puzzles")
     }
-    pub fn daily_data_dir(&self, day: PuzzleDay, year: PuzzleYear) -> PathBuf {
-        self.yearly_data_dir(year).join(format!("day{day}"))
+
+    pub fn inputs_dir(&self) -> PathBuf {
+        self.base.join("inputs")
+    }
+
+    pub fn calendars_dir(&self) -> PathBuf {
+        self.base.join("calendars")
     }
 }

@@ -1,9 +1,10 @@
 use std::{collections::HashMap, fs, path::PathBuf, str::FromStr};
 
-use aocsuite_utils::atomic_write;
+use aocsuite_utils::{atomic_write, set_owner_only_permissions};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ConfigKey {
     Language,
     Year,
@@ -35,22 +36,6 @@ impl std::fmt::Display for ConfigKey {
             Self::Editor => "editor",
             Self::RunHistoryLimit => "run_history_limit",
         })
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct ConfigOverrides {
-    values: HashMap<ConfigKey, String>,
-}
-
-impl ConfigOverrides {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn set(mut self, key: ConfigKey, value: impl ToString) -> Self {
-        self.values.insert(key, value.to_string());
-        self
     }
 }
 
@@ -105,17 +90,19 @@ impl Configuration {
     }
 
     pub fn set(&mut self, key: ConfigKey, value: Option<&str>) -> AocConfigResult<()> {
+        let mut values = self.values.clone();
         match value.map(str::trim).filter(|value| !value.is_empty()) {
             Some(value) => {
-                self.values.insert(key, value.to_owned());
+                values.insert(key, value.to_owned());
             }
             None => {
-                self.values.remove(&key);
+                values.remove(&key);
             }
         }
 
-        let serialized = serde_json::to_vec_pretty(&self.values)?;
+        let serialized = serde_json::to_vec_pretty(&values)?;
         atomic_write(&self.config_path, &serialized)?;
+        self.values = values;
 
         Ok(())
     }
@@ -128,6 +115,7 @@ impl Configuration {
         match session.map(str::trim).filter(|value| !value.is_empty()) {
             Some(session) => {
                 atomic_write(&self.session_path, session.as_bytes())?;
+                set_owner_only_permissions(&self.session_path)?;
             }
             None => match fs::remove_file(&self.session_path) {
                 Ok(()) => {}
@@ -154,90 +142,100 @@ pub enum AocConfigError {
 
 pub type AocConfigResult<T> = Result<T, AocConfigError>;
 
-// #[cfg(test)]
-// mod tests {
-//     use std::fs;
-//
-//     use aocsuite_utils::PuzzleYear;
-//     use tempfile::TempDir;
-//
-//     use crate::ConfigOverrides;
-//
-//     use super::{AocConfigError, ConfigKey, Configuration};
-//
-//     fn configuration(temp: &TempDir, overrides: Option<ConfigOverrides>) -> Configuration {
-//         Configuration::load(
-//             temp.path().join("config.json"),
-//             temp.path().join("session"),
-//             overrides.unwrap_or_default(),
-//         )
-//         .unwrap()
-//     }
-//
-//     #[test]
-//     fn reads_are_non_mutating_when_files_are_absent() {
-//         let temp = TempDir::new().unwrap();
-//         let config = configuration(&temp, None);
-//
-//         assert!(matches!(
-//             config.get(ConfigKey::Editor),
-//             Err(AocConfigError::NotFound { .. })
-//         ));
-//         assert_eq!(config.get(ConfigKey::RunHistoryLimit).unwrap(), "10");
-//         assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
-//     }
-//
-//     #[test]
-//     fn malformed_config_is_preserved() {
-//         let temp = TempDir::new().unwrap();
-//         let path = temp.path().join("config.json");
-//         let contents = br#"{"language":"rust""#;
-//         fs::write(&path, contents).unwrap();
-//
-//         assert!(matches!(
-//             Configuration::load(&path, temp.path().join("session"),),
-//             Err(AocConfigError::Parse(_))
-//         ));
-//         assert_eq!(fs::read(path).unwrap(), contents);
-//     }
-//
-//     #[test]
-//     fn writes_and_removals_are_explicit() {
-//         let temp = TempDir::new().unwrap();
-//         let mut config = configuration(&temp);
-//
-//         config.set(ConfigKey::Editor, Some("code --wait")).unwrap();
-//         assert_eq!(
-//             config.effective_string(ConfigKey::Editor).unwrap(),
-//             "code --wait"
-//         );
-//         config.set(ConfigKey::Editor, None).unwrap();
-//         assert!(matches!(
-//             config.effective_string(ConfigKey::Editor),
-//             Err(AocConfigError::NotFound { .. })
-//         ));
-//     }
-//
-//     #[test]
-//     fn invalid_values_and_failed_writes_preserve_loaded_state() {
-//         let temp = TempDir::new().unwrap();
-//         fs::write(temp.path().join("config.json"), r#"{"year":"invalid"}"#).unwrap();
-//         let config = configuration(&temp);
-//
-//         assert!(matches!(
-//             config.resolve::<PuzzleYear>(ConfigKey::Year, None, None),
-//             Err(AocConfigError::Invalid { .. })
-//         ));
-//
-//         let missing_parent = temp.path().join("missing/config.json");
-//         let mut config = Configuration::load(missing_parent, temp.path().join("session")).unwrap();
-//         assert!(matches!(
-//             config.set(ConfigKey::Editor, Some("vim")),
-//             Err(AocConfigError::Io(_))
-//         ));
-//         assert!(matches!(
-//             config.effective_string(ConfigKey::Editor),
-//             Err(AocConfigError::NotFound { .. })
-//         ));
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use aocsuite_utils::PuzzleYear;
+    use tempfile::TempDir;
+
+    use super::{AocConfigError, ConfigKey, Configuration};
+
+    fn configuration(temp: &TempDir) -> Configuration {
+        Configuration::load(temp.path().join("config.json"), temp.path().join("session")).unwrap()
+    }
+
+    #[test]
+    fn reads_are_non_mutating_when_files_are_absent() {
+        let temp = TempDir::new().unwrap();
+        let config = configuration(&temp);
+
+        assert!(matches!(
+            config.get::<String>(ConfigKey::Editor),
+            Err(AocConfigError::NotFound { .. })
+        ));
+        assert_eq!(
+            config.get::<String>(ConfigKey::RunHistoryLimit).unwrap(),
+            "10"
+        );
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn lowercase_file_keys_are_loaded_and_written() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("config.json");
+        fs::write(&path, r#"{"language":"rust","year":"2024"}"#).unwrap();
+        let mut config = configuration(&temp);
+
+        assert_eq!(config.get::<String>(ConfigKey::Language).unwrap(), "rust");
+        assert_eq!(
+            config.get::<PuzzleYear>(ConfigKey::Year).unwrap().get(),
+            2024
+        );
+
+        config.set(ConfigKey::Editor, Some("code --wait")).unwrap();
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(persisted["language"], "rust");
+        assert_eq!(persisted["run_history_limit"], "10");
+        assert_eq!(persisted["editor"], "code --wait");
+        assert!(persisted.get("Language").is_none());
+    }
+
+    #[test]
+    fn malformed_config_is_preserved() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("config.json");
+        let contents = br#"{"language":"rust""#;
+        fs::write(&path, contents).unwrap();
+
+        assert!(matches!(
+            Configuration::load(&path, temp.path().join("session")),
+            Err(AocConfigError::Parse(_))
+        ));
+        assert_eq!(fs::read(path).unwrap(), contents);
+    }
+
+    #[test]
+    fn failed_writes_preserve_loaded_state() {
+        let temp = TempDir::new().unwrap();
+        let missing_parent = temp.path().join("missing/config.json");
+        let mut config = Configuration::load(missing_parent, temp.path().join("session")).unwrap();
+
+        assert!(matches!(
+            config.set(ConfigKey::Editor, Some("vim")),
+            Err(AocConfigError::Io(_))
+        ));
+        assert!(matches!(
+            config.get::<String>(ConfigKey::Editor),
+            Err(AocConfigError::NotFound { .. })
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn persisted_session_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = TempDir::new().unwrap();
+        let config = configuration(&temp);
+        config.set_session(Some("token")).unwrap();
+
+        let mode = fs::metadata(temp.path().join("session"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+}

@@ -5,7 +5,7 @@ use std::{
 
 use aocsuite_client::{AocClient, AocPage};
 use aocsuite_parser::{parse, AocSubmissionResult, ParserType};
-use aocsuite_utils::{atomic_write, set_owner_only_permissions, PuzzleDay, PuzzleYear};
+use aocsuite_utils::{atomic_write, set_owner_only_permissions, PuzzleDay, PuzzleId, PuzzleYear};
 use serde_json::{Map, Value};
 
 use crate::{AocCacheDir, AocFileError, AocFileResult};
@@ -15,7 +15,6 @@ pub enum AocFileType {
     Puzzle,
     Calendar,
     Input,
-    Example,
 }
 
 #[derive(Debug, Clone)]
@@ -54,15 +53,6 @@ impl AocContentFile {
         }
     }
 
-    pub fn example(cache_dir: PathBuf, day: PuzzleDay, year: PuzzleYear) -> Self {
-        Self {
-            cache_dir,
-            file_type: AocFileType::Example,
-            day: Some(day),
-            year,
-        }
-    }
-
     fn updateable(&self) -> bool {
         matches!(self.file_type, AocFileType::Puzzle | AocFileType::Calendar)
     }
@@ -86,21 +76,27 @@ impl AocContentFile {
     }
     pub fn path(&self) -> AocFileResult<PathBuf> {
         let dir = AocCacheDir::new(self.cache_dir.clone());
-        let filename = self.filename();
-
-        match self.day {
-            Some(day) => Ok(dir.daily_data_dir(day, self.year).join(filename)),
-            None => Ok(dir.yearly_data_dir(self.year).join(filename)),
+        match self.file_type {
+            AocFileType::Puzzle => {
+                let puzzle = self.puzzle_id()?;
+                Ok(dir.puzzles_dir().join(format!("{puzzle}.md")))
+            }
+            AocFileType::Calendar => {
+                Ok(dir.calendars_dir().join(format!("year{}.html", self.year)))
+            }
+            AocFileType::Input => {
+                let puzzle = self.puzzle_id()?;
+                Ok(dir.inputs_dir().join(format!("{puzzle}.txt")))
+            }
         }
     }
 
-    fn filename(&self) -> &'static str {
-        match self.file_type {
-            AocFileType::Puzzle => "puzzle.md",
-            AocFileType::Calendar => "calendar.html",
-            AocFileType::Input => "input.txt",
-            AocFileType::Example => "example.txt",
-        }
+    fn puzzle_id(&self) -> AocFileResult<PuzzleId> {
+        self.day
+            .map(|day| PuzzleId::new(day, self.year))
+            .ok_or_else(|| {
+                AocFileError::InvalidFile(format!("{} files require a puzzle day", self))
+            })
     }
 
     pub fn set_cache_status(&self, val: bool) -> AocFileResult<()> {
@@ -153,7 +149,11 @@ fn parse_puzzle_content(content: &str) -> AocFileResult<String> {
 
 impl std::fmt::Display for AocContentFile {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.filename())
+        formatter.write_str(match self.file_type {
+            AocFileType::Puzzle => "puzzle",
+            AocFileType::Calendar => "calendar",
+            AocFileType::Input => "input",
+        })
     }
 }
 
@@ -199,6 +199,40 @@ fn update_cache(path: &Path, val: bool) -> AocFileResult<()> {
     Ok(())
 }
 
+pub(crate) fn remove_cached_file(path: &Path) -> AocFileResult<bool> {
+    let cache_path = path.parent().unwrap().join(CACHE_FILE);
+    let metadata_removed = match fs::read_to_string(&cache_path) {
+        Ok(cache_contents) => {
+            let mut cache_json: Map<String, Value> = serde_json::from_str(&cache_contents)?;
+            let filename = path.file_name().unwrap().to_str().unwrap();
+            if cache_json.remove(filename).is_none() {
+                false
+            } else {
+                if cache_json.is_empty() {
+                    match fs::remove_file(&cache_path) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => return Err(error.into()),
+                    }
+                } else {
+                    let json = serde_json::to_vec_pretty(&cache_json)?;
+                    atomic_write(&cache_path, &json)?;
+                }
+                true
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+
+    let file_removed = match fs::remove_file(path) {
+        Ok(()) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+    Ok(metadata_removed || file_removed)
+}
+
 fn page_from_file(file: &AocContentFile) -> AocFileResult<AocPage> {
     match file.file_type {
         AocFileType::Puzzle => {
@@ -214,9 +248,6 @@ fn page_from_file(file: &AocContentFile) -> AocFileResult<AocPage> {
             })?;
             Ok(AocPage::Input(day, file.year))
         }
-        AocFileType::Example => Err(AocFileError::InvalidFile(
-            "Example files cannot be downloaded".to_string(),
-        )),
     }
 }
 
@@ -252,8 +283,8 @@ mod tests {
     use aocsuite_utils::PuzzleYear;
 
     use super::{
-        is_cache_valid, page_from_file, parse_puzzle_content, update_cache, AocContentFile,
-        AocFileError, AocFileType, CACHE_FILE,
+        is_cache_valid, page_from_file, parse_puzzle_content, remove_cached_file, update_cache,
+        AocContentFile, AocFileError, AocFileType, CACHE_FILE,
     };
 
     static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -299,6 +330,23 @@ mod tests {
     }
 
     #[test]
+    fn cleanup_metadata_failures_preserve_the_cache_body() {
+        let temp_dir = test_dir();
+        let input_path = temp_dir.join("input.txt");
+        fs::create_dir_all(&temp_dir).expect("create test cache directory");
+        fs::write(&input_path, "cached input").expect("write input cache");
+        fs::write(temp_dir.join(CACHE_FILE), "not json").expect("write invalid metadata");
+
+        assert!(matches!(
+            remove_cached_file(&input_path),
+            Err(AocFileError::Json(_))
+        ));
+        assert!(input_path.exists());
+
+        fs::remove_dir_all(temp_dir).expect("remove test cache directory");
+    }
+
+    #[test]
     fn puzzle_responses_without_articles_are_rejected_before_caching() {
         assert!(matches!(
             parse_puzzle_content("<html><main>Please log in</main></html>"),
@@ -321,5 +369,31 @@ mod tests {
                 Err(AocFileError::InvalidFile(_))
             ));
         }
+    }
+
+    #[test]
+    fn content_paths_are_flat_and_grouped_by_type() {
+        let cache = test_dir();
+        let day = aocsuite_utils::PuzzleDay::new(4).unwrap();
+        let year = PuzzleYear::new(2024).unwrap();
+
+        assert_eq!(
+            AocContentFile::puzzle(cache.clone(), day, year)
+                .path()
+                .unwrap(),
+            cache.join("puzzles/year2024_day4.md")
+        );
+        assert_eq!(
+            AocContentFile::input(cache.clone(), day, year)
+                .path()
+                .unwrap(),
+            cache.join("inputs/year2024_day4.txt")
+        );
+        assert_eq!(
+            AocContentFile::calendar(cache.clone(), year)
+                .path()
+                .unwrap(),
+            cache.join("calendars/year2024.html")
+        );
     }
 }

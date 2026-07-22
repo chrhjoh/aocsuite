@@ -3,6 +3,7 @@ use crate::{
     utils::{AocLanguageResult, SolverFile},
     AocLanguageError,
 };
+use aocsuite_utils::PuzzleId;
 
 use super::PythonRunner;
 
@@ -58,8 +59,8 @@ impl Solver for PythonRunner {
             SolverFile::ActiveSolution(_, _) => self.root_dir.join("solution.py"),
             SolverFile::PuzzleSolution(day, year) => self
                 .root_dir
-                .join(format!("year{year}"))
-                .join(format!("day{day}.py")),
+                .join("solutions")
+                .join(format!("{}.py", PuzzleId::new(*day, *year))),
         }
     }
     fn template_contents(&self) -> String {

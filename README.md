@@ -34,10 +34,9 @@ cargo install --path aocsuite-cli
 ## Quick Start CLI
 
 1. **Configure your session token**:
-   Either by environment variables or set via the config command
+   Set it through the non-echoing configuration prompt:
 
    ```bash
-   export AOC_SESSION="<MY-TOKEN>"
    aocsuite-cli config set session
    ```
 
@@ -110,19 +109,13 @@ Some languages also caches large files during building of a program. These can b
 - `aocsuite-cli config set KEY` - Set configuration value from a prompt
 - `aocsuite-cli config get KEY` - Get configuration value
 
-Configurations can also be managed through enviroment variables:
-
-- `AOC_SESSION`
-- `AOC_LANGUAGE`
-- `AOC_YEAR`
-- `AOC_TEMPLATE_DIR`
-- `AOC_EDITOR`
+The editor falls back to `EDITOR` when no editor is configured.
 
 ### Git tracking
 
 `aocsuite-cli git` - wraps around git to enable version control of the solution directory. A basic .gitignore is supplied to avoid tracking aocsuite specific files.
 
-Files are stored at `$XDG_DATA_HOME/aocsuite` or `$HOME/.local/data/aocsuite` and can also be managed manually from there.
+Files are stored at `$AOCSUITE_DATA_DIR`, `$XDG_DATA_HOME/aocsuite`, or `$HOME/.local/share/aocsuite`, in that order. Set `AOCSUITE_DATA_DIR` to override the complete runtime root.
 
 ## License
 
