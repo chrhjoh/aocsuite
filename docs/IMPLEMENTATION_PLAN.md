@@ -29,7 +29,7 @@ The application assumes one AoC Suite process per runtime root. Do not add norma
 
 1. Add shared validated domain types and a synchronous captured/foreground `ProcessExecutor` to `aocsuite-utils`.
 2. Refactor `aocsuite-client` to accept an optional session and request options explicitly, then remove its config dependency so storage can depend on it without a cycle.
-3. Add `aocsuite-storage` with bundled `rusqlite` and `walkdir`; add `tempfile` for tests. Implement `RuntimeLayout`, `.aocsuite-layout.json`, fresh bootstrap, and unversioned-root rejection before SQLite/content behavior.
+3. Add `aocsuite-storage` with bundled `rusqlite` and `walkdir`; add `tempfile` for tests. Implement `RuntimeLayout`, `.aocsuite-layout.json`, fresh bootstrap, and unversioned-root rejection before SQLite/content behavior. The manifest owns physical layout compatibility; SQLite `user_version` owns only database schema migrations.
 4. Refactor `aocsuite-config` around a layout-provided configuration directory, non-mutating reads, explicit writes, an owner-only session file, and frontend-owned prompts. Remove Clap, `rpassword`, `template_dir`, and environment configuration sources from the library.
 5. Absorb `aocsuite-fs` into storage. Replace invalid `AocContentFile` states and side-effecting `to_path()` with typed cache keys, pure paths/status/reads, and explicit load/refresh/invalidate/clean methods; then remove the old crate.
 6. Store raw puzzle HTML canonically and derived Markdown as a disposable editor artifact. Use flat content-specific cache directories keyed by `year{year}_day{day}`, with calendars keyed by year. Return semantic calendar/submission models from parser APIs and keep terminal formatting in frontends.
@@ -39,7 +39,7 @@ The application assumes one AoC Suite process per runtime root. Do not add norma
 10. Keep generated harnesses and `.aocsuite-runtime.json` tracked. Version-only migrations overwrite AoC Suite-owned harnesses atomically and preserve solutions, templates, libraries, examples, and dependency files.
 11. Make Rust package operations edit tracked `Cargo.toml` semantically and track `Cargo.lock`. Add tracked Python `requirements.txt`; atomically persist `pip freeze` after successful package mutations.
 12. Rename `aocsuite-editor` to `aocsuite-launcher`, move browser launching out of the HTTP client, and route editor/browser processes through the shared executor without config discovery or printing.
-13. Add SQLite bootstrap, integrity checks, corruption quarantine, transactional schema upgrades, and newer-schema rejection.
+13. Add SQLite bootstrap, integrity checks, typed corrupt-database errors, transactional schema upgrades, and newer-schema rejection.
 14. Replace `.aoccache.json` with SQLite cache metadata. Rebuild recognized entries as stale and reparse cached calendar HTML to restore stars.
 15. Add submission counts for correct/incorrect outcomes only and retain the latest configurable per-part runtimes, defaulting to 10.
 16. Expose a high-level structured language run API that owns activation through result consumption, records timings, and serializes all active-link-changing jobs.

@@ -229,13 +229,13 @@ Do not store submitted answers, answer hashes, cooldowns, private leaderboard da
 
 Increment submission counts only for parsed correct and incorrect AoC outcomes. Rate limits, already-completed responses, authentication failures, transport failures, and unknown responses do not increment the count. Correct outcomes invalidate calendar content; correct part-one outcomes also invalidate puzzle content. This policy is implemented once in the shared storage content service.
 
-If `state.sqlite` fails its integrity check, rename it to a timestamped quarantine path, create a new database, rebuild cache metadata and calendar stars where possible, and report that submission counts and run timings may have been lost. Never silently delete the corrupt database.
+If `state.sqlite` fails its integrity check, return a typed corrupt-database error without modifying it. Never silently delete, replace, or quarantine a corrupt database.
 
 ## SQLite Versioning
 
-Use a stable SQLite `application_id`, `PRAGMA user_version`, foreign keys, and ordered embedded schema migrations. Run each schema upgrade in a transaction and reject databases newer than the binary supports.
+Use `PRAGMA user_version`, foreign keys, and ordered embedded schema migrations. Run each schema upgrade in a transaction and reject databases newer than the binary supports.
 
-The filesystem layout version is not stored only in SQLite because the database is replaceable. `.aocsuite-layout.json` is authoritative for the physical layout:
+`PRAGMA user_version` records only the SQLite schema version. `.aocsuite-layout.json` is authoritative for the physical runtime layout because the database is replaceable and a corrupt database must not change the filesystem compatibility contract:
 
 ```json
 {
@@ -244,7 +244,7 @@ The filesystem layout version is not stored only in SQLite because the database 
 }
 ```
 
-SQLite may mirror the layout version for diagnostics.
+Do not use the database schema version to select runtime-layout migrations.
 
 ## Configuration And Secrets
 
