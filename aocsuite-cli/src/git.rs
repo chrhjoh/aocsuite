@@ -48,29 +48,20 @@ pub fn run_git_command(args: &[String], workspace_dir: &Path) -> AocGitResult<St
     run_git_command_with(args, workspace_dir)
 }
 
-fn run_git_command_with(args: &[String], aocsuite_dir: &Path) -> AocGitResult<String> {
+fn run_git_command_with(args: &[String], workspace_dir: &Path) -> AocGitResult<String> {
     if is_simple_clone(args)? {
-        let parent = aocsuite_dir
-            .parent()
-            .ok_or(AocGitError::DirectoryNotFound)?;
-        std::fs::create_dir_all(parent)?;
-
-        let destination = aocsuite_dir
-            .file_name()
-            .ok_or(AocGitError::DirectoryNotFound)?
-            .to_string_lossy()
-            .into_owned();
+        std::fs::create_dir_all(workspace_dir)?;
         let mut clone_args = args.to_vec();
-        clone_args.push(destination);
-        return run_git_command_capture(&clone_args, parent);
+        clone_args.push(".".to_owned());
+        return run_git_command_capture(&clone_args, workspace_dir);
     }
 
-    std::fs::create_dir_all(aocsuite_dir)?;
-    ensure_gitignore_exists(&aocsuite_dir.join(".gitignore"))?;
+    std::fs::create_dir_all(workspace_dir)?;
+    ensure_gitignore_exists(&workspace_dir.join(".gitignore"))?;
     if is_interactive_command(args) {
-        run_git_command_interactive(args, aocsuite_dir)
+        run_git_command_interactive(args, workspace_dir)
     } else {
-        run_git_command_capture(args, aocsuite_dir)
+        run_git_command_capture(args, workspace_dir)
     }
 }
 

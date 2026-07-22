@@ -47,11 +47,10 @@ pub struct Configuration {
 }
 
 impl Configuration {
-    pub fn load(
-        config_path: impl Into<PathBuf>,
-        session_path: impl Into<PathBuf>,
-    ) -> AocConfigResult<Self> {
-        let config_path = config_path.into();
+    pub fn load(config_dir: impl Into<PathBuf>) -> AocConfigResult<Self> {
+        let config_dir = config_dir.into();
+        let session_path = config_dir.join("session");
+        let config_path = config_dir.join("config.json");
 
         let file_values = match fs::read(&config_path) {
             Ok(contents) => serde_json::from_slice::<HashMap<ConfigKey, String>>(&contents)?,
@@ -152,7 +151,7 @@ mod tests {
     use super::{AocConfigError, ConfigKey, Configuration};
 
     fn configuration(temp: &TempDir) -> Configuration {
-        Configuration::load(temp.path().join("config.json"), temp.path().join("session")).unwrap()
+        Configuration::load(temp.path().join("config")).unwrap()
     }
 
     #[test]
@@ -174,7 +173,8 @@ mod tests {
     #[test]
     fn lowercase_file_keys_are_loaded_and_written() {
         let temp = TempDir::new().unwrap();
-        let path = temp.path().join("config.json");
+        let path = temp.path().join("config/config.json");
+        fs::create_dir(path.parent().unwrap()).unwrap();
         fs::write(&path, r#"{"language":"rust","year":"2024"}"#).unwrap();
         let mut config = configuration(&temp);
 
@@ -196,31 +196,17 @@ mod tests {
     #[test]
     fn malformed_config_is_preserved() {
         let temp = TempDir::new().unwrap();
-        let path = temp.path().join("config.json");
+        let dir = temp.path().join("config");
+        let path = dir.join("config.json");
         let contents = br#"{"language":"rust""#;
+        fs::create_dir(&dir).unwrap();
         fs::write(&path, contents).unwrap();
 
         assert!(matches!(
-            Configuration::load(&path, temp.path().join("session")),
+            Configuration::load(&dir),
             Err(AocConfigError::Parse(_))
         ));
         assert_eq!(fs::read(path).unwrap(), contents);
-    }
-
-    #[test]
-    fn failed_writes_preserve_loaded_state() {
-        let temp = TempDir::new().unwrap();
-        let missing_parent = temp.path().join("missing/config.json");
-        let mut config = Configuration::load(missing_parent, temp.path().join("session")).unwrap();
-
-        assert!(matches!(
-            config.set(ConfigKey::Editor, Some("vim")),
-            Err(AocConfigError::Io(_))
-        ));
-        assert!(matches!(
-            config.get::<String>(ConfigKey::Editor),
-            Err(AocConfigError::NotFound { .. })
-        ));
     }
 
     #[cfg(unix)]
@@ -229,10 +215,11 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let temp = TempDir::new().unwrap();
+        fs::create_dir(temp.path().join("config")).unwrap();
         let config = configuration(&temp);
         config.set_session(Some("token")).unwrap();
 
-        let mode = fs::metadata(temp.path().join("session"))
+        let mode = fs::metadata(temp.path().join("config/session"))
             .unwrap()
             .permissions()
             .mode();

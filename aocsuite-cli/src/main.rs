@@ -35,7 +35,7 @@ fn main() {
         .bootstrap()
         .unwrap_or_else(|error| terminate_with_error(error.into()));
     let args = parsed.unwrap_or_else(|error| error.exit());
-    let mut config = Configuration::load(layout.config_path(), layout.session_path())
+    let mut config = Configuration::load(layout.config_dir())
         .unwrap_or_else(|error| terminate_with_error(error.into()));
     let configured_year = match args.year {
         Some(year) => Some(year),

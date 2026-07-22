@@ -91,16 +91,20 @@ impl RuntimeLayout {
         self.root.join("config")
     }
 
+    pub fn runs_dir(&self) -> PathBuf {
+        self.root.join("runs")
+    }
+
     fn layout_manifest_path(&self) -> PathBuf {
         self.root.join(".aocsuite-layout.json")
     }
 
-    fn database_path(&self) -> PathBuf {
+    pub fn database_path(&self) -> PathBuf {
         self.root.join("state.sqlite")
     }
 
     //TOOD: make non public
-    pub fn aoc_cache_dir(&self) -> PathBuf {
+    pub fn cache_dir(&self) -> PathBuf {
         self.root.join("cache")
     }
 
@@ -159,23 +163,24 @@ impl RuntimeLayout {
     }
 
     fn puzzle_cache_dir(&self) -> PathBuf {
-        self.aoc_cache_dir().join("puzzles")
+        self.cache_dir().join("puzzles")
     }
 
     fn input_cache_dir(&self) -> PathBuf {
-        self.aoc_cache_dir().join("inputs")
+        self.cache_dir().join("inputs")
     }
 
     fn calendar_cache_dir(&self) -> PathBuf {
-        self.aoc_cache_dir().join("calendars")
+        self.cache_dir().join("calendars")
     }
 
     fn bootstrap_directories(&self) -> Result<(), LayoutError> {
         let mut created = Vec::new();
         for directory in [
-            self.root.join("cache"),
-            self.aoc_cache_dir(),
+            self.cache_dir(),
             self.workspace_dir(),
+            self.config_dir(),
+            self.runs_dir(),
         ] {
             if !directory.exists() {
                 if let Err(err) = fs::create_dir(&directory) {
@@ -210,7 +215,7 @@ impl LayoutManifest {
         let bytes = fs::read(path)?;
         let current_manifest: LayoutManifest = serde_json::from_slice(&bytes)?;
 
-        if current_manifest.layout_version == self.layout_version {
+        if current_manifest.layout_version != self.layout_version {
             return Err(LayoutError::InvalidManifest(
                 "layout_version must match".to_owned(),
             ));

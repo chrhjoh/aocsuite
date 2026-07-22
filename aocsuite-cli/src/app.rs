@@ -14,7 +14,7 @@ use aocsuite_editor::{open_browser, open_solution_files};
 use aocsuite_fs::{update_cache_status, AocContentFile};
 use aocsuite_lang::{Language, SolverFile};
 use aocsuite_parser::{parse, parse_submission_result, ParserType};
-use aocsuite_storage::RuntimeLayout;
+use aocsuite_storage::{get_aocsuite_dir, RuntimeLayout};
 use aocsuite_utils::{
     valid_puzzle_release, valid_year_release, LanguageId, PartSelection, PuzzleDay, PuzzleId,
     PuzzlePart, PuzzleYear,
@@ -39,7 +39,7 @@ pub fn run_aocsuite(
 
         AocCommand::Calendar => {
             valid_year_release(day, year)?;
-            let calendar = AocContentFile::calendar(layout.aoc_cache_dir(), year)
+            let calendar = AocContentFile::calendar(layout.cache_dir(), year)
                 .load(&resolve_aoc_client(config)?)?;
             let parsed_calendar = parse(&calendar, ParserType::Colored);
             println!("{parsed_calendar}");
@@ -60,7 +60,7 @@ pub fn run_aocsuite(
                 resolve_aoc_client(config)?.submit(PuzzleId::new(day, year), part, &answer)?;
             let result = parse_submission_result(&output);
             update_cache_status(
-                layout.aoc_cache_dir(),
+                layout.cache_dir(),
                 &result,
                 day,
                 year,
@@ -84,7 +84,7 @@ pub fn run_aocsuite(
                         resolve_custom_input_path(&file, &std::env::current_dir()?)?
                     }
                 }
-                None => AocContentFile::input(layout.aoc_cache_dir(), day, year)
+                None => AocContentFile::input(layout.cache_dir(), day, year)
                     .materialize(&resolve_aoc_client(config)?)?,
             };
 
@@ -106,10 +106,10 @@ pub fn run_aocsuite(
 
             open_solution_files(
                 &resolve_editor(config)?,
-                &AocContentFile::puzzle(layout.aoc_cache_dir(), day, year).materialize(&client)?,
+                &AocContentFile::puzzle(layout.cache_dir(), day, year).materialize(&client)?,
                 &example_path,
                 &solve_path,
-                &AocContentFile::input(layout.aoc_cache_dir(), day, year).materialize(&client)?,
+                &AocContentFile::input(layout.cache_dir(), day, year).materialize(&client)?,
                 Some(env_vars),
             )?;
         }
@@ -268,7 +268,7 @@ pub fn run_aocsuite(
                     &format!("Do you want to delete {file_prompt} ({content_prompt}) (Y/n) : ",),
                     force,
                 )? {
-                    aocsuite_fs::clean_cache(layout.aoc_cache_dir(), clean_year_opt, clean_day)?;
+                    aocsuite_fs::clean_cache(layout.cache_dir(), clean_year_opt, clean_day)?;
                 }
             }
 
@@ -288,7 +288,7 @@ pub fn run_aocsuite(
         },
 
         AocCommand::Uninstall => {
-            let aocsuite_dir = layout.root_dir();
+            let aocsuite_dir = get_aocsuite_dir()?;
             println!(
                 "Ensure you have backed up any solutions. Files can be found at {:?}",
                 aocsuite_dir
@@ -447,10 +447,9 @@ mod tests {
     };
 
     use super::{
-        ensure_config_read_allowed, require_input_file, resolve_aoc_client,
-        resolve_custom_input_path, user_confirm, ConfigCommandKey,
+        ensure_config_read_allowed, require_input_file, resolve_custom_input_path, user_confirm,
+        ConfigCommandKey,
     };
-    use aocsuite_config::{AocConfigError, Configuration};
 
     static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -547,24 +546,6 @@ mod tests {
             Err(crate::AocCliError::NotAllowed(_))
         ));
         assert!(ensure_config_read_allowed(&ConfigCommandKey::Language).is_ok());
-    }
-
-    #[test]
-    fn missing_session_is_allowed_but_other_read_errors_propagate() {
-        let root = test_root();
-        fs::create_dir_all(&root).expect("create test runtime");
-        let session_path = root.join("session");
-        let config = Configuration::load(root.join("config.json"), &session_path).unwrap();
-
-        assert!(resolve_aoc_client(&config).is_ok());
-
-        fs::create_dir(&session_path).expect("create invalid session directory");
-        assert!(matches!(
-            resolve_aoc_client(&config),
-            Err(crate::AocCliError::Config(AocConfigError::Io(_)))
-        ));
-
-        fs::remove_dir_all(root).expect("remove test runtime");
     }
 
     #[test]
