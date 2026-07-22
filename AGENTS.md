@@ -22,14 +22,14 @@
 
 ## Storage And Workspace Decisions
 
-- The target root contains `.aocsuite-layout.json`, `config/config.json`, an owner-only `config/session` file, `state.sqlite`, `cache`, `runs`, and a bootstrapped `workspace` Git root. See `docs/STORAGE.md` for the authoritative layout.
+- The target root contains `.aocsuite-layout.json`, `config/config.json`, an owner-only `config/session` file, `cache/state.sqlite`, and a bootstrapped `workspace` Git root. Transient language result files live under the ignored `workspace/.aocsuite-runs/` directory. See `docs/STORAGE.md` for the authoritative layout.
 - Bootstrap storage on every application invocation before reading config or constructing services. Bootstrap creates `workspace/`; Git clone runs into that directory.
 - There are no active users requiring import of the current unversioned layout. Reject nonempty unversioned roots without mutation and provide manual-removal guidance. Future versioned migrations use retained backups and resumable phases.
 - `workspace/rust` and `workspace/python` are complete portable projects. Track harnesses, `.aocsuite-runtime.json`, `Cargo.toml`, `Cargo.lock`, `requirements.txt`, flat `solutions/year{year}_day{day}` files, templates, libraries, and flat shared `workspace/examples/year{year}_day{day}.txt` files.
 - Generated harnesses are strictly AoC Suite-owned. Version-only migrations atomically overwrite them and then update the tracked manifest; no hashes or manual-edit detection are required.
 - Ignore only disposable state such as Rust `target/`, Python `venv`/bytecode caches, and active solution links. The workspace `.gitignore` is AoC Suite-owned and regenerated completely.
 - Persist Python package changes by atomically replacing tracked `requirements.txt` with `pip freeze` after successful pip mutation. Python environment cleanup preserves requirements. Rust cleanup preserves tracked Cargo files.
-- Cache flat date-keyed files by content type under `cache/puzzles`, `cache/inputs`, and `cache/calendars`. Raw puzzle HTML is canonical and Markdown is a disposable editor/CLI artifact. Normal cache cleaning never deletes examples; example/comprehensive cleanup is explicit and confirmed by the frontend.
+- `ContentStore` owns `cache/state.sqlite` plus flat date-keyed files under `cache/puzzles`, `cache/inputs`, and `cache/calendars`. Raw puzzle HTML is canonical and Markdown is a disposable editor/CLI artifact. Normal cache cleaning removes only content directories and never deletes the database or examples; example/comprehensive cleanup is explicit and confirmed by the frontend.
 - SQLite stores cache metadata, calendar-derived stars, correct/incorrect submission counts, and the latest configurable per-part runtimes (default 10). Store no answers, answer hashes, cooldowns, private leaderboard data, or detailed submission events.
 
 ## API And Process Rules
@@ -47,10 +47,10 @@
 - `get_aocsuite_dir` resolves the complete root from `AOCSUITE_DATA_DIR`, then `$XDG_DATA_HOME/aocsuite`, then `$HOME/.local/share/aocsuite`; callers pass that path to `RuntimeLayout::new`. Tests construct layouts from explicit temporary roots without changing process-global environment state.
 - CLI flags override applicable values from `<runtime-root>/config/config.json`; remaining values use caller defaults. `AOC_*` configuration variables, dotenv files, and `.envrc` loading are not supported. Reads are non-mutating and prompting is CLI-owned.
 - Never run or log `config get session`, and avoid live submission/download verification. Persisted sessions live at `<runtime-root>/config/session` with mode `0600` on Unix.
-- `aocsuite-fs` temporarily receives an explicit cache directory, but `AocContentFile::materialize()` still combines download, parse, metadata, and permission mutation. Remove this transitional crate while absorbing content behavior into storage.
+- `aocsuite-storage::ContentStore` owns AoC body loading, raw puzzle HTML, derived Markdown, cache metadata, submission invalidation, input permissions, and typed cache cleanup. Keep content policy there as the remaining storage services are added.
 - Client, language, editor, filesystem, and Git inputs no longer discover the runtime root or configuration globally. Git still lives in the CLI and must move into storage workspace services.
-- Current parser calendar output embeds ANSI, language result fields are not publicly inspectable, and language helpers may print. Do not scrape these outputs; fix the owning APIs.
-- Current Git scope is the whole runtime root. Current target design scopes Git to lazy `workspace/` and regenerates its `.gitignore`.
+- Parser calendar output is semantic, but language result fields are not publicly inspectable and language helpers may print. Do not scrape these outputs; fix the owning APIs.
+- Current Git scope is the whole runtime root. Target Git operations scope to the bootstrapped `workspace/` and regenerate its `.gitignore`.
 - Current language runs use unique transient result files and activate the requested day/year, but active links remain shared mutable state. Keep activation/build/run serialized.
 - Destructive CLI prompts intentionally accept an empty line as yes and reject EOF. Preserve this frontend behavior.
 

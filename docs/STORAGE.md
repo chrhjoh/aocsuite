@@ -47,12 +47,15 @@ aocsuite/
   config/
     config.json              # Typed non-secret configuration values
     session                  # Owner-only AoC session token
-  state.sqlite               # Metadata and bounded application state
-  cache/                     # Disposable downloaded AoC content
-  runs/                      # Unique transient solver result files
+  cache/
+    state.sqlite             # Metadata and bounded application state
+    puzzles/                 # Disposable downloaded AoC content
+    inputs/
+    calendars/
   workspace/                 # The only Git-managed area
     .git/
     .gitignore
+    .aocsuite-runs/          # Unique transient solver result files
     examples/                # Shared user-authored puzzle examples
     rust/                    # Complete portable Rust project
     python/                  # Complete portable Python project
@@ -68,12 +71,9 @@ Path getters are pure. They never create directories, fetch content, migrate dat
 
 The layout provides typed paths for at least:
 
-- Layout manifest, configuration, session, database, cache, runs, and workspace paths.
-- Shared examples by year/day.
-- Rust and Python project roots.
-- Cache bodies by content type and puzzle date.
+- Layout manifest, configuration, session, cache root, and workspace paths.
 
-Database paths are stored as validated relative paths and resolved through the layout. Database contents must never direct reads or deletion outside their owning root.
+`ContentStore` owns its cache keys, cache paths, and `cache/state.sqlite`. `ExampleStore` owns paths and creation under `workspace/examples`. Database contents must never direct reads or deletion outside the cache root.
 
 Every application invocation bootstraps and validates storage before reading configuration or constructing services, including creation of `workspace/`. Git clone runs into that bootstrapped directory. If CLI help/version must also bootstrap literally, use a non-exiting Clap parse flow rather than relying on `Parser::parse` to terminate first.
 
@@ -117,6 +117,7 @@ rust/target/
 rust/src/solution.rs
 python/venv/
 python/solution.py
+/.aocsuite-runs/
 **/__pycache__/
 *.pyc
 ```
@@ -173,7 +174,7 @@ One example file is shared between Rust and Python for each puzzle. Examples use
 
 Cleanup scopes are explicit and idempotent:
 
-- Normal cache cleaning removes only downloaded files under `cache` and their metadata.
+- Normal cache cleaning removes only `cache/puzzles`, `cache/inputs`, and `cache/calendars`; it preserves `cache/state.sqlite`.
 - Example cleaning removes examples only when explicitly requested.
 - A comprehensive confirmed clean may include both cache and examples.
 - Language cache cleaning removes Rust build output or Python bytecode caches.
@@ -182,12 +183,13 @@ Cleanup scopes are explicit and idempotent:
 
 ## Cache Content And Metadata
 
-`state.sqlite` indexes cache entries by content type, year, day, validated relative path, size, fetch time, HTTP validation data, and validity/error state. Cache files are canonical; their database rows are rebuildable indexes.
+`cache/state.sqlite` indexes cache entries by content type, year, day, validated relative path, size, fetch time, HTTP validation data, and validity/error state. Cache files are canonical; their database rows are rebuildable indexes.
 
 Puzzle HTML is the canonical downloaded body. Cache paths are flat within content-specific directories:
 
 ```text
 cache/
+  state.sqlite
   puzzles/
     year2024_day1.html
     year2024_day1.md
@@ -229,7 +231,7 @@ Do not store submitted answers, answer hashes, cooldowns, private leaderboard da
 
 Increment submission counts only for parsed correct and incorrect AoC outcomes. Rate limits, already-completed responses, authentication failures, transport failures, and unknown responses do not increment the count. Correct outcomes invalidate calendar content; correct part-one outcomes also invalidate puzzle content. This policy is implemented once in the shared storage content service.
 
-If `state.sqlite` fails its integrity check, return a typed corrupt-database error without modifying it. Never silently delete, replace, or quarantine a corrupt database.
+If `cache/state.sqlite` fails its integrity check, return a typed corrupt-database error without modifying it. Never silently delete, replace, or quarantine a corrupt database.
 
 ## SQLite Versioning
 
