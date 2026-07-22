@@ -72,7 +72,7 @@ The domain/process foundation is complete. Storage, layout, and configuration wo
 13. Add SQLite bootstrap, integrity checks, typed corrupt-database errors, transactional schema upgrades, and newer-schema rejection.
 14. Complete: replace `.aoccache.json` with SQLite cache metadata. Do not reconstruct metadata for unindexed cache files; a later TUI design may add typed cached calendar state for fast loading.
 15. Complete: record correct/incorrect submission counts only and retain the latest configurable per-part runtimes, defaulting to 10.
-16. Partially complete: `LanguageRunRequest`/`LanguageRunOutput` own migration, activation, compilation, and result consumption. Move timing persistence into this operation and serialize all active-link-changing jobs.
+16. Partially complete: `Language::execute` owns migration, activation, compilation, and result consumption; frontends persist returned timings through storage. Serialize the full language-and-timing job when introducing the TUI job runner.
 17. Add typed idempotent cleanup and uninstall plans/reports. Normal cache clean preserves examples; explicit example or comprehensive clean may remove them.
 18. Defer fixture-driven storage coverage until explicitly requested.
 
@@ -96,7 +96,7 @@ Flat workspace paths, runtime manifests, active-link safety, and unique result f
 2. Continue the split between pure path/list operations and explicit workspace, environment, compile, and run setup. Query and clean operations do not create a virtual environment or compile projects.
 3. Complete: generate Python `main.py` in fresh workspaces and correct generated Python placeholder behavior.
 4. Complete: use a unique per-run temporary JSON path that is atomically written and cleared after validated consumption. Add serialized TUI job scheduling with the TUI.
-5. Partially complete: command diagnostics, typed part selection, and public structured run requests/results exist. Remove remaining library-owned result presentation.
+5. Partially complete: command diagnostics, typed part selection, and public structured run results exist. Remove remaining library-owned result presentation.
 6. Complete: generated harnesses and runtime manifests are versioned; tracked Rust Cargo files and Python `requirements.txt` are preserved with dependency persistence.
 7. Partially complete: active-link replacement, library validation, and process failure propagation are covered. Preserve project files during cleanup and serialize all active-link-changing jobs.
 8. Partially complete: existing tests cover path selection, active links, result cleanup, migrations, and templates. Defer further fake-executor coverage until explicitly requested.

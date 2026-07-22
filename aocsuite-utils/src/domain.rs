@@ -14,6 +14,8 @@ pub enum DomainError {
     PartSelection(String),
     #[error("unsupported language '{0}'")]
     Language(String),
+    #[error("run history limit must be greater than zero, got '{0}'")]
+    RunHistoryLimit(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -205,6 +207,39 @@ impl FromStr for PartSelection {
 pub enum LanguageId {
     Rust,
     Python,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RunHistoryLimit(usize);
+
+impl RunHistoryLimit {
+    pub fn new(value: usize) -> Result<Self, DomainError> {
+        if value == 0 {
+            return Err(DomainError::RunHistoryLimit(value.to_string()));
+        }
+        Ok(Self(value))
+    }
+
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
+impl fmt::Display for RunHistoryLimit {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl FromStr for RunHistoryLimit {
+    type Err = DomainError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        value
+            .parse::<usize>()
+            .map_err(|_| DomainError::RunHistoryLimit(value.to_owned()))
+            .and_then(Self::new)
+    }
 }
 
 impl fmt::Display for LanguageId {

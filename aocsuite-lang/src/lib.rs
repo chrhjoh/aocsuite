@@ -14,12 +14,6 @@ pub use utils::{
     AocLanguageError, AocLanguageResult, CompileOutput, PuzzleResult, RunOutput, SolverFile,
 };
 
-pub struct LanguageRunRequest<'input> {
-    pub puzzle: PuzzleId,
-    pub part: PartSelection,
-    pub input: &'input Path,
-}
-
 pub struct LanguageRunOutput {
     pub compile: CompileOutput,
     pub run: RunOutput,
@@ -53,11 +47,16 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
         }
     }
 
-    pub fn execute(&self, request: LanguageRunRequest<'_>) -> AocLanguageResult<LanguageRunOutput> {
-        self.setup_solution(request.puzzle)?;
+    pub fn execute(
+        &self,
+        puzzle: PuzzleId,
+        part: PartSelection,
+        input: &Path,
+    ) -> AocLanguageResult<LanguageRunOutput> {
+        self.setup_solution(puzzle)?;
         Ok(LanguageRunOutput {
             compile: self.compile()?,
-            run: self.run_active(request.part, request.input)?,
+            run: self.run_active(part, input)?,
         })
     }
 

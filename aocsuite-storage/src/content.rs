@@ -8,7 +8,7 @@ use aocsuite_client::{AocClient, AocClientError, AocPage};
 use aocsuite_parser::{parse_puzzle_markdown, AocSubmissionResult, ParserError};
 use aocsuite_utils::{
     atomic_write, set_owner_only_permissions, LanguageId, PuzzleDay, PuzzleId, PuzzlePart,
-    PuzzleYear,
+    PuzzleYear, RunHistoryLimit,
 };
 use thiserror::Error;
 
@@ -122,11 +122,8 @@ impl ContentStore {
         language: LanguageId,
         part: PuzzlePart,
         runtime_ms: u128,
-        retention_limit: usize,
+        retention_limit: RunHistoryLimit,
     ) -> ContentResult<()> {
-        if retention_limit == 0 {
-            return Err(ContentError::InvalidRunHistoryLimit);
-        }
         let duration_nanos = runtime_ms
             .checked_mul(1_000_000)
             .and_then(|duration| u64::try_from(duration).ok())
@@ -137,7 +134,7 @@ impl ContentStore {
                 language,
                 part,
                 duration_nanos,
-                retention_limit,
+                retention_limit.get(),
                 current_unix_timestamp(),
             )
             .map_err(ContentError::from_database)
@@ -280,8 +277,6 @@ pub enum ContentError {
     CorruptStateDatabase { detail: String },
     #[error("content state error: {0}")]
     State(String),
-    #[error("run history limit must be greater than zero")]
-    InvalidRunHistoryLimit,
     #[error("solver runtime is too large to store")]
     InvalidRuntime,
     #[error(transparent)]

@@ -14,6 +14,7 @@ pub mod process;
 
 pub use domain::{
     DomainError, LanguageId, PartSelection, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear,
+    RunHistoryLimit,
 };
 pub use process::{
     execute_command, CommandError, CommandExecutor, CommandRequest, ProcessMode,
