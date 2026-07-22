@@ -13,12 +13,13 @@ use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
 use aocsuite_editor::{open_browser, open_solution_files};
 use aocsuite_fs::{update_cache_status, AocContentFile};
 use aocsuite_lang::{Language, SolverFile};
-use aocsuite_parser::{parse, parse_submission_result, ParserType};
+use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
 use aocsuite_storage::{get_aocsuite_dir, RuntimeLayout};
 use aocsuite_utils::{
     valid_puzzle_release, valid_year_release, LanguageId, PartSelection, PuzzleDay, PuzzleId,
     PuzzlePart, PuzzleYear,
 };
+use colored::Colorize;
 
 pub fn run_aocsuite(
     command: AocCommand,
@@ -41,8 +42,7 @@ pub fn run_aocsuite(
             valid_year_release(day, year)?;
             let calendar = AocContentFile::calendar(layout.cache_dir(), year)
                 .load(&resolve_aoc_client(config)?)?;
-            let parsed_calendar = parse(&calendar, ParserType::Colored);
-            println!("{parsed_calendar}");
+            println!("{}", render_calendar(&parse_calendar(&calendar)?));
         }
 
         AocCommand::View => {
@@ -58,7 +58,7 @@ pub fn run_aocsuite(
             };
             let output =
                 resolve_aoc_client(config)?.submit(PuzzleId::new(day, year), part, &answer)?;
-            let result = parse_submission_result(&output);
+            let result = parse_submission(&output)?;
             update_cache_status(
                 layout.cache_dir(),
                 &result,
@@ -66,7 +66,7 @@ pub fn run_aocsuite(
                 year,
                 part == PuzzlePart::One,
             )?;
-            println!("{result}");
+            println!("{}", format_submission_result(&result));
         }
 
         AocCommand::Run {
@@ -304,6 +304,45 @@ pub fn run_aocsuite(
         }
     }
     Ok(())
+}
+
+fn render_calendar(calendar: &Calendar) -> String {
+    calendar
+        .rows
+        .iter()
+        .map(|row| {
+            row.cells
+                .iter()
+                .map(|cell| {
+                    cell.text
+                        .truecolor(cell.color.red, cell.color.green, cell.color.blue)
+                        .to_string()
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn format_submission_result(result: &AocSubmissionResult) -> String {
+    match result {
+        AocSubmissionResult::Correct => "✅ Correct! That's the right answer!".to_owned(),
+        AocSubmissionResult::AlreadyCompleted => {
+            "ℹ️  You've already completed this puzzle.".to_owned()
+        }
+        AocSubmissionResult::IncorrectTooHigh => "❌ Your answer is too high.".to_owned(),
+        AocSubmissionResult::IncorrectTooLow => "❌ Your answer is too low.".to_owned(),
+        AocSubmissionResult::Incorrect => "❌ That's not the right answer.".to_owned(),
+        AocSubmissionResult::RateLimited(seconds) => {
+            format!("⏳ Rate limited. Please wait {seconds} seconds before submitting again.")
+        }
+        AocSubmissionResult::Locked => "🔒 This part of the puzzle is not yet unlocked.".to_owned(),
+        AocSubmissionResult::EmptySubmission => "⚠️  You didn't provide an answer.".to_owned(),
+        AocSubmissionResult::InvalidFormat => {
+            "⚠️  Your answer isn't in the expected format.".to_owned()
+        }
+        AocSubmissionResult::Unknown(message) => format!("❓ Unknown response: {message}"),
+    }
 }
 
 fn ensure_config_read_allowed(key: &ConfigCommandKey) -> AocCliResult<()> {

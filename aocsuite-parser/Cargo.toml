@@ -4,7 +4,8 @@ version = "0.3.0"
 edition = "2024"
 
 [dependencies]
-colored.workspace = true
+aocsuite-utils = { version = "0.3.0", path = "../aocsuite-utils" }
 html2md.workspace = true
 regex.workspace = true
 scraper.workspace = true
+thiserror.workspace = true

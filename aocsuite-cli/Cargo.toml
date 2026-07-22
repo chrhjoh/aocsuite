@@ -13,5 +13,6 @@ aocsuite-parser = { version = "0.3.0", path = "../aocsuite-parser" }
 aocsuite-storage = { version = "0.3.0", path = "../aocsuite-storage" }
 aocsuite-utils = { version = "0.3.0", path = "../aocsuite-utils" }
 clap = { workspace = true, features = ["derive"] }
+colored.workspace = true
 rpassword.workspace = true
 thiserror.workspace = true

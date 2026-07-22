@@ -4,7 +4,7 @@ use std::{
 };
 
 use aocsuite_client::{AocClient, AocPage};
-use aocsuite_parser::{parse, AocSubmissionResult, ParserType};
+use aocsuite_parser::{parse_puzzle_markdown, AocSubmissionResult, ParserError};
 use aocsuite_utils::{atomic_write, set_owner_only_permissions, PuzzleDay, PuzzleId, PuzzleYear};
 use serde_json::{Map, Value};
 
@@ -138,13 +138,12 @@ fn fetch_aocfile(file: &AocContentFile, client: &AocClient) -> AocFileResult<()>
 }
 
 fn parse_puzzle_content(content: &str) -> AocFileResult<String> {
-    let content = parse(content, ParserType::MarkdownArticle);
-    if content.trim().is_empty() {
-        return Err(AocFileError::InvalidFile(
-            "puzzle response did not contain an article".to_string(),
-        ));
-    }
-    Ok(content)
+    parse_puzzle_markdown(content).map_err(|error| match error {
+        ParserError::MissingPuzzleArticle => {
+            AocFileError::InvalidFile("puzzle response did not contain an article".to_string())
+        }
+        error => error.into(),
+    })
 }
 
 impl std::fmt::Display for AocContentFile {

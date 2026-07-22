@@ -4,6 +4,7 @@ mod file;
 use std::path::PathBuf;
 
 use aocsuite_client::AocClientError;
+use aocsuite_parser::ParserError;
 use aocsuite_utils::{PuzzleDay, PuzzleId, PuzzleYear};
 pub use dir::AocCacheDir;
 use file::remove_cached_file;
@@ -21,6 +22,9 @@ pub enum AocFileError {
 
     #[error(transparent)]
     Client(#[from] AocClientError),
+
+    #[error(transparent)]
+    Parser(#[from] ParserError),
 
     #[error(transparent)]
     Json(#[from] serde_json::Error),

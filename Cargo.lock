@@ -116,6 +116,7 @@ dependencies = [
  "aocsuite-storage",
  "aocsuite-utils",
  "clap",
+ "colored",
  "rpassword",
  "thiserror 2.0.12",
 ]
@@ -176,10 +177,11 @@ dependencies = [
 name = "aocsuite-parser"
 version = "0.3.0"
 dependencies = [
- "colored",
+ "aocsuite-utils",
  "html2md",
  "regex",
  "scraper",
+ "thiserror 2.0.12",
 ]
 
 [[package]]

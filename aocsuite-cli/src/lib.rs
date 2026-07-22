@@ -3,6 +3,7 @@ use aocsuite_config::AocConfigError;
 use aocsuite_editor::AocEditorError;
 use aocsuite_fs::AocFileError;
 use aocsuite_lang::AocLanguageError;
+use aocsuite_parser::ParserError;
 use aocsuite_storage::{DatabaseError, LayoutError};
 use aocsuite_utils::ReleaseError;
 use git::AocGitError;
@@ -37,6 +38,9 @@ pub enum AocCliError {
 
     #[error(transparent)]
     Database(#[from] DatabaseError),
+
+    #[error(transparent)]
+    Parser(#[from] ParserError),
 
     #[error("environment error: {0}")]
     Environment(#[from] std::env::VarError),

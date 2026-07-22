@@ -1,25 +1,23 @@
 mod http_ansicalendar;
 mod http_markdown;
 mod http_submission;
-use http_ansicalendar::AnsiCalendarParser;
-use http_markdown::ArticleMarkdownParser;
-pub use http_submission::{AocSubmissionResult, parse_submission_result};
 
-trait HttpParser {
-    fn parse(&self, html: &str) -> String;
+pub use http_ansicalendar::{
+    Calendar, CalendarCell, CalendarRow, CalendarStars, Rgb, parse_calendar,
+};
+pub use http_markdown::parse_puzzle_markdown;
+pub use http_submission::{AocSubmissionResult, parse_submission};
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum ParserError {
+    #[error("puzzle response did not contain an article")]
+    MissingPuzzleArticle,
+    #[error("calendar response did not contain a calendar")]
+    MissingCalendar,
+    #[error("submission response did not contain an article")]
+    MissingSubmissionArticle,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum ParserType {
-    Colored,
-    MarkdownArticle,
-}
-
-pub fn parse(html: &str, parser_type: ParserType) -> String {
-    let parser: Box<dyn HttpParser> = match parser_type {
-        ParserType::Colored => Box::new(AnsiCalendarParser),
-        ParserType::MarkdownArticle => Box::new(ArticleMarkdownParser),
-    };
-
-    parser.parse(html)
-}
+pub type ParserResult<T> = Result<T, ParserError>;

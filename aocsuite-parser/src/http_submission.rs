@@ -1,6 +1,6 @@
 use regex::Regex;
 
-use crate::parse;
+use crate::{ParserError, ParserResult, http_markdown::parse_article_markdown};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum AocSubmissionResult {
@@ -9,45 +9,20 @@ pub enum AocSubmissionResult {
     IncorrectTooHigh,
     IncorrectTooLow,
     Incorrect,
-    RateLimited(u64), // seconds to wait
+    RateLimited(u64),
     Locked,
     EmptySubmission,
     InvalidFormat,
     Unknown(String),
 }
-impl std::fmt::Display for AocSubmissionResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AocSubmissionResult::Correct => write!(f, "✅ Correct! That's the right answer!"),
-            AocSubmissionResult::AlreadyCompleted => {
-                write!(f, "ℹ️  You've already completed this puzzle.")
-            }
-            AocSubmissionResult::IncorrectTooHigh => write!(f, "❌ Your answer is too high."),
-            AocSubmissionResult::IncorrectTooLow => write!(f, "❌ Your answer is too low."),
-            AocSubmissionResult::Incorrect => write!(f, "❌ That's not the right answer."),
-            AocSubmissionResult::RateLimited(seconds) => {
-                write!(
-                    f,
-                    "⏳ Rate limited. Please wait {} seconds before submitting again.",
-                    seconds
-                )
-            }
-            AocSubmissionResult::Locked => {
-                write!(f, "🔒 This part of the puzzle is not yet unlocked.")
-            }
-            AocSubmissionResult::EmptySubmission => write!(f, "⚠️  You didn't provide an answer."),
-            AocSubmissionResult::InvalidFormat => {
-                write!(f, "⚠️  Your answer isn't in the expected format.")
-            }
-            AocSubmissionResult::Unknown(msg) => write!(f, "❓ Unknown response: {}", msg),
-        }
+
+pub fn parse_submission(html: &str) -> ParserResult<AocSubmissionResult> {
+    let markdown = parse_article_markdown(html);
+    if markdown.trim().is_empty() {
+        return Err(ParserError::MissingSubmissionArticle);
     }
-}
 
-pub fn parse_submission_result(text: &str) -> AocSubmissionResult {
-    let markdown = parse(text, crate::ParserType::MarkdownArticle);
-
-    if markdown.contains("That's the right answer!") {
+    Ok(if markdown.contains("That's the right answer!") {
         AocSubmissionResult::Correct
     } else if markdown.contains("You've already completed this puzzle")
         || markdown.contains("You don't need to guess; you've already completed this puzzle.")
@@ -68,9 +43,10 @@ pub fn parse_submission_result(text: &str) -> AocSubmissionResult {
     } else if markdown.contains("isn't in the expected format") {
         AocSubmissionResult::InvalidFormat
     } else {
-        AocSubmissionResult::Unknown(markdown.to_string())
-    }
+        AocSubmissionResult::Unknown(markdown)
+    })
 }
+
 fn extract_wait_time(text: &str) -> Option<u64> {
     let re = Regex::new(
         r"(?i)\byou\s+have(?:\s+to\s+wait)?\s+(?:(\d+)\s*(?:minutes?|mins?|m)\b(?:\s*(?:and\s*)?(\d+)\s*(?:seconds?|secs?|s)\b)?|(\d+)\s*(?:seconds?|secs?|s)\b)",
