@@ -96,7 +96,7 @@ Flat workspace paths, runtime manifests, active-link safety, and unique result f
 2. Continue the split between pure path/list operations and explicit workspace, environment, compile, and run setup. Query and clean operations do not create a virtual environment or compile projects.
 3. Complete: generate Python `main.py` in fresh workspaces and correct generated Python placeholder behavior.
 4. Complete: use a unique per-run temporary JSON path that is atomically written and cleared after validated consumption. Add serialized TUI job scheduling with the TUI.
-5. Partially complete: command diagnostics, typed part selection, and public structured run results exist. Remove remaining library-owned result presentation.
+5. Complete: command diagnostics, typed part selection, and public structured run results exist; CLI owns result presentation.
 6. Complete: generated harnesses and runtime manifests are versioned; tracked Rust Cargo files and Python `requirements.txt` are preserved with dependency persistence.
 7. Partially complete: active-link replacement, library validation, and process failure propagation are covered. Preserve project files during cleanup and serialize all active-link-changing jobs.
 8. Partially complete: existing tests cover path selection, active links, result cleanup, migrations, and templates. Defer further fake-executor coverage until explicitly requested.

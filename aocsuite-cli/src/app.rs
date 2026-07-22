@@ -1,4 +1,5 @@
 use std::{
+    fmt::Write as _,
     io::{BufRead, Write},
     path::{Path, PathBuf},
 };
@@ -9,7 +10,7 @@ use crate::{
 };
 use aocsuite_client::{AocClient, AocClientOptions, AocPage};
 use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
-use aocsuite_lang::{Language, SolverFile};
+use aocsuite_lang::{Language, LanguageRunOutput, PartResult, SolverFile};
 use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
 use aocsuite_storage::{get_aocsuite_dir, CacheCleanScope, ContentStore, GitMode, Workspace};
@@ -98,7 +99,7 @@ pub fn run_aocsuite(
                     )?;
                 }
             }
-            print!("{run}");
+            print!("{}", render_language_run(&run));
         }
 
         AocCommand::Open { language } => {
@@ -328,6 +329,42 @@ fn render_calendar(calendar: &Calendar) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn render_language_run(output: &LanguageRunOutput) -> String {
+    let mut rendered = String::new();
+    render_stream(&mut rendered, "Compiler output", &output.compile.stdout);
+    render_stream(&mut rendered, "Compiler errors", &output.compile.stderr);
+    render_stream(&mut rendered, "Solver output", &output.run.stdout);
+    render_stream(&mut rendered, "Solver errors", &output.run.stderr);
+
+    let part1 = output.run.result.part(PuzzlePart::One);
+    let part2 = output.run.result.part(PuzzlePart::Two);
+    if let Some(part) = part1 {
+        render_part(&mut rendered, "Part 1", part);
+    }
+    if part1.is_some() && part2.is_some() {
+        rendered.push('\n');
+    }
+    if let Some(part) = part2 {
+        render_part(&mut rendered, "Part 2", part);
+    }
+    rendered
+}
+
+fn render_stream(rendered: &mut String, label: &str, stream: &str) {
+    if !stream.is_empty() {
+        writeln!(rendered, "{label}:").expect("write to string");
+        writeln!(rendered, "{}", stream.trim_end()).expect("write to string");
+    }
+}
+
+fn render_part(rendered: &mut String, label: &str, part: &PartResult) {
+    writeln!(rendered, "\n┌──────────────┐").expect("write to string");
+    writeln!(rendered, "│   {label:<6}     │").expect("write to string");
+    writeln!(rendered, "└──────────────┘").expect("write to string");
+    writeln!(rendered, "Answer: {}", part.answer()).expect("write to string");
+    writeln!(rendered, "Runtime: {} ms", part.runtime_ms()).expect("write to string");
 }
 
 fn is_interactive_git_command(args: &[String]) -> bool {

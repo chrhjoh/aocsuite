@@ -11,18 +11,14 @@ use aocsuite_storage::Workspace;
 use aocsuite_utils::{CommandExecutor, LanguageId, PartSelection, PuzzleId};
 use utils::{read_result, with_result_file, LanguageRunner};
 pub use utils::{
-    AocLanguageError, AocLanguageResult, CompileOutput, PuzzleResult, RunOutput, SolverFile,
+    AocLanguageError, AocLanguageResult, CompileOutput, PartResult, PuzzleResult, RunOutput,
+    SolverFile,
 };
 
+#[derive(Debug)]
 pub struct LanguageRunOutput {
     pub compile: CompileOutput,
     pub run: RunOutput,
-}
-
-impl std::fmt::Display for LanguageRunOutput {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{}{}", self.compile, self.run)
-    }
 }
 
 pub struct Language<'workspace, 'executor> {
@@ -74,22 +70,6 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
             .compile()?
             .map(CompileOutput::from_output)
             .unwrap_or_default())
-    }
-
-    #[cfg(test)]
-    fn run(
-        &self,
-        day: PuzzleDay,
-        year: PuzzleYear,
-        part: PartSelection,
-        input: &Path,
-    ) -> AocLanguageResult<RunOutput> {
-        self.setup_solution(PuzzleId::new(day, year))?;
-        let output_file = self.workspace.allocate_run_result_file()?;
-        with_result_file(&output_file, |output_file| {
-            let output = self.runner.run(part, input, output_file)?;
-            Ok(RunOutput::from_output(read_result(output_file)?, output))
-        })
     }
 
     pub fn ensure_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
@@ -279,7 +259,7 @@ mod tests {
     use aocsuite_storage::Workspace;
     use aocsuite_utils::{
         CommandExecutor, CommandRequest, LanguageId, PartSelection, PuzzleDay, PuzzleId,
-        PuzzleYear, SystemCommandExecutor,
+        PuzzlePart, PuzzleYear, SystemCommandExecutor,
     };
 
     static SYSTEM_EXECUTOR: SystemCommandExecutor = SystemCommandExecutor;
@@ -470,19 +450,33 @@ mod tests {
         };
         let language = Language::new(LanguageId::Python, &workspace, &executor);
 
-        language.compile().expect("compile Python solution");
         let result = language
-            .run(
-                PuzzleDay::new(1).unwrap(),
-                PuzzleYear::new(2024).unwrap(),
+            .execute(
+                PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap()),
                 PartSelection::Both,
                 &input,
             )
             .expect("run Python solution");
 
-        assert!(result.result.to_string().contains("Answer: example"));
-        assert!(result.result.to_string().contains("Answer: 8"));
-        assert_eq!(result.stdout, "command output");
+        assert_eq!(
+            result
+                .run
+                .result
+                .part(PuzzlePart::One)
+                .expect("part one result")
+                .answer(),
+            "example"
+        );
+        assert_eq!(
+            result
+                .run
+                .result
+                .part(PuzzlePart::Two)
+                .expect("part two result")
+                .answer(),
+            "8"
+        );
+        assert_eq!(result.run.stdout, "command output");
         assert_eq!(
             executor.requests.lock().unwrap()[0].program,
             std::ffi::OsString::from("python3")

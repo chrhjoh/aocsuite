@@ -1,5 +1,4 @@
 use std::{
-    fmt,
     fs::{self, File},
     io::BufReader,
     path::{Path, PathBuf},
@@ -22,26 +21,23 @@ pub enum SolverFile {
     SolutionTemplate,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PartResult {
     answer: String,
     runtime_ms: u128,
 }
 
-impl fmt::Display for PartResult {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Answer: {}", self.answer)?;
-        writeln!(f, "Runtime: {} ms", self.runtime_ms)
-    }
-}
-
 impl PartResult {
+    pub fn answer(&self) -> &str {
+        &self.answer
+    }
+
     pub fn runtime_ms(&self) -> u128 {
         self.runtime_ms
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PuzzleResult {
     part1: Option<PartResult>,
     part2: Option<PartResult>,
@@ -56,12 +52,13 @@ impl PuzzleResult {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct CompileOutput {
     pub stdout: String,
     pub stderr: String,
 }
 
+#[derive(Debug)]
 pub struct RunOutput {
     pub result: PuzzleResult,
     pub stdout: String,
@@ -87,53 +84,6 @@ impl RunOutput {
     }
 }
 
-impl fmt::Display for CompileOutput {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write_stream(formatter, "Compiler output", &self.stdout)?;
-        write_stream(formatter, "Compiler errors", &self.stderr)
-    }
-}
-
-impl fmt::Display for RunOutput {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write_stream(formatter, "Solver output", &self.stdout)?;
-        write_stream(formatter, "Solver errors", &self.stderr)?;
-        self.result.fmt(formatter)
-    }
-}
-
-fn write_stream(formatter: &mut fmt::Formatter<'_>, label: &str, stream: &str) -> fmt::Result {
-    if stream.is_empty() {
-        return Ok(());
-    }
-
-    writeln!(formatter, "{label}:")?;
-    writeln!(formatter, "{}", stream.trim_end())
-}
-
-impl fmt::Display for PuzzleResult {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(ref p1) = self.part1 {
-            writeln!(f, "\n┌──────────────┐")?;
-            writeln!(f, "│   Part 1     │")?;
-            writeln!(f, "└──────────────┘")?;
-            writeln!(f, "{}", p1)?;
-        }
-
-        if self.part1.is_some() && self.part2.is_some() {
-            writeln!(f)?;
-        }
-
-        if let Some(ref p2) = self.part2 {
-            writeln!(f, "\n┌──────────────┐")?;
-            writeln!(f, "│   Part 2     │")?;
-            writeln!(f, "└──────────────┘")?;
-            writeln!(f, "{}", p2)?;
-        }
-
-        Ok(())
-    }
-}
 static LINK_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub fn with_result_file<T>(
