@@ -5,11 +5,9 @@ use aocsuite_lang::AocLanguageError;
 use aocsuite_parser::ParserError;
 use aocsuite_storage::{ContentError, ExampleError, LayoutError};
 use aocsuite_utils::ReleaseError;
-use git::AocGitError;
 use thiserror::Error;
 mod app;
 mod commands;
-mod git;
 
 pub use app::run_aocsuite;
 
@@ -54,7 +52,7 @@ pub enum AocCliError {
     Editor(#[from] AocEditorError),
 
     #[error(transparent)]
-    Git(#[from] AocGitError),
+    Workspace(#[from] aocsuite_storage::WorkspaceError),
 }
 
 type AocCliResult<T> = Result<T, AocCliError>;

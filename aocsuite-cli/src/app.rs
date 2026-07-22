@@ -5,7 +5,6 @@ use std::{
 
 use crate::{
     commands::{CleanAction, ConfigCommandKey, EnvAction, LibAction},
-    git::{get_gitignore_path, run_git_command},
     AocCliResult, AocCommand, ConfigCommand,
 };
 use aocsuite_client::{AocClient, AocClientOptions, AocPage};
@@ -14,11 +13,12 @@ use aocsuite_editor::{open_browser, open_solution_files};
 use aocsuite_lang::{Language, SolverFile};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
 use aocsuite_storage::{
-    get_aocsuite_dir, CacheCleanScope, ContentStore, ExampleStore, RuntimeLayout,
+    get_aocsuite_dir, CacheCleanScope, ContentStore, ExampleStore, GitMode, RuntimeLayout,
+    Workspace,
 };
 use aocsuite_utils::{
     valid_puzzle_release, valid_year_release, LanguageId, PartSelection, PuzzleDay, PuzzleId,
-    PuzzleYear,
+    PuzzleYear, SystemProcessExecutor,
 };
 use colored::Colorize;
 
@@ -127,13 +127,22 @@ pub fn run_aocsuite(
             aocsuite_editor::open(&resolve_editor(config)?, &path, Some(env_vars))?;
         }
         AocCommand::Git { args } => {
-            let output = run_git_command(&args, &layout.workspace_dir())?;
+            let mode = if is_interactive_git_command(&args) {
+                GitMode::Foreground
+            } else {
+                GitMode::Captured
+            };
+            let output = Workspace::new(layout.workspace_dir()).run_git(
+                &args,
+                mode,
+                &SystemProcessExecutor,
+            )?;
             if !output.is_empty() {
                 println!("{}", output);
             }
         }
         AocCommand::GitIgnore => {
-            let path = get_gitignore_path(&layout.workspace_dir())?;
+            let path = Workspace::new(layout.workspace_dir()).gitignore_path()?;
             aocsuite_editor::open(&resolve_editor(config)?, &path, None)?;
         }
         AocCommand::Env { action, language } => {
@@ -314,6 +323,20 @@ fn render_calendar(calendar: &Calendar) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn is_interactive_git_command(args: &[String]) -> bool {
+    match args.first().map(String::as_str) {
+        Some("commit") => !args
+            .iter()
+            .any(|arg| arg == "-m" || arg.starts_with("--message")),
+        Some("rebase") => args.iter().any(|arg| arg == "-i" || arg == "--interactive"),
+        Some("add" | "checkout" | "reset") => {
+            args.iter().any(|arg| arg == "-p" || arg == "--patch")
+        }
+        Some("difftool" | "mergetool") => true,
+        _ => false,
+    }
 }
 
 fn format_submission_result(result: &AocSubmissionResult) -> String {
