@@ -61,7 +61,7 @@ These are prerequisites or design risks, not separate confirmed defects:
 - Continue replacing side-effecting path access with explicit ensure/load/refresh/mutate operations. Filesystem materialization and Git setup still hide mutation.
 - `aocsuite-fs` temporarily accepts an explicit cache root so no crate depends on the removed utils global. Remove this transitional API by replacing the crate with storage-owned typed cache keys, raw puzzle HTML plus derived Markdown, semantic fetch/cache policy, SQLite metadata, shared examples, and typed cleanup.
 - Return semantic calendar/submission data and public structured solver reports. Current calendar output embeds ANSI and language output still includes library printing/opaque fields.
-- Route browser/editor/Git/Cargo/Python/pip/solver launches through `aocsuite-utils::ProcessExecutor`; rename editor support to a configuration-independent `aocsuite-launcher`.
+- Route browser/editor/Git/Cargo/Python/pip/solver launches through `aocsuite-utils::CommandExecutor`; rename editor support to a configuration-independent `aocsuite-launcher`.
 - Move Git and uninstall safety into storage workspace services. Confirmation remains frontend state; destructive APIs receive typed already-confirmed scopes and return idempotent reports.
 - Keep network, storage mutation, language setup/runs, subprocess waits, and launcher terminal handoff outside Ratatui update/render. Serialize language jobs and use job IDs so stale asynchronous completions cannot update the wrong selection.
 

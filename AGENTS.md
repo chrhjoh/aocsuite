@@ -36,8 +36,8 @@
 
 - Path/status getters are pure. Use explicit verbs such as `ensure`, `load`, `refresh`, `activate`, `regenerate`, and `clean` for mutation. Remove side-effecting patterns such as `AocContentFile::to_path()`.
 - Prefer structurally valid request enums over optional day/boolean combinations. Destructive services receive typed already-confirmed scopes and return idempotent reports; they never prompt or accept `force`.
-- Libraries do not print subprocess output. Return status, stdout, stderr, semantic data, and contextual errors for CLI/TUI rendering.
-- Route Git, Cargo, Rust/Python solvers, pip, editors, and browsers through `aocsuite-utils::ProcessExecutor`. Captured execution is the default; foreground terminal inheritance is explicit.
+- Libraries do not print subprocess output. Return semantic data and contextual errors; expose command output only where it is frontend behavior, such as Git pass-through.
+- Route Git, Cargo, Rust/Python solvers, pip, editors, and browsers through `aocsuite-utils::CommandExecutor`. Captured execution is the default; foreground terminal inheritance is explicit.
 - Serialize every language job spanning active-link mutation, harness migration, environment setup, build, execution, result consumption, and timing persistence.
 - Move Git from the private CLI module into `aocsuite-storage::workspace`. Captured Git disables pagers/prompts; pass-through arguments are not a security sandbox.
 - Move browser launching out of `aocsuite-client` and into launcher. The TUI owns terminal suspension/restoration around foreground launches.
@@ -49,7 +49,7 @@
 - Never run or log `config get session`, and avoid live submission/download verification. Persisted sessions live at `<runtime-root>/config/session` with mode `0600` on Unix.
 - `aocsuite-storage::ContentStore` owns AoC body loading, raw puzzle HTML, derived Markdown, cache metadata, submission invalidation, input permissions, and typed cache cleanup. Keep content policy there as the remaining storage services are added.
 - Client, language, editor, filesystem, and Git inputs no longer discover the runtime root or configuration globally. `aocsuite-storage::Workspace` owns workspace Git commands and the regenerated `.gitignore`.
-- Parser calendar output is semantic, but language result fields are not publicly inspectable and language helpers may print. Do not scrape these outputs; fix the owning APIs.
+- Parser calendar output is semantic. Language compile/run APIs return sanitized structured outputs plus `PuzzleResult`; frontends render them. Do not scrape outputs.
 - Git operations scope to the bootstrapped `workspace/` and regenerate its `.gitignore`.
 - Current language runs use unique transient result files and activate the requested day/year, but active links remain shared mutable state. Keep activation/build/run serialized.
 - Destructive CLI prompts intentionally accept an empty line as yes and reject EOF. Preserve this frontend behavior.

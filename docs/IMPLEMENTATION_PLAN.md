@@ -27,7 +27,7 @@ The application assumes one AoC Suite process per runtime root. Do not add norma
 
 ## Storage Implementation Sequence
 
-1. Add shared validated domain types and a synchronous captured/foreground `ProcessExecutor` to `aocsuite-utils`.
+1. Add shared validated domain types and a synchronous captured/foreground `CommandExecutor` to `aocsuite-utils`.
 2. Refactor `aocsuite-client` to accept an optional session and request options explicitly, then remove its config dependency so storage can depend on it without a cycle.
 3. Add `aocsuite-storage` with bundled `rusqlite` and `walkdir`; add `tempfile` for tests. Implement `RuntimeLayout`, `.aocsuite-layout.json`, fresh bootstrap, and unversioned-root rejection before SQLite/content behavior. `ContentStore` owns `cache/state.sqlite` and cache paths; the manifest owns physical layout compatibility, while SQLite `user_version` owns only database schema migrations.
 4. Refactor `aocsuite-config` around a layout-provided configuration directory, non-mutating reads, explicit writes, an owner-only session file, and frontend-owned prompts. Remove Clap, `rpassword`, `template_dir`, and environment configuration sources from the library.
