@@ -4,6 +4,8 @@ version = "0.3.0"
 edition = "2021"
 
 [dependencies]
+aocsuite-client = { version = "0.3.0", path = "../aocsuite-client" }
+aocsuite-parser = { version = "0.3.0", path = "../aocsuite-parser" }
 aocsuite-utils = { version = "0.3.0", path = "../aocsuite-utils" }
 rusqlite.workspace = true
 serde = { workspace = true, features = ["derive"] }

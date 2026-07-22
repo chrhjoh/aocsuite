@@ -1,10 +1,9 @@
 use aocsuite_client::AocClientError;
 use aocsuite_config::AocConfigError;
 use aocsuite_editor::AocEditorError;
-use aocsuite_fs::AocFileError;
 use aocsuite_lang::AocLanguageError;
 use aocsuite_parser::ParserError;
-use aocsuite_storage::{DatabaseError, LayoutError};
+use aocsuite_storage::{ContentError, ExampleError, LayoutError};
 use aocsuite_utils::ReleaseError;
 use git::AocGitError;
 use thiserror::Error;
@@ -37,7 +36,10 @@ pub enum AocCliError {
     Storage(#[from] LayoutError),
 
     #[error(transparent)]
-    Database(#[from] DatabaseError),
+    Content(#[from] ContentError),
+
+    #[error(transparent)]
+    Example(#[from] ExampleError),
 
     #[error(transparent)]
     Parser(#[from] ParserError),
@@ -50,9 +52,6 @@ pub enum AocCliError {
 
     #[error(transparent)]
     Editor(#[from] AocEditorError),
-
-    #[error(transparent)]
-    File(#[from] AocFileError),
 
     #[error(transparent)]
     Git(#[from] AocGitError),

@@ -1,18 +1,19 @@
 use std::path::{Component, Path, PathBuf};
 
+use aocsuite_utils::PuzzleYear;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use thiserror::Error;
 
-use crate::{CacheKey, RuntimeLayout};
+use crate::content::CacheKey;
 
 const SCHEMA_VERSION: u32 = 1;
 
-pub struct StateDatabase {
+pub(crate) struct StateDatabase {
     connection: Connection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CacheEntry {
+pub(crate) struct CacheEntry {
     pub key: CacheKey,
     pub relative_path: PathBuf,
     pub byte_size: u64,
@@ -23,9 +24,8 @@ pub struct CacheEntry {
 }
 
 impl StateDatabase {
-    pub fn open(layout: &RuntimeLayout) -> DatabaseResult<Self> {
-        let path = layout.database_path();
-        Self::open_database(&path)
+    pub(crate) fn open(path: &Path) -> DatabaseResult<Self> {
+        Self::open_database(path)
     }
 
     fn open_database(path: &Path) -> DatabaseResult<Self> {
@@ -36,13 +36,7 @@ impl StateDatabase {
         Ok(Self { connection })
     }
 
-    pub fn schema_version(&self) -> DatabaseResult<u32> {
-        Ok(self
-            .connection
-            .pragma_query_value(None, "user_version", |row| row.get(0))?)
-    }
-
-    pub fn cache_entry(&self, key: CacheKey) -> DatabaseResult<Option<CacheEntry>> {
+    pub(crate) fn cache_entry(&self, key: CacheKey) -> DatabaseResult<Option<CacheEntry>> {
         let (content_type, year, day) = cache_key_parts(key);
         let entry = self
             .connection
@@ -94,7 +88,7 @@ impl StateDatabase {
             .transpose()
     }
 
-    pub fn upsert_cache_entry(&self, entry: &CacheEntry) -> DatabaseResult<()> {
+    pub(crate) fn upsert_cache_entry(&self, entry: &CacheEntry) -> DatabaseResult<()> {
         let relative_path = validated_relative_path(entry.relative_path.clone())?;
         let byte_size = i64::try_from(entry.byte_size)
             .map_err(|_| DatabaseError::InvalidCacheEntry("byte size exceeds SQLite range"))?;
@@ -127,7 +121,7 @@ impl StateDatabase {
         Ok(())
     }
 
-    pub fn remove_cache_entry(&self, key: CacheKey) -> DatabaseResult<bool> {
+    pub(crate) fn remove_cache_entry(&self, key: CacheKey) -> DatabaseResult<bool> {
         let (content_type, year, day) = cache_key_parts(key);
         Ok(self.connection.execute(
             "DELETE FROM cache_entries WHERE content_type = ?1 AND year = ?2 AND day = ?3",
@@ -135,7 +129,7 @@ impl StateDatabase {
         )? > 0)
     }
 
-    pub fn invalidate_cache_entry(&self, key: CacheKey) -> DatabaseResult<bool> {
+    pub(crate) fn invalidate_cache_entry(&self, key: CacheKey) -> DatabaseResult<bool> {
         let (content_type, year, day) = cache_key_parts(key);
         Ok(self.connection.execute(
             "
@@ -145,6 +139,19 @@ impl StateDatabase {
             ",
             params![content_type, year, day],
         )? > 0)
+    }
+
+    pub(crate) fn clear_cache_entries(&self) -> DatabaseResult<()> {
+        self.connection.execute("DELETE FROM cache_entries", [])?;
+        Ok(())
+    }
+
+    pub(crate) fn clear_cache_entries_for_year(&self, year: PuzzleYear) -> DatabaseResult<()> {
+        self.connection.execute(
+            "DELETE FROM cache_entries WHERE year = ?1",
+            params![year.get()],
+        )?;
+        Ok(())
     }
 }
 
@@ -259,7 +266,7 @@ fn migrate_to_version_one(transaction: &Transaction<'_>) -> DatabaseResult<()> {
 }
 
 #[derive(Debug, Error)]
-pub enum DatabaseError {
+pub(crate) enum DatabaseError {
     #[error("state database schema {found} is newer than supported schema {supported}")]
     NewerSchema { found: u32, supported: u32 },
     #[error("state database is corrupt: {result}")]
@@ -270,4 +277,4 @@ pub enum DatabaseError {
     Sql(#[from] rusqlite::Error),
 }
 
-pub type DatabaseResult<T> = Result<T, DatabaseError>;
+pub(crate) type DatabaseResult<T> = Result<T, DatabaseError>;

@@ -1,6 +1,6 @@
 use aocsuite_cli::{run_aocsuite, AocCliError, AocCommand};
 use aocsuite_config::{ConfigKey, Configuration};
-use aocsuite_storage::{get_aocsuite_dir, RuntimeLayout, StateDatabase};
+use aocsuite_storage::{get_aocsuite_dir, ContentStore, ExampleStore, RuntimeLayout};
 use aocsuite_utils::{default_puzzle_date, PuzzleDay, PuzzleYear};
 
 use clap::Parser;
@@ -34,8 +34,9 @@ fn main() {
     layout
         .bootstrap()
         .unwrap_or_else(|error| terminate_with_error(error.into()));
-    let _database =
-        StateDatabase::open(&layout).unwrap_or_else(|error| terminate_with_error(error.into()));
+    let content = ContentStore::open(layout.cache_dir())
+        .unwrap_or_else(|error| terminate_with_error(error.into()));
+    let examples = ExampleStore::new(layout.workspace_dir());
     let args = parsed.unwrap_or_else(|error| error.exit());
     let mut config = Configuration::load(layout.config_dir())
         .unwrap_or_else(|error| terminate_with_error(error.into()));
@@ -48,7 +49,15 @@ fn main() {
         },
     };
     let (day, year) = resolve_puzzle_date(args.day, configured_year, default_puzzle_date());
-    if let Err(err) = run_aocsuite(args.command, day, year, &layout, &mut config) {
+    if let Err(err) = run_aocsuite(
+        args.command,
+        day,
+        year,
+        &layout,
+        &content,
+        &examples,
+        &mut config,
+    ) {
         terminate_with_error(err);
     }
 }

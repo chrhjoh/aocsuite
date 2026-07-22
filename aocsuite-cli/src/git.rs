@@ -39,6 +39,7 @@ fn get_default_gitignore_content() -> &'static str {
 rust/src/solution.rs
 python/venv/
 python/solution.py
+/.aocsuite-runs/
 **/__pycache__/
 *.pyc
 "#

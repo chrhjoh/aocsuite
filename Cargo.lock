@@ -110,7 +110,6 @@ dependencies = [
  "aocsuite-client",
  "aocsuite-config",
  "aocsuite-editor",
- "aocsuite-fs",
  "aocsuite-lang",
  "aocsuite-parser",
  "aocsuite-storage",
@@ -152,18 +151,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aocsuite-fs"
-version = "0.3.0"
-dependencies = [
- "aocsuite-client",
- "aocsuite-parser",
- "aocsuite-utils",
- "serde",
- "serde_json",
- "thiserror 2.0.12",
-]
-
-[[package]]
 name = "aocsuite-lang"
 version = "0.3.0"
 dependencies = [
@@ -188,6 +175,8 @@ dependencies = [
 name = "aocsuite-storage"
 version = "0.3.0"
 dependencies = [
+ "aocsuite-client",
+ "aocsuite-parser",
  "aocsuite-utils",
  "rusqlite",
  "serde",

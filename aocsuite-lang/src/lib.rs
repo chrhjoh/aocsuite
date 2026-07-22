@@ -19,19 +19,17 @@ use utils::{
 pub use utils::{AocLanguageError, AocLanguageResult, SolverFile};
 
 pub struct Language {
-    name: String,
     language_type: LanguageId,
     runner: LanguageRunner,
     runs_dir: PathBuf,
 }
 
 impl Language {
-    pub fn new(language: LanguageId, project_root: PathBuf, runs_dir: PathBuf) -> Self {
+    pub fn new(language: LanguageId, workspace_dir: PathBuf) -> Self {
         Self {
-            name: language.to_string(),
             language_type: language,
-            runner: languages::to_runner(language, project_root),
-            runs_dir,
+            runner: languages::to_runner(language, workspace_dir.join(language.to_string())),
+            runs_dir: workspace_dir.join(".aocsuite-runs"),
         }
     }
 
@@ -107,8 +105,8 @@ impl Language {
         Ok(())
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> String {
+        self.language_type.to_string()
     }
 
     pub fn list_lib_files(&self) -> AocLanguageResult<Vec<String>> {
@@ -531,7 +529,7 @@ mod tests {
     #[test]
     fn result_files_are_unique_and_cleaned_after_failures() {
         let root = test_root("results");
-        let runs_dir = root.join("runs");
+        let runs_dir = root.join(".aocsuite-runs");
         fs::create_dir_all(&runs_dir).expect("create runs directory");
         let stale_result = root.join("result.json");
         fs::write(&stale_result, "stale result").expect("write stale legacy result");

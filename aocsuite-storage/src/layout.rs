@@ -1,10 +1,9 @@
 use std::{
     env, fs,
-    fs::OpenOptions,
     path::{Component, PathBuf},
 };
 
-use aocsuite_utils::{atomic_write, LanguageId, PuzzleId, PuzzleYear};
+use aocsuite_utils::atomic_write;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -14,14 +13,6 @@ pub const CURRENT_LAYOUT_VERSION: u32 = 1;
 pub enum BootstrapReport {
     Initialized,
     Opened,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CacheKey {
-    PuzzleHtml(PuzzleId),
-    PuzzleMarkdown(PuzzleId),
-    Input(PuzzleId),
-    Calendar(PuzzleYear),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,62 +82,16 @@ impl RuntimeLayout {
         self.root.join("config")
     }
 
-    pub fn runs_dir(&self) -> PathBuf {
-        self.root.join("runs")
-    }
-
     fn layout_manifest_path(&self) -> PathBuf {
         self.root.join(".aocsuite-layout.json")
     }
 
-    pub fn database_path(&self) -> PathBuf {
-        self.root.join("state.sqlite")
-    }
-
-    //TOOD: make non public
     pub fn cache_dir(&self) -> PathBuf {
         self.root.join("cache")
     }
 
-    //TOOD: make non public
     pub fn workspace_dir(&self) -> PathBuf {
         self.root.join("workspace")
-    }
-
-    //TOOD: make non public
-    pub fn examples_dir(&self) -> PathBuf {
-        self.workspace_dir().join("examples")
-    }
-
-    pub fn example_path(&self, puzzle: PuzzleId) -> PathBuf {
-        self.examples_dir().join(format!("{puzzle}.txt"))
-    }
-
-    pub fn ensure_example(&self, puzzle: PuzzleId) -> Result<PathBuf, LayoutError> {
-        let path = self.example_path(puzzle);
-        fs::create_dir_all(self.examples_dir())?;
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(_) => Ok(path),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && path.is_file() => {
-                Ok(path)
-            }
-            Err(error) => Err(error.into()),
-        }
-    }
-
-    pub fn language_project_dir(&self, language: LanguageId) -> PathBuf {
-        self.workspace_dir().join(language.to_string())
-    }
-
-    pub fn cache_path(&self, key: CacheKey) -> PathBuf {
-        match key {
-            CacheKey::PuzzleHtml(puzzle) => self.puzzle_cache_dir().join(format!("{puzzle}.html")),
-            CacheKey::PuzzleMarkdown(puzzle) => {
-                self.puzzle_cache_dir().join(format!("{puzzle}.md"))
-            }
-            CacheKey::Input(puzzle) => self.input_cache_dir().join(format!("{puzzle}.txt")),
-            CacheKey::Calendar(year) => self.calendar_cache_dir().join(format!("year{year}.html")),
-        }
     }
 
     pub fn bootstrap(&self) -> Result<(), LayoutError> {
@@ -162,26 +107,9 @@ impl RuntimeLayout {
         self.bootstrap_directories()
     }
 
-    fn puzzle_cache_dir(&self) -> PathBuf {
-        self.cache_dir().join("puzzles")
-    }
-
-    fn input_cache_dir(&self) -> PathBuf {
-        self.cache_dir().join("inputs")
-    }
-
-    fn calendar_cache_dir(&self) -> PathBuf {
-        self.cache_dir().join("calendars")
-    }
-
     fn bootstrap_directories(&self) -> Result<(), LayoutError> {
         let mut created = Vec::new();
-        for directory in [
-            self.cache_dir(),
-            self.workspace_dir(),
-            self.config_dir(),
-            self.runs_dir(),
-        ] {
+        for directory in [self.cache_dir(), self.workspace_dir(), self.config_dir()] {
             if !directory.exists() {
                 if let Err(err) = fs::create_dir(&directory) {
                     for path in created.iter().rev() {

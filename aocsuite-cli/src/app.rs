@@ -11,13 +11,14 @@ use crate::{
 use aocsuite_client::{AocClient, AocClientOptions, AocPage};
 use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
 use aocsuite_editor::{open_browser, open_solution_files};
-use aocsuite_fs::{update_cache_status, AocContentFile};
 use aocsuite_lang::{Language, SolverFile};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
-use aocsuite_storage::{get_aocsuite_dir, RuntimeLayout};
+use aocsuite_storage::{
+    get_aocsuite_dir, CacheCleanScope, ContentStore, ExampleStore, RuntimeLayout,
+};
 use aocsuite_utils::{
     valid_puzzle_release, valid_year_release, LanguageId, PartSelection, PuzzleDay, PuzzleId,
-    PuzzlePart, PuzzleYear,
+    PuzzleYear,
 };
 use colored::Colorize;
 
@@ -26,6 +27,8 @@ pub fn run_aocsuite(
     day: PuzzleDay,
     year: PuzzleYear,
     layout: &RuntimeLayout,
+    content: &ContentStore,
+    examples: &ExampleStore,
     config: &mut Configuration,
 ) -> AocCliResult<()> {
     match command {
@@ -40,8 +43,7 @@ pub fn run_aocsuite(
 
         AocCommand::Calendar => {
             valid_year_release(day, year)?;
-            let calendar = AocContentFile::calendar(layout.cache_dir(), year)
-                .load(&resolve_aoc_client(config)?)?;
+            let calendar = content.load_calendar(year, &resolve_aoc_client(config)?)?;
             println!("{}", render_calendar(&parse_calendar(&calendar)?));
         }
 
@@ -59,13 +61,7 @@ pub fn run_aocsuite(
             let output =
                 resolve_aoc_client(config)?.submit(PuzzleId::new(day, year), part, &answer)?;
             let result = parse_submission(&output)?;
-            update_cache_status(
-                layout.cache_dir(),
-                &result,
-                day,
-                year,
-                part == PuzzlePart::One,
-            )?;
+            content.invalidate_after_submission(PuzzleId::new(day, year), part, &result)?;
             println!("{}", format_submission_result(&result));
         }
 
@@ -79,16 +75,16 @@ pub fn run_aocsuite(
             let path = match test {
                 Some(file) => {
                     if file.is_empty() {
-                        require_input_file(layout.example_path(PuzzleId::new(day, year)))?
+                        examples.ensure(PuzzleId::new(day, year))?
                     } else {
                         resolve_custom_input_path(&file, &std::env::current_dir()?)?
                     }
                 }
-                None => AocContentFile::input(layout.cache_dir(), day, year)
-                    .materialize(&resolve_aoc_client(config)?)?,
+                None => content
+                    .materialize_input(PuzzleId::new(day, year), &resolve_aoc_client(config)?)?,
             };
 
-            let language = resolve_language(config, layout, language)?;
+            let language = resolve_language(config, language, layout.workspace_dir())?;
             language.compile(day, year)?;
             let result = language.run(day, year, part, path.as_ref())?;
             println!("{result}");
@@ -97,24 +93,24 @@ pub fn run_aocsuite(
         AocCommand::Open { language } => {
             valid_puzzle_release(day, year)?;
             let client = resolve_aoc_client(config)?;
-            let language = resolve_language(config, layout, language)?;
+            let language = resolve_language(config, language, layout.workspace_dir())?;
             let puzzle = PuzzleId::new(day, year);
-            let example_path = layout.ensure_example(puzzle)?;
+            let example_path = examples.ensure(puzzle)?;
             let solve_path =
                 language.prepare_solver_file(&SolverFile::ActiveSolution(day, year))?;
             let env_vars = language.editor_environment_vars()?;
 
             open_solution_files(
                 &resolve_editor(config)?,
-                &AocContentFile::puzzle(layout.cache_dir(), day, year).materialize(&client)?,
+                &content.materialize_puzzle_markdown(puzzle, &client)?,
                 &example_path,
                 &solve_path,
-                &AocContentFile::input(layout.cache_dir(), day, year).materialize(&client)?,
+                &content.materialize_input(puzzle, &client)?,
                 Some(env_vars),
             )?;
         }
         AocCommand::Template { language, reset } => {
-            let language = resolve_language(config, layout, language)?;
+            let language = resolve_language(config, language, layout.workspace_dir())?;
             if reset {
                 let template_path = language.prepare_solver_file(&SolverFile::SolutionTemplate)?;
                 if user_confirm(
@@ -141,7 +137,7 @@ pub fn run_aocsuite(
             aocsuite_editor::open(&resolve_editor(config)?, &path, None)?;
         }
         AocCommand::Env { action, language } => {
-            let language = resolve_language(config, layout, language)?;
+            let language = resolve_language(config, language, layout.workspace_dir())?;
             match action {
                 EnvAction::Add { package } => {
                     language.add_package(&package)?;
@@ -173,7 +169,7 @@ pub fn run_aocsuite(
             }
         }
         AocCommand::Lib { action, language } => {
-            let language = resolve_language(config, layout, language)?;
+            let language = resolve_language(config, language, layout.workspace_dir())?;
             match action {
                 LibAction::Edit { lib } => {
                     let path = language.get_lib_filepath(&lib)?;
@@ -243,24 +239,20 @@ pub fn run_aocsuite(
                 year_all,
                 force,
             } => {
-                let clean_day: Option<PuzzleDay>;
-                let clean_year_opt: Option<PuzzleYear>;
+                let clean_scope: CacheCleanScope;
                 let file_prompt: String;
                 let content_prompt: &str;
 
                 if all {
-                    clean_day = None;
-                    clean_year_opt = None;
+                    clean_scope = CacheCleanScope::All;
                     file_prompt = "all cached AoC files".to_string();
                     content_prompt = "puzzles, inputs and calendars";
                 } else if year_all {
-                    clean_day = None;
-                    clean_year_opt = Some(year);
+                    clean_scope = CacheCleanScope::Year(year);
                     file_prompt = format!("all cached AoC files for {year}");
                     content_prompt = "puzzles, inputs and calendar";
                 } else {
-                    clean_day = Some(day);
-                    clean_year_opt = Some(year);
+                    clean_scope = CacheCleanScope::Puzzle(PuzzleId::new(day, year));
                     file_prompt = format!("all cached AoC files for day {day} in {year}");
                     content_prompt = "puzzle and input";
                 }
@@ -268,12 +260,12 @@ pub fn run_aocsuite(
                     &format!("Do you want to delete {file_prompt} ({content_prompt}) (Y/n) : ",),
                     force,
                 )? {
-                    aocsuite_fs::clean_cache(layout.cache_dir(), clean_year_opt, clean_day)?;
+                    content.clean(clean_scope)?;
                 }
             }
 
             CleanAction::Lang { language, force } => {
-                let language = resolve_language(config, layout, language)?;
+                let language = resolve_language(config, language, layout.workspace_dir())?;
                 let language_name = language.name();
                 if user_confirm_or_force(
                     &format!(
@@ -368,17 +360,13 @@ fn resolve_aoc_client(config: &Configuration) -> AocCliResult<AocClient> {
 
 fn resolve_language(
     config: &Configuration,
-    layout: &RuntimeLayout,
     cli_arg: Option<LanguageId>,
+    workspace_dir: PathBuf,
 ) -> AocCliResult<Language> {
     let language_id = cli_arg
         .map(Ok)
         .unwrap_or_else(|| config.get(ConfigKey::Language))?;
-    Ok(Language::new(
-        language_id,
-        layout.language_project_dir(language_id),
-        layout.runs_dir(),
-    ))
+    Ok(Language::new(language_id, workspace_dir))
 }
 
 fn resolve_editor(config: &Configuration) -> AocCliResult<String> {
@@ -458,22 +446,6 @@ fn resolve_custom_input_path(file: &str, invocation_dir: &Path) -> std::io::Resu
     path.canonicalize()
 }
 
-fn require_input_file(path: PathBuf) -> std::io::Result<PathBuf> {
-    if path.is_file() {
-        Ok(path)
-    } else if path.exists() {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("input path is not a file: {}", path.display()),
-        ))
-    } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("input file not found: {}", path.display()),
-        ))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -486,8 +458,7 @@ mod tests {
     };
 
     use super::{
-        ensure_config_read_allowed, require_input_file, resolve_custom_input_path, user_confirm,
-        ConfigCommandKey,
+        ensure_config_read_allowed, resolve_custom_input_path, user_confirm, ConfigCommandKey,
     };
 
     static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -531,49 +502,6 @@ mod tests {
         assert_eq!(
             result.expect_err("missing input fails").kind(),
             std::io::ErrorKind::NotFound
-        );
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
-    fn missing_builtin_example_returns_not_found() {
-        let root = test_root();
-        fs::create_dir_all(&root).expect("create test runtime");
-
-        let result = require_input_file(root.join("example.txt"));
-
-        assert_eq!(
-            result.expect_err("missing example fails").kind(),
-            std::io::ErrorKind::NotFound
-        );
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
-    fn builtin_example_must_be_a_regular_file() {
-        let root = test_root();
-        let example = root.join("example.txt");
-        fs::create_dir_all(&example).expect("create example directory");
-
-        let result = require_input_file(example);
-
-        assert_eq!(
-            result.expect_err("example directory fails").kind(),
-            std::io::ErrorKind::InvalidInput
-        );
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
-    fn existing_builtin_example_is_accepted() {
-        let root = test_root();
-        let example = root.join("example.txt");
-        fs::create_dir_all(&root).expect("create test runtime");
-        fs::write(&example, "example input").expect("write example input");
-
-        assert_eq!(
-            require_input_file(example.clone()).expect("existing example succeeds"),
-            example
         );
         fs::remove_dir_all(root).expect("remove test runtime");
     }

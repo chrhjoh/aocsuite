@@ -7,7 +7,6 @@ edition = "2021"
 aocsuite-client = { version = "0.3.0", path = "../aocsuite-client" }
 aocsuite-config = { version = "0.3.0", path = "../aocsuite-config" }
 aocsuite-editor = { version = "0.3.0", path = "../aocsuite-editor" }
-aocsuite-fs = { version = "0.3.0", path = "../aocsuite-fs" }
 aocsuite-lang = { version = "0.3.0", path = "../aocsuite-lang" }
 aocsuite-parser = { version = "0.3.0", path = "../aocsuite-parser" }
 aocsuite-storage = { version = "0.3.0", path = "../aocsuite-storage" }
