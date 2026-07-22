@@ -1,7 +1,7 @@
 use aocsuite_client::AocClientError;
 use aocsuite_config::AocConfigError;
-use aocsuite_editor::AocEditorError;
 use aocsuite_lang::AocLanguageError;
+use aocsuite_launcher::AocLauncherError;
 use aocsuite_parser::ParserError;
 use aocsuite_storage::{ContentError, LayoutError};
 use aocsuite_utils::ReleaseError;
@@ -46,7 +46,7 @@ pub enum AocCliError {
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    Editor(#[from] AocEditorError),
+    Launcher(#[from] AocLauncherError),
 
     #[error(transparent)]
     Workspace(#[from] aocsuite_storage::WorkspaceError),

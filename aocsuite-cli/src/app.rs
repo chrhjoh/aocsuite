@@ -9,8 +9,8 @@ use crate::{
 };
 use aocsuite_client::{AocClient, AocClientOptions, AocPage};
 use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
-use aocsuite_editor::{open_browser, open_solution_files};
 use aocsuite_lang::{Language, SolverFile};
+use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
 use aocsuite_storage::{get_aocsuite_dir, CacheCleanScope, ContentStore, GitMode, Workspace};
 use aocsuite_utils::{
@@ -28,6 +28,7 @@ pub fn run_aocsuite(
     config: &mut Configuration,
 ) -> AocCliResult<()> {
     let executor = SystemCommandExecutor;
+    let launcher = Launcher::new(&executor);
     match command {
         AocCommand::Config { command } => match command {
             ConfigCommand::Get { key } => {
@@ -46,7 +47,7 @@ pub fn run_aocsuite(
 
         AocCommand::View => {
             valid_puzzle_release(day, year)?;
-            open_browser(&AocPage::Puzzle(day, year).to_string())?;
+            launcher.open_browser(&AocPage::Puzzle(day, year).to_string())?;
         }
 
         AocCommand::Submit { part, answer } => {
@@ -77,8 +78,9 @@ pub fn run_aocsuite(
                         resolve_custom_input_path(&file, &std::env::current_dir()?)?
                     }
                 }
-                None => content
-                    .materialize_input(PuzzleId::new(day, year), &resolve_aoc_client(config)?)?,
+                None => {
+                    content.ensure_input(PuzzleId::new(day, year), &resolve_aoc_client(config)?)?
+                }
             };
 
             let language = resolve_language(config, language, workspace, &executor)?;
@@ -91,25 +93,22 @@ pub fn run_aocsuite(
             valid_puzzle_release(day, year)?;
             let client = resolve_aoc_client(config)?;
             let language = resolve_language(config, language, workspace, &executor)?;
+            let editor_program = config.get::<String>(ConfigKey::Editor)?;
             let puzzle = PuzzleId::new(day, year);
-            let example_path = workspace.ensure_example(puzzle)?;
-            let solve_path =
-                language.prepare_solver_file(&SolverFile::ActiveSolution(day, year))?;
-            let env_vars = language.editor_environment_vars()?;
-
-            open_solution_files(
-                &resolve_editor(config)?,
-                &content.materialize_puzzle_markdown(puzzle, &client)?,
-                &example_path,
-                &solve_path,
-                &content.materialize_input(puzzle, &client)?,
-                Some(env_vars),
-            )?;
+            let request = OpenPuzzleRequest {
+                puzzle: content.ensure_puzzle_markdown(puzzle, &client)?,
+                example: workspace.ensure_example(puzzle)?,
+                solution: language.ensure_solver_file(&SolverFile::ActiveSolution(day, year))?,
+                input: content.ensure_input(puzzle, &client)?,
+                working_directory: language.project_dir().to_path_buf(),
+            };
+            launcher.open_puzzle(editor_program, request)?;
         }
         AocCommand::Template { language, reset } => {
             let language = resolve_language(config, language, workspace, &executor)?;
+            let editor_program = config.get::<String>(ConfigKey::Editor)?;
             if reset {
-                let template_path = language.prepare_solver_file(&SolverFile::SolutionTemplate)?;
+                let template_path = language.ensure_solver_file(&SolverFile::SolutionTemplate)?;
                 if user_confirm(
                     &mut std::io::stdin().lock(),
                     &mut std::io::stdout().lock(),
@@ -119,9 +118,8 @@ pub fn run_aocsuite(
                 }
             }
             // Ensure the template exists before opening it; recreate it after a confirmed reset.
-            let path = language.prepare_solver_file(&SolverFile::SolutionTemplate)?;
-            let env_vars = language.editor_environment_vars()?;
-            aocsuite_editor::open(&resolve_editor(config)?, &path, Some(env_vars))?;
+            let path = language.ensure_solver_file(&SolverFile::SolutionTemplate)?;
+            launcher.open_file(editor_program, &path, language.project_dir())?;
         }
         AocCommand::Git { args } => {
             let mode = if is_interactive_git_command(&args) {
@@ -135,9 +133,10 @@ pub fn run_aocsuite(
             }
         }
         AocCommand::GitIgnore => {
+            let editor_program = config.get::<String>(ConfigKey::Editor)?;
             workspace.ensure()?;
             let path = workspace.gitignore_path();
-            aocsuite_editor::open(&resolve_editor(config)?, &path, None)?;
+            launcher.open_file(editor_program, &path, workspace.root_dir())?;
         }
         AocCommand::Env { action, language } => {
             let language = resolve_language(config, language, workspace, &executor)?;
@@ -175,9 +174,9 @@ pub fn run_aocsuite(
             let language = resolve_language(config, language, workspace, &executor)?;
             match action {
                 LibAction::Edit { lib } => {
+                    let editor_program = config.get::<String>(ConfigKey::Editor)?;
                     let path = language.get_lib_filepath(&lib)?;
-                    let env_vars = language.editor_environment_vars()?;
-                    aocsuite_editor::open(&resolve_editor(config)?, &path, Some(env_vars))?;
+                    launcher.open_file(editor_program, &path, language.project_dir())?;
                 }
                 LibAction::Remove { lib, all, force } => {
                     let language_name = language.name();
@@ -233,7 +232,7 @@ pub fn run_aocsuite(
         }
         AocCommand::Leaderboard { id } => {
             valid_year_release(day, year)?;
-            open_browser(&AocPage::Leaderboard(year, id).to_string())?;
+            launcher.open_browser(&AocPage::Leaderboard(year, id).to_string())?;
         }
 
         AocCommand::Clean { action } => match action {
@@ -385,14 +384,6 @@ fn resolve_language<'workspace>(
         .map(Ok)
         .unwrap_or_else(|| config.get(ConfigKey::Language))?;
     Ok(Language::new(language_id, workspace, executor))
-}
-
-fn resolve_editor(config: &Configuration) -> AocCliResult<String> {
-    match config.get::<String>(ConfigKey::Editor) {
-        Ok(editor) => Ok(editor),
-        Err(AocConfigError::NotFound { .. }) => Ok(std::env::var("EDITOR")?),
-        Err(error) => Err(error.into()),
-    }
 }
 
 fn set_config_value(config: &mut Configuration, key: ConfigCommandKey) -> AocCliResult<()> {

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::OsString, process::Output};
+use std::process::Output;
 
 use crate::{
     traits::{DepManager, Solver},
@@ -73,8 +73,5 @@ impl DepManager for RustRunner<'_> {
                 .current_dir(&self.root_dir),
         )?;
         Ok(())
-    }
-    fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<OsString, OsString>> {
-        Ok(HashMap::new())
     }
 }

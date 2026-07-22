@@ -3,7 +3,7 @@ resolver = "2"
 members = [
 "aocsuite-cli", "aocsuite-client",
 "aocsuite-config",
-"aocsuite-editor"
+"aocsuite-launcher"
 , "aocsuite-lang", "aocsuite-parser", "aocsuite-storage", "aocsuite-utils"]
 
 [workspace.dependencies]

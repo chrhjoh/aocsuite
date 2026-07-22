@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, env, fs, path::PathBuf, str::FromStr};
 
 use aocsuite_utils::{atomic_write, set_owner_only_permissions};
 use thiserror::Error;
@@ -77,14 +77,25 @@ impl Configuration {
         T: FromStr,
         T::Err: std::fmt::Display,
     {
+        let editor_fallback = if key == ConfigKey::Editor {
+            match env::var("EDITOR") {
+                Ok(editor) => Some(editor),
+                Err(env::VarError::NotPresent) => None,
+                Err(error) => return Err(AocConfigError::Environment(error)),
+            }
+        } else {
+            None
+        };
         let value = self
             .values
             .get(&key)
+            .map(String::as_str)
+            .or(editor_fallback.as_deref())
             .ok_or(AocConfigError::NotFound { key })?;
 
         value.parse::<T>().map_err(|_| AocConfigError::Invalid {
             key,
-            value: value.clone(),
+            value: value.to_owned(),
         })
     }
 
@@ -130,6 +141,8 @@ impl Configuration {
 #[derive(Debug, Error)]
 pub enum AocConfigError {
     #[error(transparent)]
+    Environment(#[from] env::VarError),
+    #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("configuration parse error: {0}")]
     Parse(#[from] serde_json::Error),
@@ -159,10 +172,6 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let config = configuration(&temp);
 
-        assert!(matches!(
-            config.get::<String>(ConfigKey::Editor),
-            Err(AocConfigError::NotFound { .. })
-        ));
         assert_eq!(
             config.get::<String>(ConfigKey::RunHistoryLimit).unwrap(),
             "10"

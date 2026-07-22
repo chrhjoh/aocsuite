@@ -109,8 +109,8 @@ version = "0.3.0"
 dependencies = [
  "aocsuite-client",
  "aocsuite-config",
- "aocsuite-editor",
  "aocsuite-lang",
+ "aocsuite-launcher",
  "aocsuite-parser",
  "aocsuite-storage",
  "aocsuite-utils",
@@ -141,16 +141,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aocsuite-editor"
-version = "0.3.0"
-dependencies = [
- "aocsuite-utils",
- "shell-words",
- "thiserror 2.0.12",
- "which",
-]
-
-[[package]]
 name = "aocsuite-lang"
 version = "0.3.0"
 dependencies = [
@@ -159,6 +149,15 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "aocsuite-launcher"
+version = "0.3.0"
+dependencies = [
+ "aocsuite-utils",
+ "thiserror 2.0.12",
+ "which",
 ]
 
 [[package]]
@@ -1773,12 +1772,6 @@ checksum = "204ea332803bd95a0b60388590d59cf6468ec9becf626e2451f1d26a1d972de4"
 dependencies = [
  "stable_deref_trait",
 ]
-
-[[package]]
-name = "shell-words"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shlex"

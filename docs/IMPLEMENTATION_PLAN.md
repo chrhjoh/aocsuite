@@ -28,7 +28,7 @@ Remaining pre-TUI blockers:
 
 - Finish storage lifecycle policy: strict unversioned-root rejection, cache recovery/validation, stars, submission counts, timing retention, typed cleanup, and uninstall safety.
 - Complete portable language-project behavior: activate and migrate before compilation, one serialized typed run operation, public structured results, tracked Cargo preservation, and Python requirements persistence.
-- Rename `aocsuite-editor` to `aocsuite-launcher` and route all editor/browser processes through `CommandExecutor`.
+- `aocsuite-launcher` owns editor/browser launches through `CommandExecutor`.
 - Reduce CLI orchestration to frontend mapping over injectable domain services.
 - Expand CI beyond its baseline only when explicitly requested test work establishes the required deterministic coverage.
 
@@ -68,7 +68,7 @@ The domain/process foundation is complete. Storage, layout, and configuration wo
 9. Complete: move captured/foreground Git operations into `aocsuite-storage::workspace`; preserve clone behavior rooted in the bootstrapped workspace.
 10. Partially complete: generated harnesses and runtime manifests exist and migrate atomically. Stop overwriting or deleting user Cargo/dependency files during migration or cleanup.
 11. Make Rust package operations edit tracked `Cargo.toml` semantically and track `Cargo.lock`. Add tracked Python `requirements.txt`; atomically persist `pip freeze` after successful package mutations.
-12. Rename `aocsuite-editor` to `aocsuite-launcher`, move browser launching out of the HTTP client, and route editor/browser processes through the shared executor without config discovery or printing.
+12. Complete: rename `aocsuite-editor` to `aocsuite-launcher`, keep browser launching out of the HTTP client, and route editor/browser processes through the shared executor without config discovery or printing.
 13. Add SQLite bootstrap, integrity checks, typed corrupt-database errors, transactional schema upgrades, and newer-schema rejection.
 14. Replace `.aoccache.json` with SQLite cache metadata. Rebuild recognized entries as stale and reparse cached calendar HTML to restore stars.
 15. Add submission counts for correct/incorrect outcomes only and retain the latest configurable per-part runtimes, defaulting to 10.
@@ -103,13 +103,13 @@ Flat workspace paths, runtime manifests, active-link safety, and unique result f
 
 ## Phase 4: Remaining CLI, Editor, And Git Behavior (In Progress)
 
-Default-date/command parsing, destructive confirmation behavior, and storage-owned Git execution are complete. CLI service wiring and launcher rename remain.
+Default-date/command parsing, destructive confirmation behavior, storage-owned Git execution, and launcher migration are complete. CLI service wiring remains.
 
 1. Refactor `run_aocsuite` into thin command handlers over shared typed domain services; keep Clap, prompts, confirmation, and rendering in the CLI without introducing a general operations crate.
 2. Complete: correct release/default-date handling with deterministic Eastern-time coverage.
 3. Complete: make submit/run parsing match the documented command shapes.
 4. Complete: move Git operations into storage workspace services rooted in `workspace/`; do not claim pass-through Git arguments are sandboxed.
-5. Rename editor support to `aocsuite-launcher`, combine editor/browser launching, and preserve explicit foreground terminal handoff in frontends.
+5. Complete: rename editor support to `aocsuite-launcher`, combine editor/browser launching, and preserve explicit foreground terminal handoff in frontends.
 6. Complete: retain empty-line destructive confirmation behavior while treating EOF as cancellation, with regression coverage.
 7. Defer CLI and launcher test additions until explicitly requested.
 

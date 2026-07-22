@@ -13,11 +13,11 @@
 - `aocsuite-utils` owns validated UI-neutral puzzle/language values, release calculations, atomic filesystem primitives, environment/clock seams where needed, and the shared synchronous process executor. Shared values must not derive Clap traits.
 - Add broad `aocsuite-storage`, replacing `aocsuite-fs`. It owns `RuntimeLayout`, bootstrap/versioning, SQLite, AoC fetch/parse/cache lifecycle, shared examples, workspace Git, run allocation, submission counts, timing retention, cleanup, and uninstall safety.
 - Keep storage internally layered. Layout/database modules do not call HTTP or parser code; only the content module depends on the configuration-independent client and semantic parser. Storage never depends on config, language, launcher, CLI, or TUI.
-- `aocsuite-config` owns typed non-secret configuration values and session persistence. It receives explicit paths, performs no prompting, and must not create files during reads. Remove the unused `template_dir`/`AOC_TEMPLATE_DIR` setting.
+- `aocsuite-config` owns typed non-secret configuration values, including persisted-editor then dynamic `$EDITOR` precedence, and session persistence. It receives explicit paths, performs no prompting, and must not create files during reads. Remove the unused `template_dir`/`AOC_TEMPLATE_DIR` setting.
 - `aocsuite-client` owns blocking AoC HTTP transport, URL/auth/status behavior, timeout/retry policy, and HTTP validators. It receives an optional session explicitly and must not read config, storage, or environment state.
 - `aocsuite-parser` owns pure fallible puzzle/calendar/submission transformations. Return semantic calendar cells/stars and submission outcomes; ANSI, emoji, and frontend prose do not belong here.
 - `aocsuite-lang` owns complete tracked Rust/Python projects, versioned generated harnesses, solutions/templates/libraries, active links, Cargo/pip dependencies, compile/run, structured reports, and language cleanup. It receives an explicit `Workspace`, settings, and executor; it must not read config or discover the runtime root.
-- Rename `aocsuite-editor` to `aocsuite-launcher`. It owns editor/browser resolution and process requests, but not config lookup, terminal suspend/restore, storage, or rendering.
+- `aocsuite-launcher` owns editor/browser resolution and typed process requests. Editor launches receive an explicit project working directory and inherit the normal environment; launcher does not perform config lookup, terminal suspend/restore, storage, or rendering.
 - Clap, `rpassword`, prompts, empty-line/EOF confirmation behavior, output formatting, and terminal lifecycle remain frontend concerns.
 
 ## Storage And Workspace Decisions

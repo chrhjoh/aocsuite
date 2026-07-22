@@ -49,11 +49,7 @@ impl ContentStore {
         Ok(fs::read_to_string(path)?)
     }
 
-    pub fn materialize_input(
-        &self,
-        puzzle: PuzzleId,
-        client: &AocClient,
-    ) -> ContentResult<PathBuf> {
+    pub fn ensure_input(&self, puzzle: PuzzleId, client: &AocClient) -> ContentResult<PathBuf> {
         let path = self.load_or_fetch(
             CacheKey::Input(puzzle),
             AocPage::Input(puzzle.day, puzzle.year),
@@ -63,7 +59,7 @@ impl ContentStore {
         Ok(path)
     }
 
-    pub fn materialize_puzzle_markdown(
+    pub fn ensure_puzzle_markdown(
         &self,
         puzzle: PuzzleId,
         client: &AocClient,

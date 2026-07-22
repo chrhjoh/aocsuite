@@ -1,6 +1,6 @@
 use std::{
     fs::{self, OpenOptions},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Output,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
@@ -33,6 +33,10 @@ pub enum GitMode {
 impl Workspace {
     pub fn new(directory: PathBuf) -> Self {
         Self { directory }
+    }
+
+    pub fn root_dir(&self) -> &Path {
+        &self.directory
     }
 
     pub fn gitignore_path(&self) -> PathBuf {

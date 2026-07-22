@@ -1,6 +1,4 @@
 use std::{
-    collections::HashMap,
-    ffi::OsString,
     path::{Path, PathBuf},
     process::Output,
 };
@@ -68,7 +66,6 @@ pub trait LibManager {
 
 pub trait DepManager {
     fn setup_env(&self) -> AocLanguageResult<Option<Output>>;
-    fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<OsString, OsString>>;
     fn add_package(&self, package: &str) -> AocLanguageResult<()>;
     fn list_packages(&self) -> AocLanguageResult<Vec<String>>;
     fn remove_packages(&self, package: &str) -> AocLanguageResult<()>;

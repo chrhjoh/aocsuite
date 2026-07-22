@@ -5,11 +5,7 @@ mod rust;
 mod traits;
 mod utils;
 
-use std::{
-    collections::HashMap,
-    ffi::OsString,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use aocsuite_storage::Workspace;
 use aocsuite_utils::{CommandExecutor, LanguageId, PartSelection, PuzzleDay, PuzzleYear};
@@ -20,6 +16,7 @@ pub use utils::{
 
 pub struct Language<'workspace, 'executor> {
     language_type: LanguageId,
+    project_dir: PathBuf,
     runner: LanguageRunner<'executor>,
     workspace: &'workspace Workspace,
 }
@@ -30,13 +27,11 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
         workspace: &'workspace Workspace,
         executor: &'executor dyn CommandExecutor,
     ) -> Self {
+        let project_dir = workspace.language_project_dir(language);
         Self {
             language_type: language,
-            runner: languages::to_runner(
-                language,
-                workspace.language_project_dir(language),
-                executor,
-            ),
+            runner: languages::to_runner(language, project_dir.clone(), executor),
+            project_dir,
             workspace,
         }
     }
@@ -64,9 +59,13 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
             .unwrap_or_default())
     }
 
-    pub fn prepare_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
+    pub fn ensure_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
         self.runner.migrate_runtime()?;
         self.runner.ensure_solver_file(file)
+    }
+
+    pub fn project_dir(&self) -> &Path {
+        &self.project_dir
     }
 
     pub fn add_package(&self, package: &str) -> AocLanguageResult<()> {
@@ -81,10 +80,6 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
 
     pub fn list_packages(&self) -> AocLanguageResult<Vec<String>> {
         self.runner.list_packages()
-    }
-
-    pub fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<OsString, OsString>> {
-        self.runner.editor_environment_vars()
     }
 
     pub fn get_lib_filepath(&self, lib_name: &str) -> AocLanguageResult<PathBuf> {

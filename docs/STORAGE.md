@@ -258,7 +258,7 @@ Remove the unused `template_dir` configuration and `AOC_TEMPLATE_DIR`; templates
 
 ## Launcher And Frontend Boundaries
 
-Rename `aocsuite-editor` to `aocsuite-launcher`. It owns editor aliases, browser platform commands, executable resolution, argument construction, environment forwarding, and process result handling. It does not read configuration, inspect storage, print output, or suspend terminals. CLI/TUI resolve the effective launcher setting and own terminal suspend/restore around foreground launches.
+`aocsuite-launcher` owns editor aliases, browser platform commands, executable resolution, typed launch requests, argument construction, and process result handling. Editors launch from the supplied language project root but inherit the normal environment. It does not read configuration, inspect storage, print output, or suspend terminals. CLI/TUI resolve the effective launcher setting and own terminal suspend/restore around foreground launches.
 
 Libraries return presentation-neutral values. Parser output contains semantic calendar cells, stars, validated puzzle dates, and submission outcomes, while language execution returns public part results and command diagnostics. ANSI, emoji, box drawing, prompts, and user-facing prose remain frontend adapters.
 
