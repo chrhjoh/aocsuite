@@ -6,7 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use aocsuite_utils::{atomic_write, LanguageId, ProcessExecutor, ProcessRequest, PuzzleId};
+use aocsuite_utils::{atomic_write, CommandExecutor, CommandRequest, LanguageId, PuzzleId};
 use thiserror::Error;
 
 const GITIGNORE: &str = r#"rust/target/
@@ -90,7 +90,7 @@ impl Workspace {
         &self,
         args: &[String],
         mode: GitMode,
-        executor: &dyn ProcessExecutor,
+        executor: &dyn CommandExecutor,
     ) -> WorkspaceResult<String> {
         if is_simple_clone(args)? {
             std::fs::create_dir_all(&self.directory)?;
@@ -105,12 +105,12 @@ impl Workspace {
 }
 
 fn execute_git(
-    executor: &dyn ProcessExecutor,
+    executor: &dyn CommandExecutor,
     directory: &PathBuf,
     args: &[String],
     mode: GitMode,
 ) -> WorkspaceResult<String> {
-    let mut request = ProcessRequest::new("git").args(args).current_dir(directory);
+    let mut request = CommandRequest::new("git").args(args).current_dir(directory);
     if mode == GitMode::Captured {
         request = request
             .env("GIT_PAGER", "cat")

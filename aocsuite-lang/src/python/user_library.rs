@@ -4,7 +4,7 @@ use crate::traits::LibManager;
 
 use super::PythonRunner;
 
-impl LibManager for PythonRunner {
+impl LibManager for PythonRunner<'_> {
     fn get_lib_path(&self, lib_name: &str) -> PathBuf {
         self.root_dir
             .join(format!("{}.{}", lib_name, self.file_extention()))

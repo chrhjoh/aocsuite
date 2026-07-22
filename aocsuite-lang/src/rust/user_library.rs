@@ -2,7 +2,7 @@ use super::RustRunner;
 use crate::traits::LibManager;
 use std::path::PathBuf;
 
-impl LibManager for RustRunner {
+impl LibManager for RustRunner<'_> {
     fn get_lib_path(&self, lib_name: &str) -> PathBuf {
         self.src_dir()
             .join(format!("{}.{}", lib_name, self.file_extention()))

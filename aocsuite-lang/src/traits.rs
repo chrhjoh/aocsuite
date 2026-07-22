@@ -5,7 +5,7 @@ use std::{
     process::Output,
 };
 
-use aocsuite_utils::{PartSelection, PuzzleDay, PuzzleYear};
+use aocsuite_utils::PartSelection;
 
 use crate::utils::{symlink_file, AocLanguageResult, SolverFile};
 
@@ -13,11 +13,9 @@ pub trait LanguageHandler: Solver + DepManager + LibManager {}
 impl<T> LanguageHandler for T where T: Solver + DepManager + LibManager {}
 
 pub trait Solver {
-    fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Option<Output>>;
+    fn compile(&self) -> AocLanguageResult<Option<Output>>;
     fn run(
         &self,
-        day: PuzzleDay,
-        year: PuzzleYear,
         part: PartSelection,
         input: &Path,
         output: &std::path::Path,
@@ -69,7 +67,7 @@ pub trait LibManager {
 }
 
 pub trait DepManager {
-    fn setup_env(&self) -> AocLanguageResult<()>;
+    fn setup_env(&self) -> AocLanguageResult<Option<Output>>;
     fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<OsString, OsString>>;
     fn add_package(&self, package: &str) -> AocLanguageResult<()>;
     fn list_packages(&self) -> AocLanguageResult<Vec<String>>;

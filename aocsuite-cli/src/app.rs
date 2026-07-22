@@ -14,8 +14,8 @@ use aocsuite_lang::{Language, SolverFile};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
 use aocsuite_storage::{get_aocsuite_dir, CacheCleanScope, ContentStore, GitMode, Workspace};
 use aocsuite_utils::{
-    valid_puzzle_release, valid_year_release, LanguageId, PartSelection, PuzzleDay, PuzzleId,
-    PuzzleYear, SystemProcessExecutor,
+    valid_puzzle_release, valid_year_release, CommandExecutor, LanguageId, PartSelection,
+    PuzzleDay, PuzzleId, PuzzleYear, SystemCommandExecutor,
 };
 use colored::Colorize;
 
@@ -27,6 +27,7 @@ pub fn run_aocsuite(
     workspace: &Workspace,
     config: &mut Configuration,
 ) -> AocCliResult<()> {
+    let executor = SystemCommandExecutor;
     match command {
         AocCommand::Config { command } => match command {
             ConfigCommand::Get { key } => {
@@ -80,19 +81,16 @@ pub fn run_aocsuite(
                     .materialize_input(PuzzleId::new(day, year), &resolve_aoc_client(config)?)?,
             };
 
-            let language = resolve_language(config, language, workspace)?;
-            if let Some(output) = language.compile(day, year)? {
-                render_command_output(&output)?;
-            }
-            let (result, output) = language.run(day, year, part, path.as_ref())?;
-            render_command_output(&output)?;
-            println!("{result}");
+            let language = resolve_language(config, language, workspace, &executor)?;
+            let compile = language.compile()?;
+            let run = language.run(day, year, part, path.as_ref())?;
+            print!("{compile}{run}");
         }
 
         AocCommand::Open { language } => {
             valid_puzzle_release(day, year)?;
             let client = resolve_aoc_client(config)?;
-            let language = resolve_language(config, language, workspace)?;
+            let language = resolve_language(config, language, workspace, &executor)?;
             let puzzle = PuzzleId::new(day, year);
             let example_path = workspace.ensure_example(puzzle)?;
             let solve_path =
@@ -109,7 +107,7 @@ pub fn run_aocsuite(
             )?;
         }
         AocCommand::Template { language, reset } => {
-            let language = resolve_language(config, language, workspace)?;
+            let language = resolve_language(config, language, workspace, &executor)?;
             if reset {
                 let template_path = language.prepare_solver_file(&SolverFile::SolutionTemplate)?;
                 if user_confirm(
@@ -131,7 +129,7 @@ pub fn run_aocsuite(
             } else {
                 GitMode::Captured
             };
-            let output = workspace.run_git(&args, mode, &SystemProcessExecutor)?;
+            let output = workspace.run_git(&args, mode, &executor)?;
             if !output.is_empty() {
                 println!("{}", output);
             }
@@ -141,7 +139,7 @@ pub fn run_aocsuite(
             aocsuite_editor::open(&resolve_editor(config)?, &path, None)?;
         }
         AocCommand::Env { action, language } => {
-            let language = resolve_language(config, language, workspace)?;
+            let language = resolve_language(config, language, workspace, &executor)?;
             match action {
                 EnvAction::Add { package } => {
                     language.add_package(&package)?;
@@ -173,7 +171,7 @@ pub fn run_aocsuite(
             }
         }
         AocCommand::Lib { action, language } => {
-            let language = resolve_language(config, language, workspace)?;
+            let language = resolve_language(config, language, workspace, &executor)?;
             match action {
                 LibAction::Edit { lib } => {
                     let path = language.get_lib_filepath(&lib)?;
@@ -269,7 +267,7 @@ pub fn run_aocsuite(
             }
 
             CleanAction::Lang { language, force } => {
-                let language = resolve_language(config, language, workspace)?;
+                let language = resolve_language(config, language, workspace, &executor)?;
                 let language_name = language.name();
                 if user_confirm_or_force(
                     &format!(
@@ -380,16 +378,12 @@ fn resolve_language<'workspace>(
     config: &Configuration,
     cli_arg: Option<LanguageId>,
     workspace: &'workspace Workspace,
-) -> AocCliResult<Language<'workspace>> {
+    executor: &'workspace dyn CommandExecutor,
+) -> AocCliResult<Language<'workspace, 'workspace>> {
     let language_id = cli_arg
         .map(Ok)
         .unwrap_or_else(|| config.get(ConfigKey::Language))?;
-    Ok(Language::new(language_id, workspace))
-}
-
-fn render_command_output(output: &std::process::Output) -> std::io::Result<()> {
-    std::io::stdout().write_all(&output.stdout)?;
-    std::io::stderr().write_all(&output.stderr)
+    Ok(Language::new(language_id, workspace, executor))
 }
 
 fn resolve_editor(config: &Configuration) -> AocCliResult<String> {

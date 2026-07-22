@@ -3,13 +3,16 @@ mod solver;
 mod user_library;
 use std::path::PathBuf;
 
-pub struct RustRunner {
+use aocsuite_utils::CommandExecutor;
+
+pub struct RustRunner<'executor> {
     root_dir: PathBuf,
+    executor: &'executor dyn CommandExecutor,
 }
 
-impl RustRunner {
-    pub fn new(root_dir: PathBuf) -> RustRunner {
-        RustRunner { root_dir }
+impl<'executor> RustRunner<'executor> {
+    pub fn new(root_dir: PathBuf, executor: &'executor dyn CommandExecutor) -> Self {
+        Self { root_dir, executor }
     }
     fn src_dir(&self) -> PathBuf {
         self.root_dir.join("src")

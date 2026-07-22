@@ -1,40 +1,36 @@
+use std::process::Output;
+
 use crate::{
     traits::Solver,
     utils::{AocLanguageResult, SolverFile},
     AocLanguageError,
 };
-use aocsuite_utils::PuzzleId;
+use aocsuite_utils::{execute_command, CommandRequest, PuzzleId};
 
 use super::PythonRunner;
 
-impl Solver for PythonRunner {
-    fn compile(
-        &self,
-        _day: aocsuite_utils::PuzzleDay,
-        _year: aocsuite_utils::PuzzleYear,
-    ) -> AocLanguageResult<Option<std::process::Output>> {
+impl Solver for PythonRunner<'_> {
+    fn compile(&self) -> AocLanguageResult<Option<Output>> {
         Ok(None)
     }
 
     fn run(
         &self,
-        _day: aocsuite_utils::PuzzleDay,
-        _year: aocsuite_utils::PuzzleYear,
         part: aocsuite_utils::PartSelection,
         input: &std::path::Path,
         output: &std::path::Path,
-    ) -> AocLanguageResult<std::process::Output> {
+    ) -> AocLanguageResult<Output> {
         let python_path = self.get_python_path();
 
-        let output = std::process::Command::new(python_path)
-            .arg(self.solver_file_path(&SolverFile::Entrypoint))
-            .arg(input)
-            .arg(output)
-            .arg(part.to_string())
-            .current_dir(&self.root_dir)
-            .output()?;
-
-        Ok(output)
+        Ok(execute_command(
+            self.executor,
+            CommandRequest::new(python_path)
+                .arg(self.solver_file_path(&SolverFile::Entrypoint))
+                .arg(input)
+                .arg(output)
+                .arg(part.to_string())
+                .current_dir(&self.root_dir),
+        )?)
     }
     fn clean_cache(&self) -> AocLanguageResult<()> {
         Err(AocLanguageError::Clean(

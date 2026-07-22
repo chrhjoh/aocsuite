@@ -8,7 +8,7 @@ use std::{
 };
 
 use aocsuite_storage::WorkspaceError;
-use aocsuite_utils::{PuzzleDay, PuzzleYear};
+use aocsuite_utils::{CommandError, PuzzleDay, PuzzleYear};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -23,7 +23,7 @@ pub enum SolverFile {
 }
 
 #[derive(Serialize, Deserialize)]
-struct PartResult {
+pub struct PartResult {
     answer: String,
     runtime_ms: u128,
 }
@@ -36,12 +36,67 @@ impl fmt::Display for PartResult {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ExerciseOutput {
+pub struct PuzzleResult {
     part1: Option<PartResult>,
     part2: Option<PartResult>,
 }
 
-impl fmt::Display for ExerciseOutput {
+#[derive(Default)]
+pub struct CompileOutput {
+    pub stdout: String,
+    pub stderr: String,
+}
+
+pub struct RunOutput {
+    pub result: PuzzleResult,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl CompileOutput {
+    pub(crate) fn from_output(output: Output) -> Self {
+        Self {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        }
+    }
+}
+
+impl RunOutput {
+    pub(crate) fn from_output(result: PuzzleResult, output: Output) -> Self {
+        Self {
+            result,
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        }
+    }
+}
+
+impl fmt::Display for CompileOutput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_stream(formatter, "Compiler output", &self.stdout)?;
+        write_stream(formatter, "Compiler errors", &self.stderr)
+    }
+}
+
+impl fmt::Display for RunOutput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_stream(formatter, "Solver output", &self.stdout)?;
+        write_stream(formatter, "Solver errors", &self.stderr)?;
+        self.result.fmt(formatter)
+    }
+}
+
+fn write_stream(formatter: &mut fmt::Formatter<'_>, label: &str, stream: &str) -> fmt::Result {
+    if stream.is_empty() {
+        return Ok(());
+    }
+
+    writeln!(formatter, "{label}:")?;
+    writeln!(formatter, "{}", stream.trim_end())
+}
+
+impl fmt::Display for PuzzleResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(ref p1) = self.part1 {
             writeln!(f, "\n┌──────────────┐")?;
@@ -64,7 +119,6 @@ impl fmt::Display for ExerciseOutput {
         Ok(())
     }
 }
-
 static LINK_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub fn with_result_file<T>(
@@ -79,18 +133,9 @@ pub fn with_result_file<T>(
     }
 }
 
-pub fn read_result(result_file: &Path) -> AocLanguageResult<ExerciseOutput> {
+pub(crate) fn read_result(result_file: &Path) -> AocLanguageResult<PuzzleResult> {
     let reader = BufReader::new(File::open(result_file)?);
     Ok(serde_json::from_reader(reader)?)
-}
-
-pub(crate) fn ensure_command_success(output: &Output) -> AocLanguageResult<()> {
-    if output.status.success() {
-        return Ok(());
-    }
-    Err(AocLanguageError::Command(
-        String::from_utf8_lossy(&output.stderr).to_string(),
-    ))
 }
 
 pub fn symlink_file(from: &Path, to: &Path) -> AocLanguageResult<()> {
@@ -200,8 +245,8 @@ fn replace_link(
 }
 #[derive(Error, Debug)]
 pub enum AocLanguageError {
-    #[error("error executing command: {0}")]
-    Command(String),
+    #[error(transparent)]
+    Command(#[from] CommandError),
 
     #[error("Language not found: {0}")]
     LangNotFound(String),
@@ -253,7 +298,7 @@ pub enum AocLanguageError {
 }
 
 pub type AocLanguageResult<T> = Result<T, AocLanguageError>;
-pub type LanguageRunner = Box<dyn LanguageHandler>;
+pub type LanguageRunner<'executor> = Box<dyn LanguageHandler + 'executor>;
 
 #[cfg(test)]
 mod tests {
@@ -264,7 +309,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{ensure_command_success, symlink_file, symlink_file_with, AocLanguageError};
+    use super::{symlink_file, symlink_file_with, AocLanguageError};
 
     fn test_root() -> PathBuf {
         let unique = SystemTime::now()
@@ -272,22 +317,6 @@ mod tests {
             .expect("system time is after the Unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("aocsuite-links-{}-{unique}", process::id()))
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn failed_commands_return_their_stderr() {
-        use std::os::unix::process::ExitStatusExt;
-
-        let output = std::process::Output {
-            status: process::ExitStatus::from_raw(1),
-            stdout: Vec::new(),
-            stderr: b"command failed".to_vec(),
-        };
-        assert!(matches!(
-            ensure_command_success(&output),
-            Err(AocLanguageError::Command(message)) if message == "command failed"
-        ));
     }
 
     #[cfg(unix)]

@@ -15,7 +15,10 @@ pub mod process;
 pub use domain::{
     DomainError, LanguageId, PartSelection, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear,
 };
-pub use process::{ProcessExecutor, ProcessMode, ProcessRequest, SystemProcessExecutor};
+pub use process::{
+    execute_command, CommandError, CommandExecutor, CommandRequest, ProcessMode,
+    SystemCommandExecutor,
+};
 
 type AocReleaseResult<T> = Result<T, ReleaseError>;
 

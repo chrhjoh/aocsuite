@@ -1,41 +1,36 @@
 use crate::traits::Solver;
 use crate::utils::{AocLanguageResult, SolverFile};
-use aocsuite_utils::PuzzleId;
+use aocsuite_utils::{execute_command, CommandRequest, PuzzleId};
 
 use super::{cargo_contents, RustRunner};
 
-impl Solver for RustRunner {
-    fn compile(
-        &self,
-        _day: aocsuite_utils::PuzzleDay,
-        _year: aocsuite_utils::PuzzleYear,
-    ) -> AocLanguageResult<Option<std::process::Output>> {
-        let output = std::process::Command::new("cargo")
-            .arg("build")
-            .arg("--release")
-            .current_dir(&self.root_dir)
-            .output()?;
-        Ok(Some(output))
+impl Solver for RustRunner<'_> {
+    fn compile(&self) -> AocLanguageResult<Option<std::process::Output>> {
+        Ok(Some(execute_command(
+            self.executor,
+            CommandRequest::new("cargo")
+                .arg("build")
+                .arg("--release")
+                .current_dir(&self.root_dir),
+        )?))
     }
 
     fn run(
         &self,
-        _day: aocsuite_utils::PuzzleDay,
-        _year: aocsuite_utils::PuzzleYear,
         part: aocsuite_utils::PartSelection,
         input: &std::path::Path,
         output: &std::path::Path,
     ) -> AocLanguageResult<std::process::Output> {
         let binary_path = release_binary_path(&self.root_dir);
 
-        let output = std::process::Command::new(&binary_path)
-            .arg(input)
-            .arg(output)
-            .arg(part.to_string())
-            .current_dir(&self.root_dir)
-            .output()?;
-
-        Ok(output)
+        Ok(execute_command(
+            self.executor,
+            CommandRequest::new(binary_path)
+                .arg(input)
+                .arg(output)
+                .arg(part.to_string())
+                .current_dir(&self.root_dir),
+        )?)
     }
 
     fn migrate_runtime(&self) -> AocLanguageResult<()> {
@@ -51,12 +46,13 @@ impl Solver for RustRunner {
         )
     }
     fn clean_cache(&self) -> AocLanguageResult<()> {
-        let output = std::process::Command::new("cargo")
-            .arg("clean")
-            .current_dir(&self.root_dir)
-            .output()?;
-
-        crate::utils::ensure_command_success(&output)
+        execute_command(
+            self.executor,
+            CommandRequest::new("cargo")
+                .arg("clean")
+                .current_dir(&self.root_dir),
+        )?;
+        Ok(())
     }
 
     fn solver_file_path(&self, file: &SolverFile) -> std::path::PathBuf {

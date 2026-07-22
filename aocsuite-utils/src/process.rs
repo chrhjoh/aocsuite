@@ -5,6 +5,8 @@ use std::{
     process::{Command, Output, Stdio},
 };
 
+use thiserror::Error;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ProcessMode {
     #[default]
@@ -13,7 +15,7 @@ pub enum ProcessMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProcessRequest {
+pub struct CommandRequest {
     pub program: OsString,
     pub args: Vec<OsString>,
     pub current_dir: Option<PathBuf>,
@@ -22,7 +24,7 @@ pub struct ProcessRequest {
     pub mode: ProcessMode,
 }
 
-impl ProcessRequest {
+impl CommandRequest {
     pub fn new(program: impl Into<OsString>) -> Self {
         Self {
             program: program.into(),
@@ -69,15 +71,39 @@ impl ProcessRequest {
     }
 }
 
-pub trait ProcessExecutor: Send + Sync {
-    fn execute(&self, request: &ProcessRequest) -> io::Result<Output>;
+pub trait CommandExecutor: Send + Sync {
+    fn execute(&self, request: &CommandRequest) -> io::Result<Output>;
+}
+
+#[derive(Debug, Error)]
+pub enum CommandError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+
+    #[error("command failed: {request:?}: {output:?}")]
+    Failed {
+        request: CommandRequest,
+        output: Output,
+    },
+}
+
+pub fn execute_command(
+    executor: &dyn CommandExecutor,
+    request: CommandRequest,
+) -> Result<Output, CommandError> {
+    let output = executor.execute(&request)?;
+    if output.status.success() {
+        Ok(output)
+    } else {
+        Err(CommandError::Failed { request, output })
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct SystemProcessExecutor;
+pub struct SystemCommandExecutor;
 
-impl ProcessExecutor for SystemProcessExecutor {
-    fn execute(&self, request: &ProcessRequest) -> io::Result<Output> {
+impl CommandExecutor for SystemCommandExecutor {
+    fn execute(&self, request: &CommandRequest) -> io::Result<Output> {
         let mut command = Command::new(&request.program);
         if !request.inherit_environment {
             command.env_clear();
@@ -111,15 +137,18 @@ impl ProcessExecutor for SystemProcessExecutor {
 mod tests {
     use std::{io, sync::Mutex};
 
-    use super::{ProcessExecutor, ProcessMode, ProcessRequest, SystemProcessExecutor};
+    use super::{
+        execute_command, CommandError, CommandExecutor, CommandRequest, ProcessMode,
+        SystemCommandExecutor,
+    };
 
     #[derive(Default)]
     struct RecordingExecutor {
-        requests: Mutex<Vec<ProcessRequest>>,
+        requests: Mutex<Vec<CommandRequest>>,
     }
 
-    impl ProcessExecutor for RecordingExecutor {
-        fn execute(&self, request: &ProcessRequest) -> io::Result<std::process::Output> {
+    impl CommandExecutor for RecordingExecutor {
+        fn execute(&self, request: &CommandRequest) -> io::Result<std::process::Output> {
             self.requests.lock().unwrap().push(request.clone());
             Err(io::Error::new(io::ErrorKind::NotFound, "fake process"))
         }
@@ -128,7 +157,7 @@ mod tests {
     #[test]
     fn requests_preserve_os_native_process_details() {
         let executor = RecordingExecutor::default();
-        let request = ProcessRequest::new("program")
+        let request = CommandRequest::new("program")
             .arg("argument")
             .current_dir("work")
             .clear_environment()
@@ -144,9 +173,33 @@ mod tests {
 
     #[test]
     fn system_executor_reports_launch_errors() {
-        let result = SystemProcessExecutor
-            .execute(&ProcessRequest::new("aocsuite-command-that-must-not-exist"));
+        let result = SystemCommandExecutor
+            .execute(&CommandRequest::new("aocsuite-command-that-must-not-exist"));
 
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn checked_execution_retains_failed_command_details() {
+        use std::os::unix::process::ExitStatusExt;
+
+        struct FailedExecutor;
+
+        impl CommandExecutor for FailedExecutor {
+            fn execute(&self, _: &CommandRequest) -> io::Result<std::process::Output> {
+                Ok(std::process::Output {
+                    status: std::process::ExitStatus::from_raw(1),
+                    stdout: b"partial output".to_vec(),
+                    stderr: b"command failed".to_vec(),
+                })
+            }
+        }
+
+        assert!(matches!(
+            execute_command(&FailedExecutor, CommandRequest::new("failed-command")),
+            Err(CommandError::Failed { output, .. })
+                if output.stdout == b"partial output" && output.stderr == b"command failed"
+        ));
     }
 }

@@ -1,39 +1,35 @@
-use crate::AocLanguageError;
 use crate::{
     traits::{DepManager, Solver},
-    utils::ensure_command_success,
-    AocLanguageResult,
+    AocLanguageError, AocLanguageResult,
 };
-use std::process::Command;
 use std::{
     collections::HashMap,
     ffi::OsString,
     path::{Path, PathBuf},
+    process::Output,
 };
 
 use super::PythonRunner;
+use aocsuite_utils::{execute_command, CommandRequest};
 
-impl DepManager for PythonRunner {
-    fn setup_env(&self) -> AocLanguageResult<()> {
+impl DepManager for PythonRunner<'_> {
+    fn setup_env(&self) -> AocLanguageResult<Option<Output>> {
         self.migrate_runtime()?;
         let venv_path = self.root_dir.join("venv");
 
         if !venv_path.exists() {
             // Create virtual environment
-            let output = Command::new("python3")
-                .arg("-m")
-                .arg("venv")
-                .arg("venv")
-                .current_dir(&self.root_dir)
-                .output()?;
-
-            if !output.status.success() {
-                let error = String::from_utf8_lossy(&output.stderr);
-                return Err(AocLanguageError::Env(error.into()));
-            }
+            return Ok(Some(execute_command(
+                self.executor,
+                CommandRequest::new("python3")
+                    .arg("-m")
+                    .arg("venv")
+                    .arg("venv")
+                    .current_dir(&self.root_dir),
+            )?));
         }
 
-        Ok(())
+        Ok(None)
     }
     fn clean_env(&self) -> AocLanguageResult<()> {
         std::fs::remove_dir_all(self.root_dir.join("venv"))?;
@@ -43,17 +39,13 @@ impl DepManager for PythonRunner {
     fn add_package(&self, package: &str) -> AocLanguageResult<()> {
         let pip_path = self.get_pip_path();
 
-        let output = Command::new(pip_path)
-            .arg("install")
-            .arg(package)
-            .current_dir(&self.root_dir)
-            .output()?;
-
-        if !output.status.success() {
-            let error = String::from_utf8_lossy(&output.stderr);
-            return Err(AocLanguageError::DepAdd(package.into(), error.into()));
-        }
-
+        execute_command(
+            self.executor,
+            CommandRequest::new(pip_path)
+                .arg("install")
+                .arg(package)
+                .current_dir(&self.root_dir),
+        )?;
         Ok(())
     }
 
@@ -65,15 +57,15 @@ impl DepManager for PythonRunner {
 
         let pip_path = self.get_pip_path();
 
-        let output = Command::new(pip_path)
-            .arg("list")
-            .arg("--format=freeze")
-            .current_dir(&self.root_dir)
-            .output()?;
+        let diagnostic = execute_command(
+            self.executor,
+            CommandRequest::new(pip_path)
+                .arg("list")
+                .arg("--format=freeze")
+                .current_dir(&self.root_dir),
+        )?;
 
-        ensure_command_success(&output)?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = String::from_utf8_lossy(&diagnostic.stdout);
         let packages: Vec<String> = stdout
             .lines()
             .filter_map(|line| {
@@ -91,18 +83,14 @@ impl DepManager for PythonRunner {
     fn remove_packages(&self, package: &str) -> AocLanguageResult<()> {
         let pip_path = self.get_pip_path();
 
-        let output = Command::new(pip_path)
-            .arg("uninstall")
-            .arg("-y") // Auto-confirm removal
-            .arg(package)
-            .current_dir(&self.root_dir)
-            .output()?;
-
-        if !output.status.success() {
-            let error = String::from_utf8_lossy(&output.stderr);
-            return Err(AocLanguageError::DepRemove(package.into(), error.into()));
-        }
-
+        execute_command(
+            self.executor,
+            CommandRequest::new(pip_path)
+                .arg("uninstall")
+                .arg("-y")
+                .arg(package)
+                .current_dir(&self.root_dir),
+        )?;
         Ok(())
     }
     fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<OsString, OsString>> {
@@ -126,7 +114,7 @@ fn prepend_path(directory: &Path, current_path: Option<OsString>) -> AocLanguage
     std::env::join_paths(paths).map_err(|error| AocLanguageError::Env(error.to_string()))
 }
 
-impl PythonRunner {
+impl PythonRunner<'_> {
     fn get_pip_path(&self) -> PathBuf {
         if cfg!(windows) {
             self.root_dir.join("venv").join("Scripts").join("pip.exe")

@@ -9,27 +9,34 @@ use std::{
     collections::HashMap,
     ffi::OsString,
     path::{Path, PathBuf},
-    process::Output,
 };
 
 use aocsuite_storage::Workspace;
-use aocsuite_utils::{LanguageId, PartSelection, PuzzleDay, PuzzleYear};
-use utils::{
-    ensure_command_success, read_result, with_result_file, ExerciseOutput, LanguageRunner,
+use aocsuite_utils::{CommandExecutor, LanguageId, PartSelection, PuzzleDay, PuzzleYear};
+use utils::{read_result, with_result_file, LanguageRunner};
+pub use utils::{
+    AocLanguageError, AocLanguageResult, CompileOutput, PuzzleResult, RunOutput, SolverFile,
 };
-pub use utils::{AocLanguageError, AocLanguageResult, SolverFile};
 
-pub struct Language<'workspace> {
+pub struct Language<'workspace, 'executor> {
     language_type: LanguageId,
-    runner: LanguageRunner,
+    runner: LanguageRunner<'executor>,
     workspace: &'workspace Workspace,
 }
 
-impl<'workspace> Language<'workspace> {
-    pub fn new(language: LanguageId, workspace: &'workspace Workspace) -> Self {
+impl<'workspace, 'executor> Language<'workspace, 'executor> {
+    pub fn new(
+        language: LanguageId,
+        workspace: &'workspace Workspace,
+        executor: &'executor dyn CommandExecutor,
+    ) -> Self {
         Self {
             language_type: language,
-            runner: languages::to_runner(language, workspace.language_project_dir(language)),
+            runner: languages::to_runner(
+                language,
+                workspace.language_project_dir(language),
+                executor,
+            ),
             workspace,
         }
     }
@@ -40,25 +47,21 @@ impl<'workspace> Language<'workspace> {
         year: PuzzleYear,
         part: PartSelection,
         input: &Path,
-    ) -> AocLanguageResult<(ExerciseOutput, Output)> {
+    ) -> AocLanguageResult<RunOutput> {
         self.setup_solution(day, year)?;
         let output_file = self.workspace.allocate_run_result_file()?;
         with_result_file(&output_file, |output_file| {
-            let output = self.runner.run(day, year, part, input, output_file)?;
-            ensure_command_success(&output)?;
-            Ok((read_result(output_file)?, output))
+            let output = self.runner.run(part, input, output_file)?;
+            Ok(RunOutput::from_output(read_result(output_file)?, output))
         })
     }
 
-    pub fn compile(&self, day: PuzzleDay, year: PuzzleYear) -> AocLanguageResult<Option<Output>> {
-        self.setup_solution(day, year)?;
-        match self.runner.compile(day, year)? {
-            Some(output) => {
-                ensure_command_success(&output)?;
-                Ok(Some(output))
-            }
-            None => Ok(None),
-        }
+    pub fn compile(&self) -> AocLanguageResult<CompileOutput> {
+        Ok(self
+            .runner
+            .compile()?
+            .map(CompileOutput::from_output)
+            .unwrap_or_default())
     }
 
     pub fn prepare_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
@@ -135,7 +138,8 @@ impl<'workspace> Language<'workspace> {
         self.runner.migrate_runtime()?;
         self.runner
             .ensure_solver_file(&SolverFile::ActiveSolution(day, year))?;
-        self.runner.setup_env()
+        self.runner.setup_env()?;
+        Ok(())
     }
 }
 
@@ -228,18 +232,25 @@ mod tests {
         fs,
         path::PathBuf,
         process,
+        sync::Mutex,
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{ensure_no_case_collision, validate_user_lib};
+    use super::{ensure_no_case_collision, validate_user_lib, Language};
     use crate::{
         python::PythonRunner,
         rust::RustRunner,
-        traits::{DepManager, LanguageHandler, Solver},
-        utils::{ensure_command_success, read_result, with_result_file},
+        traits::{LanguageHandler, Solver},
+        utils::{read_result, with_result_file},
         AocLanguageError, SolverFile,
     };
-    use aocsuite_utils::{LanguageId, PartSelection, PuzzleDay, PuzzleYear};
+    use aocsuite_storage::Workspace;
+    use aocsuite_utils::{
+        CommandExecutor, CommandRequest, LanguageId, PartSelection, PuzzleDay, PuzzleYear,
+        SystemCommandExecutor,
+    };
+
+    static SYSTEM_EXECUTOR: SystemCommandExecutor = SystemCommandExecutor;
 
     fn puzzle_solution(day: u32) -> SolverFile {
         SolverFile::PuzzleSolution(
@@ -342,11 +353,11 @@ mod tests {
         let solution = puzzle_solution(4);
 
         assert_eq!(
-            RustRunner::new(rust_root.clone()).solver_file_path(&solution),
+            RustRunner::new(rust_root.clone(), &SYSTEM_EXECUTOR).solver_file_path(&solution),
             rust_root.join("solutions/year2024_day4.rs")
         );
         assert_eq!(
-            PythonRunner::new(python_root.clone()).solver_file_path(&solution),
+            PythonRunner::new(python_root.clone(), &SYSTEM_EXECUTOR).solver_file_path(&solution),
             python_root.join("solutions/year2024_day4.py")
         );
     }
@@ -354,7 +365,7 @@ mod tests {
     #[test]
     fn rust_activation_selects_the_requested_solution() {
         let root = test_root("rust");
-        let runner = RustRunner::new(root.clone());
+        let runner = RustRunner::new(root.clone(), &SYSTEM_EXECUTOR);
 
         assert_requested_solution_is_active(&runner);
 
@@ -365,7 +376,7 @@ mod tests {
     fn python_activation_selects_the_requested_solution() {
         let root = test_root("python");
         fs::create_dir_all(&root).expect("create test runtime");
-        let runner = PythonRunner::new(root.clone());
+        let runner = PythonRunner::new(root.clone(), &SYSTEM_EXECUTOR);
 
         assert_requested_solution_is_active(&runner);
 
@@ -375,7 +386,7 @@ mod tests {
     #[test]
     fn python_setup_creates_main_without_overwriting_it() {
         let root = test_root("python-main");
-        let runner = PythonRunner::new(root.clone());
+        let runner = PythonRunner::new(root.clone(), &SYSTEM_EXECUTOR);
         let main_path = runner.solver_file_path(&SolverFile::Entrypoint);
 
         runner
@@ -399,52 +410,81 @@ mod tests {
     }
 
     #[test]
-    fn fresh_python_runtime_executes_a_solution() {
+    fn language_run_returns_a_result() {
+        struct ScriptedExecutor {
+            requests: Mutex<Vec<CommandRequest>>,
+        }
+
+        impl CommandExecutor for ScriptedExecutor {
+            fn execute(&self, request: &CommandRequest) -> std::io::Result<std::process::Output> {
+                self.requests.lock().unwrap().push(request.clone());
+                if request.args.len() == 4 {
+                    std::fs::write(
+                        std::path::PathBuf::from(request.args[2].clone()),
+                        r#"{"part1":{"answer":"example","runtime_ms":3},"part2":{"answer":"8","runtime_ms":4}}"#,
+                    )?;
+                }
+                Ok(successful_output())
+            }
+        }
+
         let root = test_root("python-execution");
-        let runner = PythonRunner::new(root.clone());
+        let workspace = Workspace::new(root.clone());
         let input = root.join("input.txt");
-        let output = root.join("result.json");
-
-        runner
-            .migrate_runtime()
-            .expect("migrate fresh Python runtime");
-        let solution = runner
-            .ensure_solver_file(&puzzle_solution(1))
-            .expect("create Python solution");
-        fs::write(
-            &solution,
-            "def part1(input):\n    return input.strip()\n\ndef part2(input):\n    return len(input)\n",
-        )
-        .expect("write Python solution");
-        runner
-            .ensure_solver_file(&active_solution(1))
-            .expect("activate Python solution");
-        runner
-            .setup_env()
-            .expect("create Python virtual environment");
+        fs::create_dir_all(&root).expect("create test workspace");
         fs::write(&input, "example\n").expect("write input");
+        let executor = ScriptedExecutor {
+            requests: Mutex::new(Vec::new()),
+        };
+        let language = Language::new(LanguageId::Python, &workspace, &executor);
 
-        let command = runner
+        language.compile().expect("compile Python solution");
+        let result = language
             .run(
                 PuzzleDay::new(1).unwrap(),
                 PuzzleYear::new(2024).unwrap(),
                 PartSelection::Both,
                 &input,
-                &output,
             )
             .expect("run Python solution");
-        ensure_command_success(&command).expect("Python solution succeeds");
-        let result = read_result(&output).expect("parse Python result");
-        assert!(result.to_string().contains("Answer: example"));
-        assert!(result.to_string().contains("Answer: 8"));
+
+        assert!(result.result.to_string().contains("Answer: example"));
+        assert!(result.result.to_string().contains("Answer: 8"));
+        assert_eq!(result.stdout, "command output");
+        assert_eq!(
+            executor.requests.lock().unwrap()[0].program,
+            std::ffi::OsString::from("python3")
+        );
 
         fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[cfg(unix)]
+    fn successful_output() -> std::process::Output {
+        use std::os::unix::process::ExitStatusExt;
+
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: b"command output".to_vec(),
+            stderr: Vec::new(),
+        }
+    }
+
+    #[cfg(windows)]
+    fn successful_output() -> std::process::Output {
+        use std::os::windows::process::ExitStatusExt;
+
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: b"command output".to_vec(),
+            stderr: Vec::new(),
+        }
     }
 
     #[test]
     fn rust_runtime_migration_replaces_only_owned_files() {
         let root = test_root("rust-migration");
-        let runner = RustRunner::new(root.clone());
+        let runner = RustRunner::new(root.clone(), &SYSTEM_EXECUTOR);
         let main = root.join("src/main.rs");
         let cargo = root.join("Cargo.toml");
         let solution = root.join("src/solution.rs");
@@ -483,7 +523,7 @@ mod tests {
     #[test]
     fn python_runtime_migration_replaces_only_owned_files() {
         let root = test_root("python-migration");
-        let runner = PythonRunner::new(root.clone());
+        let runner = PythonRunner::new(root.clone(), &SYSTEM_EXECUTOR);
         let main = root.join("main.py");
         let solution = root.join("solution.py");
         let library = root.join("helpers.py");
@@ -517,7 +557,7 @@ mod tests {
     #[test]
     fn python_solution_template_interpolates_input_length() {
         let root = test_root("python-template");
-        let runner = PythonRunner::new(root.clone());
+        let runner = PythonRunner::new(root.clone(), &SYSTEM_EXECUTOR);
 
         let solution = runner
             .ensure_solver_file(&puzzle_solution(1))
@@ -549,7 +589,7 @@ mod tests {
         let failed_result = runs_dir.join("failed.json");
         fs::write(&failed_result, "partial result").expect("write partial result");
         let failure: crate::AocLanguageResult<()> = with_result_file(&failed_result, |_| {
-            Err(AocLanguageError::Command("solver failed".to_string()))
+            Err(AocLanguageError::Clean("solver failed".to_string()))
         });
         assert!(failure.is_err());
         assert!(!failed_result.exists());
@@ -561,8 +601,8 @@ mod tests {
     fn generated_harnesses_publish_results_atomically() {
         let root = test_root("atomic-harnesses");
         fs::create_dir_all(&root).expect("create test runtime");
-        let rust = RustRunner::new(root.clone());
-        let python = PythonRunner::new(root.clone());
+        let rust = RustRunner::new(root.clone(), &SYSTEM_EXECUTOR);
+        let python = PythonRunner::new(root.clone(), &SYSTEM_EXECUTOR);
 
         assert!(rust.main_contents().contains("fs::rename"));
         assert!(python.main_contents().contains("os.replace"));

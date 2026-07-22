@@ -1,32 +1,26 @@
-use std::{collections::HashMap, ffi::OsString, process::Command};
+use std::{collections::HashMap, ffi::OsString, process::Output};
 
 use crate::{
     traits::{DepManager, Solver},
-    utils::ensure_command_success,
     AocLanguageError, AocLanguageResult,
 };
 
 use super::RustRunner;
+use aocsuite_utils::{execute_command, CommandRequest};
 
-impl DepManager for RustRunner {
-    fn setup_env(&self) -> AocLanguageResult<()> {
-        self.migrate_runtime()
+impl DepManager for RustRunner<'_> {
+    fn setup_env(&self) -> AocLanguageResult<Option<Output>> {
+        self.migrate_runtime()?;
+        Ok(None)
     }
     fn add_package(&self, package: &str) -> AocLanguageResult<()> {
-        let output = Command::new("cargo")
-            .arg("add")
-            .arg(package)
-            .current_dir(&self.root_dir)
-            .output()?;
-
-        if !output.status.success() {
-            let error = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::AocLanguageError::DepAdd(
-                package.into(),
-                error.into(),
-            ));
-        }
-
+        execute_command(
+            self.executor,
+            CommandRequest::new("cargo")
+                .arg("add")
+                .arg(package)
+                .current_dir(&self.root_dir),
+        )?;
         Ok(())
     }
     fn clean_env(&self) -> AocLanguageResult<()> {
@@ -41,14 +35,14 @@ impl DepManager for RustRunner {
             return Ok(Vec::new());
         }
 
-        let output = Command::new("cargo")
-            .arg("tree")
-            .arg("--depth=1")
-            .arg("--prefix=none")
-            .current_dir(&self.root_dir)
-            .output()?;
-
-        ensure_command_success(&output)?;
+        let output = execute_command(
+            self.executor,
+            CommandRequest::new("cargo")
+                .arg("tree")
+                .arg("--depth=1")
+                .arg("--prefix=none")
+                .current_dir(&self.root_dir),
+        )?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let packages: Vec<String> = stdout
@@ -71,20 +65,13 @@ impl DepManager for RustRunner {
                 "Is required by AocSuite".to_string(),
             ));
         }
-        let output = Command::new("cargo")
-            .arg("remove")
-            .arg(package)
-            .current_dir(&self.root_dir)
-            .output()?;
-
-        if !output.status.success() {
-            let error = String::from_utf8_lossy(&output.stderr);
-            return Err(crate::AocLanguageError::DepRemove(
-                package.into(),
-                error.into(),
-            ));
-        }
-
+        execute_command(
+            self.executor,
+            CommandRequest::new("cargo")
+                .arg("remove")
+                .arg(package)
+                .current_dir(&self.root_dir),
+        )?;
         Ok(())
     }
     fn editor_environment_vars(&self) -> AocLanguageResult<HashMap<OsString, OsString>> {

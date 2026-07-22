@@ -8,7 +8,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use aocsuite_utils::{ProcessExecutor, ProcessRequest, SystemProcessExecutor};
+use aocsuite_utils::{
+    execute_command, CommandError, CommandExecutor, CommandRequest, SystemCommandExecutor,
+};
 use editor::Editor;
 use editor_types::EditorCommand;
 use thiserror::Error;
@@ -17,6 +19,9 @@ use thiserror::Error;
 pub enum AocEditorError {
     #[error("error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Command(#[from] CommandError),
 
     #[error("editor {0} not implemented")]
     Invalid(String),
@@ -59,27 +64,22 @@ pub fn open(
 }
 
 pub fn open_browser(url: &str) -> AocEditorResult<()> {
-    open_browser_with(&SystemProcessExecutor, url)
+    open_browser_with(&SystemCommandExecutor, url)
 }
 
-fn open_browser_with(executor: &dyn ProcessExecutor, url: &str) -> AocEditorResult<()> {
+fn open_browser_with(executor: &dyn CommandExecutor, url: &str) -> AocEditorResult<()> {
     #[cfg(target_os = "macos")]
-    let request = ProcessRequest::new("open").arg(url).foreground();
+    let request = CommandRequest::new("open").arg(url).foreground();
 
     #[cfg(target_os = "linux")]
-    let request = ProcessRequest::new("xdg-open").arg(url).foreground();
+    let request = CommandRequest::new("xdg-open").arg(url).foreground();
 
     #[cfg(target_os = "windows")]
-    let request = ProcessRequest::new("cmd")
+    let request = CommandRequest::new("cmd")
         .args(["/C", "start", url])
         .foreground();
 
-    let output = executor.execute(&request)?;
-    if !output.status.success() {
-        return Err(AocEditorError::RunProgram(
-            request.program.to_string_lossy().into_owned(),
-        ));
-    }
+    execute_command(executor, request)?;
     Ok(())
 }
 
@@ -87,14 +87,14 @@ fn open_browser_with(executor: &dyn ProcessExecutor, url: &str) -> AocEditorResu
 mod browser_tests {
     use std::{io, process::Output};
 
-    use aocsuite_utils::{ProcessExecutor, ProcessMode, ProcessRequest};
+    use aocsuite_utils::{CommandExecutor, CommandRequest, ProcessMode};
 
     use super::{open_browser_with, AocEditorError};
 
     struct FakeExecutor;
 
-    impl ProcessExecutor for FakeExecutor {
-        fn execute(&self, request: &ProcessRequest) -> io::Result<Output> {
+    impl CommandExecutor for FakeExecutor {
+        fn execute(&self, request: &CommandRequest) -> io::Result<Output> {
             assert_eq!(request.mode, ProcessMode::Foreground);
             Ok(failed_output())
         }
@@ -126,7 +126,7 @@ mod browser_tests {
     fn failed_browser_launch_returns_a_typed_error() {
         assert!(matches!(
             open_browser_with(&FakeExecutor, "https://example.com"),
-            Err(AocEditorError::RunProgram(_))
+            Err(AocEditorError::Command(_))
         ));
     }
 }
