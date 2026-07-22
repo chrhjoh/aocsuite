@@ -4,7 +4,5 @@ mod layout;
 mod workspace;
 
 pub use content::{CacheCleanScope, ContentError, ContentResult, ContentStore};
-pub use layout::{
-    get_aocsuite_dir, BootstrapReport, LayoutError, RuntimeLayout, CURRENT_LAYOUT_VERSION,
-};
+pub use layout::{get_aocsuite_dir, LayoutError, RuntimeLayout, CURRENT_LAYOUT_VERSION};
 pub use workspace::{GitMode, Workspace, WorkspaceError, WorkspaceResult};

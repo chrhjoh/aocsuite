@@ -271,7 +271,7 @@ There are no active users requiring migration from the current unversioned layou
 Bootstrap behavior is:
 
 - Missing root: create layout version 1.
-- Empty root: initialize layout version 1.
+- Existing root without a manifest, including an empty root: reject without mutation.
 - Current supported layout: open normally.
 - Nonempty unversioned root: reject without mutation and provide manual-removal guidance.
 - Newer layout version: reject without mutation.

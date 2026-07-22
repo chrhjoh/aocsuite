@@ -56,6 +56,7 @@
 
 ## Verification
 
+- Do not add, expand, or modify tests unless the user explicitly requests test work. Existing tests may still be run to verify implementation changes.
 - Workspace build: `cargo check --workspace`
 - Workspace tests: `cargo test --workspace`
 - Focused crate/test: `cargo test -p <crate> [test-filter]`; focused compile: `cargo check -p <crate>`

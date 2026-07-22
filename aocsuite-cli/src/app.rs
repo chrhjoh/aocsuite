@@ -135,7 +135,8 @@ pub fn run_aocsuite(
             }
         }
         AocCommand::GitIgnore => {
-            let path = workspace.gitignore_path()?;
+            workspace.ensure()?;
+            let path = workspace.gitignore_path();
             aocsuite_editor::open(&resolve_editor(config)?, &path, None)?;
         }
         AocCommand::Env { action, language } => {

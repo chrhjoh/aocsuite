@@ -35,11 +35,14 @@ impl Workspace {
         Self { directory }
     }
 
-    pub fn gitignore_path(&self) -> WorkspaceResult<PathBuf> {
+    pub fn gitignore_path(&self) -> PathBuf {
+        self.directory.join(".gitignore")
+    }
+
+    pub fn ensure(&self) -> WorkspaceResult<()> {
         std::fs::create_dir_all(&self.directory)?;
-        let path = self.directory.join(".gitignore");
-        atomic_write(&path, GITIGNORE.as_bytes())?;
-        Ok(path)
+        atomic_write(&self.gitignore_path(), GITIGNORE.as_bytes())?;
+        Ok(())
     }
 
     pub fn language_project_dir(&self, language: LanguageId) -> PathBuf {
@@ -99,7 +102,7 @@ impl Workspace {
             return execute_git(executor, &self.directory, &clone_args, mode);
         }
 
-        self.gitignore_path()?;
+        self.ensure()?;
         execute_git(executor, &self.directory, args, mode)
     }
 }

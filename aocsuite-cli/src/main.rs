@@ -34,9 +34,12 @@ fn main() {
     layout
         .bootstrap()
         .unwrap_or_else(|error| terminate_with_error(error.into()));
+    let workspace = Workspace::new(layout.workspace_dir());
+    workspace
+        .ensure()
+        .unwrap_or_else(|error| terminate_with_error(error.into()));
     let content = ContentStore::open(layout.cache_dir())
         .unwrap_or_else(|error| terminate_with_error(error.into()));
-    let workspace = Workspace::new(layout.workspace_dir());
     let args = parsed.unwrap_or_else(|error| error.exit());
     let mut config = Configuration::load(layout.config_dir())
         .unwrap_or_else(|error| terminate_with_error(error.into()));

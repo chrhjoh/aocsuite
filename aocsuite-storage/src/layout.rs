@@ -9,12 +9,6 @@ use thiserror::Error;
 
 pub const CURRENT_LAYOUT_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BootstrapReport {
-    Initialized,
-    Opened,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeLayout {
     root: PathBuf,
@@ -99,7 +93,7 @@ impl RuntimeLayout {
         let manifest_path = self.layout_manifest_path();
         if !self.root.exists() {
             fs::create_dir_all(&self.root)?;
-            manifest.write(&manifest_path)?
+            manifest.write(&manifest_path)?;
         } else if !self.root.is_dir() {
             return Err(LayoutError::RootNotDirectory(self.root.clone()));
         }
@@ -144,13 +138,14 @@ impl LayoutManifest {
         let current_manifest: LayoutManifest = serde_json::from_slice(&bytes)?;
 
         if current_manifest.layout_version != self.layout_version {
-            return Err(LayoutError::InvalidManifest(
-                "layout_version must match".to_owned(),
-            ));
+            return Err(LayoutError::UnsupportedLayoutVersion {
+                found: current_manifest.layout_version,
+                supported: self.layout_version,
+            });
         }
-        if current_manifest.created_by.trim() != self.created_by.trim() {
+        if current_manifest.created_by.trim().is_empty() {
             return Err(LayoutError::InvalidManifest(
-                "created_by must match".to_owned(),
+                "created_by must not be empty".to_owned(),
             ));
         }
         //TODO: migration logic

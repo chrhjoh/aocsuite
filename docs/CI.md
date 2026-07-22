@@ -6,6 +6,8 @@ Use GitHub Actions to verify every pull request, exercise supported operating sy
 
 CI must never use a real AoC session, contact Advent of Code, submit answers, launch user applications, or depend on developer-local runtime state. Tests use explicit temporary roots and fake HTTP, process, clock, and environment seams.
 
+Do not add or expand test coverage unless the user explicitly requests it. This document describes how to run and evolve the existing test suite once that work is requested.
+
 ## Rollout
 
 Introduce CI in stages so required checks reflect a passing repository baseline.
@@ -18,7 +20,7 @@ Add `.github/workflows/ci.yml` on pull requests and pushes to the default branch
 - `cargo test --workspace --locked`
 - `cargo run -p aocsuite-cli --locked -- --help`
 
-Run this initial job on Ubuntu with an explicit temporary `AOCSUITE_DATA_DIR` because the target application bootstraps storage on every invocation. Do not make formatting or strict Clippy required until the existing unrelated failures recorded in `IMPLEMENTATION_NOTES.md` are fixed.
+Run this initial job on Ubuntu with an explicit temporary `AOCSUITE_DATA_DIR` because the target application bootstraps storage on every invocation. Do not make formatting or strict Clippy required until their baselines are fixed.
 
 Use workflow concurrency to cancel superseded runs for the same branch. Grant read-only repository permissions and no secrets.
 
