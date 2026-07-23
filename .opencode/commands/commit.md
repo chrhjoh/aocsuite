@@ -3,7 +3,10 @@ description: Create a focused Conventional Commit
 Read AGENTS.md.
 
 Inspect the current status and diff. Stage only the changes that form one
-coherent commit, then run the applicable verification checks.
+coherent commit, then run these verification checks:
+- cargo fmt --all -- --check
+- cargo check --workspace --locked
+- cargo test --workspace --locked
 
 Create a Conventional Commit using this context:
 

@@ -20,7 +20,7 @@ Use this skill after implementing or materially changing Rust behavior.
 5. Run focused checks where they improve diagnosis.
 6. Run the broadest applicable repository checks.
 7. Do not weaken checks, remove tests, or hide failures.
-8. Check whether authoritative documentation became stale. use skill update-project-docs
+8. Check whether authoritative documentation became stale. If so, use skill update-project-docs
 
 ## Report
 

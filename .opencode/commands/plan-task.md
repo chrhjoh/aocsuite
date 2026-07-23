@@ -7,8 +7,8 @@ Plan the following task without modifying files:
 
 $ARGUMENTS
 
-First read `AGENTS.md`. Then read only the domain documents relevant to the
-task.
+First read `AGENTS.md`. Use the "Sources of truth" section in AGENTS.md to
+determine which domain documents are relevant to the task, then read only those.
 
 Return:
 

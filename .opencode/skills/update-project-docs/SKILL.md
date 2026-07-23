@@ -10,11 +10,14 @@ metadata:
 # Update project documentation
 
 Use this skill only when the requested change alters documented behavior,
-architecture, or active-plan status.
+architecture, or active-plan status. Do not invoke this skill for implementation
+changes that do not affect documented decisions.
 
 ## Route changes
 
-- use the `AGENTS.md` as source of truth for routing of documentation
+- Use `AGENTS.md` as the source of truth for routing of documentation
+- Only update authoritative documents (design/ and plans/ directories)
+- Do not duplicate decisions across documents
 
 ## Rules
 

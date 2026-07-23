@@ -12,9 +12,8 @@ permission:
     "git diff*": allow
     "git log*": allow
     "cargo fmt --all -- --check": allow
-    "cargo check*": allow
-    "cargo test*": allow
-    "cargo clippy*": allow
+    "cargo check --workspace --locked": allow
+    "cargo clippy --workspace --all-targets --all-features -- -D warnings": allow
 ---
 
 Review the current change without modifying files.

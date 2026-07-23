@@ -4,7 +4,9 @@ agent: reviewer
 subtask: true
 ---
 
-Review the current Git diff.
+If git diff or git diff --cached shows no changes, report "No changes to review" and stop.
+
+Otherwise, review the current Git diff.
 
 use skill verify-rust-change $ARGUMENTS
 
