@@ -1,40 +1,71 @@
-# Continuous Integration And Releases
+# Continuous Integration and Releases
+
+## Status and purpose
+
+This document defines the intended GitHub Actions and release policy.
+
+It separates stable automation decisions from rollout status. Current completion
+status is tracked in `plans/pre-tui-refactor.md`.
 
 ## Goals
 
-Use GitHub Actions to verify every pull request, exercise supported operating systems, and publish reproducible CLI binaries. Add TUI binaries to the same release process after `aocsuite-tui` exists and reaches command parity.
+- Verify pull requests and default-branch changes.
+- Exercise supported operating systems with deterministic tests.
+- Publish reproducible CLI binaries.
+- Add TUI binaries to the same product release after TUI parity.
+- Keep CI independent of credentials, live services, user applications, and
+  developer-local state.
 
-CI must never use a real AoC session, contact Advent of Code, submit answers, launch user applications, or depend on developer-local runtime state. Tests use explicit temporary roots and fake HTTP, process, clock, and environment seams.
+CI must never:
 
-Do not add or expand test coverage unless the user explicitly requests it. This document describes how to run and evolve the existing test suite once that work is requested.
+- use a real AoC session;
+- contact Advent of Code;
+- submit answers;
+- launch editors, browsers, or a real terminal UI;
+- depend on a developer runtime root;
+- run untrusted pull-request code with write permissions.
 
-## Rollout
+Tests use explicit temporary roots and deterministic HTTP, process, clock,
+environment, filesystem, and terminal seams.
 
-Introduce CI in stages so required checks reflect a passing repository baseline.
+## Rollout stages
+
+Stages describe sequencing, not standing permission to perform unrelated CI
+work.
 
 ### Stage 1: Baseline CI
 
-Add `.github/workflows/ci.yml` on pull requests and pushes to the default branch with:
+The baseline workflow runs on pull requests and default-branch pushes:
 
-- `cargo check --workspace --locked`
-- `cargo test --workspace --locked`
-- `cargo run -p aocsuite-cli --locked -- --help`
+```text
+cargo check --workspace --locked
+cargo test --workspace --locked
+cargo run -p aocsuite-cli --locked -- --help
+```
 
-Run this initial job on Ubuntu with an explicit temporary `AOCSUITE_DATA_DIR` because the target application bootstraps storage on every invocation. Do not make formatting or strict Clippy required until their baselines are fixed.
+Initial runner:
 
-Use workflow concurrency to cancel superseded runs for the same branch. Grant read-only repository permissions and no secrets.
+- Ubuntu;
+- stable Rust;
+- explicit temporary `AOCSUITE_DATA_DIR`;
+- read-only repository permissions;
+- no secrets.
 
-### Stage 2: Cross-Platform Matrix
+Use concurrency groups to cancel superseded runs for the same branch.
 
-After process, environment, HTTP, and filesystem tests use deterministic fakes, run stable Rust on:
+Formatting, strict Clippy, and rustdoc are not required until their existing
+baselines pass.
 
-- Ubuntu x86-64.
-- Windows x86-64.
+### Stage 2: Deterministic cross-platform matrix
+
+After normal tests no longer invoke real process, environment, HTTP, terminal,
+or developer-local state, run stable Rust on:
+
+- Ubuntu x86-64;
+- Windows x86-64;
 - macOS ARM64.
 
-Install a supported Python version through `actions/setup-python` for tests that inspect Python project behavior, but normal deterministic coverage must not create real virtual environments or invoke pip. Keep optional real Cargo/Python smoke tests in a separate non-required workflow.
-
-Each matrix entry runs:
+Each entry runs:
 
 ```text
 cargo check --workspace --all-targets --locked
@@ -42,11 +73,19 @@ cargo test --workspace --all-targets --locked
 cargo run -p aocsuite-cli --locked -- --help
 ```
 
-After `aocsuite-tui` exists, add a noninteractive TUI compile/test target. Do not launch a real terminal UI in CI; use `ratatui::TestBackend` and fake terminal operations.
+Install a supported Python version with `actions/setup-python` where tests
+inspect Python-project behavior. Normal required tests must not create real
+virtual environments or invoke pip.
 
-### Stage 3: Quality Gates
+Optional real Cargo or Python smoke tests belong in a separate non-required
+workflow.
 
-Once their baselines pass, add required jobs for:
+After `aocsuite-tui` exists, compile and test it noninteractively with
+`ratatui::TestBackend` and fake terminal operations. Do not launch a real TUI.
+
+### Stage 3: Quality gates
+
+After their baselines pass, add separate required jobs for:
 
 ```text
 cargo fmt --all -- --check
@@ -54,70 +93,94 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
-Keep these separate from the OS matrix so failures are easy to classify and redundant work is limited.
+Keep quality jobs separate from the OS matrix to classify failures clearly and
+avoid redundant work.
 
-## Suggested CI Workflow
+## CI workflow shape
 
-`.github/workflows/ci.yml` should contain these jobs:
+`.github/workflows/ci.yml` should eventually contain:
 
 ### `quality`
 
 - Ubuntu stable Rust.
-- Formatting, Clippy, and documentation after their baselines are clean.
+- Formatting, Clippy, and rustdoc.
 - No runtime secrets.
 
 ### `test`
 
-- Matrix across Ubuntu, Windows, and macOS.
-- Workspace check and tests with `--locked`.
-- Python installed explicitly where needed.
+- Ubuntu, Windows, and macOS matrix.
+- Locked workspace check and tests.
+- Explicit Python setup where needed.
 - CLI help smoke test.
-- TUI unit/render tests after the crate exists.
+- TUI unit and render tests after the crate exists.
 
-### `feature-boundaries`
+### Boundary assertions
 
-- Verify the workspace compiles without frontend-only features leaking into shared crates where practical.
-- Verify no normal test requires a configured AoC session.
-- Verify generated test roots remain inside temporary directories.
+Prefer Rust tests in the owning crate over fragile shell inspection.
 
-The boundary checks may initially be ordinary Rust tests rather than shell scripts. Prefer behavior assertions in the owning crate.
+Useful assertions include:
 
-Recommended actions:
+- shared crates compile without frontend-only dependencies;
+- no normal test requires an AoC session;
+- generated roots remain inside temporary directories;
+- external processes and network calls use fakes in normal coverage.
 
-- `actions/checkout`
-- `dtolnay/rust-toolchain`
-- `Swatinem/rust-cache`
-- `actions/setup-python`
+A dedicated `feature-boundaries` job is optional; create it only when it adds
+clear signal beyond ordinary tests.
 
-Pin third-party actions to immutable commit SHAs and configure Dependabot to update GitHub Actions references.
+## Actions and permissions
 
-## Release Versioning
+Preferred actions:
 
-Use one product version across CLI, future TUI, and internal workspace crates while they are released together. A release tag is `vMAJOR.MINOR.PATCH` and must match the package versions in the workspace.
+- `actions/checkout`;
+- `dtolnay/rust-toolchain`;
+- `Swatinem/rust-cache`;
+- `actions/setup-python`.
 
-Do not automatically publish crates to crates.io as part of the initial binary release. Path-connected internal crates require an explicit publication policy and ordering if crates.io distribution is added later.
+Pin third-party actions to immutable commit SHAs. Configure Dependabot to update
+GitHub Actions references.
 
-Release preparation should:
+Build and test jobs use read-only permissions. Only the release upload job
+receives `contents: write`.
 
-1. Update all workspace package versions consistently.
+## Release versioning
+
+Use one product version across CLI, future TUI, and internal workspace crates
+while they are released together.
+
+Release tags use:
+
+```text
+vMAJOR.MINOR.PATCH
+```
+
+The tag must match synchronized workspace package versions.
+
+Initial binary releases do not publish crates to crates.io. Publishing
+path-connected internal crates requires a separate policy and release order.
+
+## Release preparation
+
+1. Update workspace package versions consistently.
 2. Update `Cargo.lock`.
 3. Record user-visible changes in release notes or a changelog.
-4. Merge through normal required CI.
-5. Create an annotated `vMAJOR.MINOR.PATCH` tag.
+4. Merge through required CI.
+5. Create an annotated version tag.
 
-## Suggested Release Workflow
+## Release workflow
 
-Add `.github/workflows/release.yml` triggered by version tags and optionally `workflow_dispatch` for a dry run.
+`.github/workflows/release.yml` is triggered by version tags and may support
+`workflow_dispatch` for dry runs.
 
-The workflow must:
+It must:
 
-1. Validate that the tag matches the workspace product version.
-2. Run or require the complete CI suite.
-3. Build with `cargo build --release --locked` for each release target.
-4. Execute each native binary with `--help` before packaging.
-5. Package the binaries with README and license files.
-6. Generate SHA-256 checksum files for release artifacts.
-7. Create a GitHub Release and upload all archives and checksums.
+1. validate the tag against the workspace product version;
+2. run or require the complete CI suite;
+3. build native release binaries with `--locked`;
+4. execute each native binary with `--help`;
+5. package binaries with README and license files;
+6. generate SHA-256 checksums;
+7. create a GitHub Release and upload archives and checksums.
 
 Initial CLI targets:
 
@@ -127,7 +190,7 @@ x86_64-pc-windows-msvc
 aarch64-apple-darwin
 ```
 
-Add other targets only when they have a tested build strategy. Prefer native GitHub runners initially; introduce `cross`, Zig, or custom Docker images only for targets that cannot be built natively.
+Prefer native GitHub runners.
 
 Suggested artifact names:
 
@@ -137,61 +200,90 @@ aocsuite-cli-v0.4.0-x86_64-pc-windows-msvc.zip
 aocsuite-cli-v0.4.0-aarch64-apple-darwin.tar.gz
 ```
 
-After the TUI is release-ready, include both executables in each platform archive or publish parallel CLI/TUI archives. Prefer one product archive when both binaries always share a version; use separate archives only if installation or platform support differs.
+After TUI parity, prefer one product archive containing both binaries when they
+share versioning and platform support. Use separate archives only when
+installation or support differs.
 
-The release workflow needs `contents: write` only for its release job. Build/test jobs remain read-only. GitHub artifact attestations are useful once binary releases stabilize; platform code signing and notarization can be added when distribution requirements justify their secrets and maintenance.
+## Additional automation
 
-`cargo-dist` is worth considering after target support and artifact layout stabilize. Explicit workflows are easier to understand during the first release iterations; `cargo-dist` can later generate release jobs, installers, checksums, and GitHub Release integration.
+### Dependencies and licenses
 
-## Additional Automation
-
-### Dependency And License Policy
-
-Add `.github/workflows/security.yml` on a weekly schedule and dependency-changing pull requests:
+Add a weekly and dependency-changing pull-request workflow running:
 
 ```text
 cargo deny check advisories bans licenses sources
 ```
 
-Use `cargo-deny` rather than overlapping `cargo-audit` and custom license scripts. Add `.github/dependabot.yml` for Cargo and GitHub Actions updates.
+Prefer `cargo-deny` over overlapping audit and custom license scripts.
+
+Configure Dependabot for Cargo and GitHub Actions.
 
 ### Coverage
 
-An optional Linux-only workflow can run `cargo llvm-cov --workspace --lcov`. Uploading to Codecov is useful for trends but should not block merges initially. Prefer behavior coverage targets over a global percentage gate.
+Coverage is optional and Linux-only initially:
 
-### Parser Fuzzing
+```text
+cargo llvm-cov --workspace --lcov
+```
 
-AoC HTML is external input. Scheduled or manually triggered `cargo-fuzz` targets for puzzle, calendar, and submission parsers may be valuable after the parser APIs become pure and fixture coverage is established. This is lower priority than deterministic parser tests.
+Coverage trends may be uploaded, but a global percentage gate should not block
+merges. Prefer targeted behavioral requirements.
 
-### Supply-Chain And Static Analysis
+### Parser fuzzing
 
-GitHub dependency review is useful on pull requests. CodeQL may be enabled if Rust support and repository settings provide useful results, but it is secondary to Clippy, `cargo-deny`, and focused tests for this codebase.
+AoC HTML is external input. Scheduled or manual fuzz targets for puzzle,
+calendar, and submission parsers may be useful after parser APIs are pure and
+fixture coverage is established.
+
+### Supply chain and static analysis
+
+GitHub dependency review is useful on pull requests. CodeQL is secondary to
+Clippy, `cargo-deny`, and focused behavioral tests.
 
 ### MSRV
 
-Do not add an MSRV job until `rust-version` is declared for workspace packages. Once declared, test the minimum supported toolchain separately from stable.
+Do not add an MSRV job until workspace packages declare `rust-version`. Test the
+declared minimum separately from stable.
 
-### Release Smoke Tests
+### Release smoke tests
 
-After publishing a GitHub Release, a small follow-up job may download each native artifact, verify its checksum, extract it, and run `--help`. Do not perform live AoC or editor/browser smoke tests.
+A post-release job may download each native artifact, verify checksums, extract
+it, and run `--help`. It must not perform live AoC, editor, browser, or TUI
+operations.
 
-### Test Runner Alternatives
+### Alternative test runners
 
-Continue using `cargo test` initially. `cargo-nextest` can reduce runtime and improve reporting once the suite is large enough to justify installing another CI tool, but it should not be the only supported way to run tests locally.
+Continue supporting `cargo test`. `cargo-nextest` may be added when suite size
+justifies it, but it must not become the only supported local runner.
 
-## Other CI Providers
+## Deferred tooling
 
-Do not maintain parallel Jenkins, CircleCI, GitLab CI, or other hosted-CI definitions while GitHub is the canonical repository. Multiple providers would duplicate secrets, caches, platform policy, and release permissions without improving the initial support matrix.
+Consider these only after target and artifact policies stabilize:
 
-Reconsider another provider only if the repository moves, GitHub-hosted runner availability becomes insufficient, or release targets require dedicated hardware. Self-hosted runners should likewise be avoided until signing, notarization, or unsupported architecture builds require them.
+- artifact attestations;
+- signing and notarization;
+- `cargo-dist`;
+- coverage gates;
+- fuzzing in required CI;
+- additional architectures;
+- self-hosted runners.
 
-## Branch Protection
+## Other CI providers
 
-After the workflows are stable, require:
+GitHub Actions is canonical while the repository is hosted on GitHub.
 
-- The quality job.
-- Every supported test-matrix entry.
-- Dependency review where available.
-- Review before merging changes to release workflows.
+Do not maintain parallel Jenkins, CircleCI, GitLab CI, or other provider
+definitions without a concrete requirement. Reconsider only if hosting changes,
+runner availability is insufficient, or release targets require dedicated
+hardware.
 
-Release workflows run only from protected tags or the default branch and must not execute untrusted pull-request code with write permissions.
+## Branch protection
+
+After workflows are stable, require:
+
+- the quality job;
+- every supported matrix entry;
+- dependency review where available;
+- review before changes to release workflows.
+
+Release workflows run only from protected tags or the default branch.
