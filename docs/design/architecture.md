@@ -111,7 +111,7 @@ Effective configuration precedence:
 
 1. applicable frontend overrides;
 2. persisted values in `<runtime-root>/config/config.json`;
-3. explicit application defaults supplied by the composition root.
+3. effective defaults owned by `aocsuite-config`.
 
 Dynamic environment values such as `$EDITOR` participate only where documented.
 Other configuration sources are not supported.

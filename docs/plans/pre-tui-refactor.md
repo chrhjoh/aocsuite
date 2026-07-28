@@ -109,6 +109,8 @@ Done:
 - Shared validated types and process executor exist.
 - Client, launcher, and most language APIs receive explicit inputs.
 - Config uses explicit paths and non-mutating reads.
+- Configuration values are parsed into typed values during load and provide
+  effective defaults.
 - `RuntimeLayout::new(root)` exists.
 - Layout version 1 and initial bootstrap exist.
 - CLI bootstraps before config and service construction.
@@ -118,7 +120,6 @@ Done:
 
 Remaining:
 
-- Finish typed configuration values.
 - Wire configurable run-history retention through storage.
 - Make every remaining path/status getter pure.
 - Complete owner-only session behavior where not yet enforced.

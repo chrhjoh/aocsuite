@@ -1,49 +1,17 @@
-use std::{collections::HashMap, env, fs, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, env, fs, path::PathBuf};
 
 use aocsuite_utils::{atomic_write, set_owner_only_permissions};
 use thiserror::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConfigKey {
-    Language,
-    Year,
-    Editor,
-    RunHistoryLimit,
-}
+mod setting;
 
-impl ConfigKey {
-    const ALL: [Self; 4] = [
-        Self::Language,
-        Self::Year,
-        Self::Editor,
-        Self::RunHistoryLimit,
-    ];
-
-    fn default_value(self) -> Option<&'static str> {
-        match self {
-            Self::RunHistoryLimit => Some("10"),
-            _ => None,
-        }
-    }
-}
-
-impl std::fmt::Display for ConfigKey {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::Language => "language",
-            Self::Year => "year",
-            Self::Editor => "editor",
-            Self::RunHistoryLimit => "run_history_limit",
-        })
-    }
-}
+pub use setting::{ConfigKey, ConfigValue};
 
 #[derive(Debug, Clone)]
 pub struct Configuration {
     config_path: PathBuf,
     session_path: PathBuf,
-    values: HashMap<ConfigKey, String>,
+    values: HashMap<ConfigKey, ConfigValue>,
 }
 
 impl Configuration {
@@ -57,13 +25,10 @@ impl Configuration {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
             Err(error) => return Err(error.into()),
         };
-
-        let mut values = ConfigKey::ALL
+        let values = file_values
             .into_iter()
-            .filter_map(|key| key.default_value().map(|value| (key, value.to_owned())))
-            .collect::<HashMap<_, _>>();
-
-        values.extend(file_values);
+            .map(|(key, value)| key.parse_value(value).map(|value| (key, value)))
+            .collect::<AocConfigResult<HashMap<_, _>>>()?;
 
         Ok(Self {
             config_path,
@@ -74,43 +39,41 @@ impl Configuration {
 
     pub fn get<T>(&self, key: ConfigKey) -> AocConfigResult<T>
     where
-        T: FromStr,
-        T::Err: std::fmt::Display,
+        T: TryFrom<ConfigValue, Error = AocConfigError>,
     {
-        let editor_fallback = if key == ConfigKey::Editor {
-            match env::var("EDITOR") {
-                Ok(editor) => Some(editor),
-                Err(env::VarError::NotPresent) => None,
-                Err(error) => return Err(AocConfigError::Environment(error)),
-            }
-        } else {
-            None
-        };
-        let value = self
-            .values
-            .get(&key)
-            .map(String::as_str)
-            .or(editor_fallback.as_deref())
-            .ok_or(AocConfigError::NotFound { key })?;
+        if key == ConfigKey::Session {
+            return Err(AocConfigError::SessionReadNotAllowed);
+        }
 
-        value.parse::<T>().map_err(|_| AocConfigError::Invalid {
-            key,
-            value: value.to_owned(),
-        })
+        let value = match self.values.get(&key) {
+            Some(val) => val.clone(),
+            None => key.default()?,
+        };
+
+        value.try_into()
     }
 
     pub fn set(&mut self, key: ConfigKey, value: Option<&str>) -> AocConfigResult<()> {
+        if key == ConfigKey::Session {
+            return self.set_session(value);
+        }
+
         let mut values = self.values.clone();
         match value.map(str::trim).filter(|value| !value.is_empty()) {
             Some(value) => {
-                values.insert(key, value.to_owned());
+                values.insert(key, key.parse_value(value.to_owned())?);
             }
             None => {
                 values.remove(&key);
             }
         }
 
-        let serialized = serde_json::to_vec_pretty(&values)?;
+        let serialized = serde_json::to_vec_pretty(
+            &values
+                .iter()
+                .map(|(key, value)| (*key, value.to_string()))
+                .collect::<HashMap<_, _>>(),
+        )?;
         atomic_write(&self.config_path, &serialized)?;
         self.values = values;
 
@@ -121,7 +84,7 @@ impl Configuration {
         Ok(fs::read_to_string(&self.session_path)?)
     }
 
-    pub fn set_session(&self, session: Option<&str>) -> AocConfigResult<()> {
+    fn set_session(&self, session: Option<&str>) -> AocConfigResult<()> {
         match session.map(str::trim).filter(|value| !value.is_empty()) {
             Some(session) => {
                 atomic_write(&self.session_path, session.as_bytes())?;
@@ -150,6 +113,12 @@ pub enum AocConfigError {
     Invalid { key: ConfigKey, value: String },
     #[error("configuration key {key} was not found")]
     NotFound { key: ConfigKey },
+    #[error("configuration value had an unexpected type")]
+    UnexpectedValue,
+    #[error("the session must not be stored in config.json")]
+    SessionInConfig,
+    #[error("reading the session configuration value is not allowed")]
+    SessionReadNotAllowed,
 }
 
 pub type AocConfigResult<T> = Result<T, AocConfigError>;
@@ -158,7 +127,7 @@ pub type AocConfigResult<T> = Result<T, AocConfigError>;
 mod tests {
     use std::fs;
 
-    use aocsuite_utils::PuzzleYear;
+    use aocsuite_utils::{LanguageId, PuzzleYear, RunHistoryLimit};
     use tempfile::TempDir;
 
     use super::{AocConfigError, ConfigKey, Configuration};
@@ -173,9 +142,21 @@ mod tests {
         let config = configuration(&temp);
 
         assert_eq!(
-            config.get::<String>(ConfigKey::RunHistoryLimit).unwrap(),
-            "10"
+            config
+                .get::<LanguageId>(ConfigKey::Language)
+                .expect("read default language"),
+            LanguageId::Rust
         );
+        assert_eq!(
+            config
+                .get::<RunHistoryLimit>(ConfigKey::RunHistoryLimit)
+                .expect("read default retention"),
+            RunHistoryLimit::new(10).expect("valid default")
+        );
+        assert!(matches!(
+            config.get::<PuzzleYear>(ConfigKey::Language),
+            Err(AocConfigError::UnexpectedValue)
+        ));
         assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
     }
 
@@ -187,7 +168,12 @@ mod tests {
         fs::write(&path, r#"{"language":"rust","year":"2024"}"#).unwrap();
         let mut config = configuration(&temp);
 
-        assert_eq!(config.get::<String>(ConfigKey::Language).unwrap(), "rust");
+        assert_eq!(
+            config
+                .get::<LanguageId>(ConfigKey::Language)
+                .expect("read language"),
+            LanguageId::Rust
+        );
         assert_eq!(
             config.get::<PuzzleYear>(ConfigKey::Year).unwrap().get(),
             2024
@@ -197,8 +183,8 @@ mod tests {
         let persisted: serde_json::Value =
             serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
         assert_eq!(persisted["language"], "rust");
-        assert_eq!(persisted["run_history_limit"], "10");
         assert_eq!(persisted["editor"], "code --wait");
+        assert!(persisted.get("run_history_limit").is_none());
         assert!(persisted.get("Language").is_none());
     }
 
@@ -218,6 +204,87 @@ mod tests {
         assert_eq!(fs::read(path).unwrap(), contents);
     }
 
+    #[test]
+    fn invalid_persisted_values_fail_during_load() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("config");
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join("config.json"), r#"{"year":"invalid"}"#).unwrap();
+
+        assert!(matches!(
+            Configuration::load(dir),
+            Err(AocConfigError::Invalid {
+                key: ConfigKey::Year,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn invalid_values_are_not_written() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("config");
+        fs::create_dir(&dir).unwrap();
+        let mut config = Configuration::load(&dir).unwrap();
+
+        assert!(matches!(
+            config.set(ConfigKey::RunHistoryLimit, Some("0")),
+            Err(AocConfigError::Invalid {
+                key: ConfigKey::RunHistoryLimit,
+                ..
+            })
+        ));
+        assert!(!dir.join("config.json").exists());
+    }
+
+    #[test]
+    fn effective_defaults_are_not_persisted_with_another_setting() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("config");
+        fs::create_dir(&dir).unwrap();
+        let mut config = Configuration::load(&dir).unwrap();
+
+        config.set(ConfigKey::Editor, Some("vim")).unwrap();
+
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&fs::read(dir.join("config.json")).unwrap()).unwrap();
+        assert_eq!(persisted, serde_json::json!({ "editor": "vim" }));
+        assert_eq!(
+            config
+                .get::<LanguageId>(ConfigKey::Language)
+                .expect("read default language"),
+            LanguageId::Rust
+        );
+        assert_eq!(
+            config
+                .get::<RunHistoryLimit>(ConfigKey::RunHistoryLimit)
+                .expect("read default retention"),
+            RunHistoryLimit::new(10).expect("valid default")
+        );
+    }
+
+    #[test]
+    fn session_is_rejected_from_config_json_and_cannot_be_read() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("config");
+        fs::create_dir(&dir).unwrap();
+        let path = dir.join("config.json");
+        fs::write(&path, r#"{"session":"token"}"#).unwrap();
+
+        assert!(matches!(
+            Configuration::load(&dir),
+            Err(AocConfigError::SessionInConfig)
+        ));
+        assert_eq!(fs::read(&path).unwrap(), br#"{"session":"token"}"#);
+
+        fs::remove_file(path).unwrap();
+        let config = Configuration::load(dir).unwrap();
+        assert!(matches!(
+            config.get::<String>(ConfigKey::Session),
+            Err(AocConfigError::SessionReadNotAllowed)
+        ));
+    }
+
     #[cfg(unix)]
     #[test]
     fn persisted_session_is_owner_only() {
@@ -225,8 +292,8 @@ mod tests {
 
         let temp = TempDir::new().unwrap();
         fs::create_dir(temp.path().join("config")).unwrap();
-        let config = configuration(&temp);
-        config.set_session(Some("token")).unwrap();
+        let mut config = configuration(&temp);
+        config.set(ConfigKey::Session, Some("token")).unwrap();
 
         let mode = fs::metadata(temp.path().join("config/session"))
             .unwrap()
