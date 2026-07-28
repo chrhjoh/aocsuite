@@ -532,10 +532,7 @@ mod tests {
             fs::read_to_string(&main).expect("read main"),
             runner.main_contents()
         );
-        assert!(fs::read_to_string(&cargo)
-            .expect("read Cargo manifest")
-            .contains("edition = \"2024\""));
-        for path in [&solution, &library, &template, &puzzle] {
+        for path in [&cargo, &solution, &library, &template, &puzzle] {
             assert_eq!(
                 fs::read_to_string(path).expect("read preserved user file"),
                 "legacy or user content"
