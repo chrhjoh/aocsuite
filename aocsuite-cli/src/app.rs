@@ -33,8 +33,7 @@ pub fn run_aocsuite(
     match command {
         AocCommand::Config { command } => match command {
             ConfigCommand::Get { key } => {
-                ensure_config_read_allowed(&key)?;
-                let val = config.get::<String>(key.config_key().expect("session rejected"))?;
+                let val = config.get::<String>(key.into())?;
                 println!("{key}: {val}");
             }
             ConfigCommand::Set { key } => set_config_value(config, key)?,
@@ -402,15 +401,6 @@ fn format_submission_result(result: &AocSubmissionResult) -> String {
     }
 }
 
-fn ensure_config_read_allowed(key: &ConfigCommandKey) -> AocCliResult<()> {
-    if matches!(key, ConfigCommandKey::Session) {
-        return Err(crate::AocCliError::NotAllowed(
-            "reading the session configuration value",
-        ));
-    }
-    Ok(())
-}
-
 fn resolve_aoc_client(config: &Configuration) -> AocCliResult<AocClient> {
     let session = match config.session() {
         Ok(session) => Some(session),
@@ -429,20 +419,24 @@ fn resolve_language<'workspace>(
     workspace: &'workspace Workspace,
     executor: &'workspace dyn CommandExecutor,
 ) -> AocCliResult<Language<'workspace, 'workspace>> {
-    let language_id = cli_arg
-        .map(Ok)
-        .unwrap_or_else(|| config.get(ConfigKey::Language))?;
+    let language_id = match cli_arg {
+        Some(language_id) => language_id,
+        None => config.get::<LanguageId>(ConfigKey::Language)?,
+    };
     Ok(Language::new(language_id, workspace, executor))
 }
 
 fn set_config_value(config: &mut Configuration, key: ConfigCommandKey) -> AocCliResult<()> {
     if matches!(key, ConfigCommandKey::Session) {
         let value = rpassword::prompt_password("Enter value for session: ")?;
-        config.set_session((!value.trim().is_empty()).then_some(value.as_str()))?;
+        config.set(
+            key.into(),
+            (!value.trim().is_empty()).then_some(value.as_str()),
+        )?;
         return Ok(());
     }
 
-    let config_key = key.config_key().expect("session handled separately");
+    let config_key = key.into();
     match config.get::<String>(config_key) {
         Ok(value) => print!("Enter value for {key} [{value}]: "),
         Err(AocConfigError::NotFound { .. }) => print!("Enter value for {key}: "),
@@ -451,10 +445,8 @@ fn set_config_value(config: &mut Configuration, key: ConfigCommandKey) -> AocCli
     std::io::stdout().flush()?;
     let mut value = String::new();
     std::io::stdin().read_line(&mut value)?;
-    config.set(
-        config_key,
-        (!value.trim().is_empty()).then_some(value.as_str()),
-    )?;
+    let value = (!value.trim().is_empty()).then_some(value.as_str());
+    config.set(config_key, value)?;
     Ok(())
 }
 
@@ -515,9 +507,9 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{
-        ensure_config_read_allowed, resolve_custom_input_path, user_confirm, ConfigCommandKey,
-    };
+    use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
+
+    use super::{resolve_custom_input_path, user_confirm};
 
     static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -566,11 +558,22 @@ mod tests {
 
     #[test]
     fn session_config_reads_are_not_allowed() {
+        let root = test_root();
+        fs::create_dir(&root).expect("create test runtime");
+        let config = Configuration::load(&root).expect("load configuration");
+
         assert!(matches!(
-            ensure_config_read_allowed(&ConfigCommandKey::Session),
-            Err(crate::AocCliError::NotAllowed(_))
+            config.get::<String>(ConfigKey::Session),
+            Err(AocConfigError::SessionReadNotAllowed)
         ));
-        assert!(ensure_config_read_allowed(&ConfigCommandKey::Language).is_ok());
+        assert_eq!(
+            config
+                .get::<String>(ConfigKey::Language)
+                .expect("read language"),
+            "rust"
+        );
+
+        fs::remove_dir_all(root).expect("remove test runtime");
     }
 
     #[test]

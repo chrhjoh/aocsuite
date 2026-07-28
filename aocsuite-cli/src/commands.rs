@@ -11,23 +11,26 @@ pub enum ConfigCommandKey {
     Session,
 }
 
-impl ConfigCommandKey {
-    pub fn config_key(self) -> Option<ConfigKey> {
-        match self {
-            Self::Language => Some(ConfigKey::Language),
-            Self::Year => Some(ConfigKey::Year),
-            Self::Editor => Some(ConfigKey::Editor),
-            Self::RunHistoryLimit => Some(ConfigKey::RunHistoryLimit),
-            Self::Session => None,
-        }
+impl std::fmt::Display for ConfigCommandKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Language => "language",
+            Self::Year => "year",
+            Self::Editor => "editor",
+            Self::RunHistoryLimit => "run_history_limit",
+            Self::Session => "session",
+        })
     }
 }
 
-impl std::fmt::Display for ConfigCommandKey {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.config_key() {
-            Some(key) => key.fmt(formatter),
-            None => formatter.write_str("session"),
+impl From<ConfigCommandKey> for ConfigKey {
+    fn from(value: ConfigCommandKey) -> Self {
+        match value {
+            ConfigCommandKey::Language => Self::Language,
+            ConfigCommandKey::Year => Self::Year,
+            ConfigCommandKey::Editor => Self::Editor,
+            ConfigCommandKey::RunHistoryLimit => Self::RunHistoryLimit,
+            ConfigCommandKey::Session => Self::Session,
         }
     }
 }
