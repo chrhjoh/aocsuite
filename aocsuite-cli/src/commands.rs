@@ -195,9 +195,9 @@ pub enum CleanAction {
         /// Remove all cached files
         #[arg(long, group = "target")]
         all: bool,
-        /// Remove all cached files for specific year
+        /// Remove all cached files for the selected year
         #[arg(long, group = "target")]
-        year_all: bool,
+        year: bool,
         /// Force removal without confirmation
         #[arg(long, short)]
         force: bool,

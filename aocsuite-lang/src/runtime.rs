@@ -45,3 +45,34 @@ pub fn migrate_runtime(root: &Path, files: Vec<(PathBuf, String)>) -> AocLanguag
     }
     Ok(())
 }
+
+pub fn clean_runtime(
+    root: &Path,
+    files: &[PathBuf],
+    active_solution: &Path,
+) -> AocLanguageResult<()> {
+    for path in files
+        .iter()
+        .chain(std::iter::once(&root.join(MANIFEST_NAME)))
+    {
+        remove_file_if_present(path)?;
+    }
+
+    match std::fs::symlink_metadata(active_solution) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            remove_file_if_present(active_solution)?
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+fn remove_file_if_present(path: &Path) -> AocLanguageResult<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}

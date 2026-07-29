@@ -1,3 +1,5 @@
+use std::io::{BufRead, Write};
+
 use aocsuite_cli::{run_aocsuite, AocCliError, AocCommand};
 use aocsuite_config::{ConfigKey, Configuration};
 use aocsuite_storage::{get_aocsuite_dir, ContentStore, RuntimeLayout, Workspace};
@@ -27,10 +29,18 @@ fn terminate_with_error(err: AocCliError) -> ! {
 }
 
 fn main() {
-    let parsed = AocCli::try_parse();
+    let args = AocCli::parse();
     let root = get_aocsuite_dir().unwrap_or_else(|error| terminate_with_error(error.into()));
     let layout =
-        RuntimeLayout::new(root).unwrap_or_else(|error| terminate_with_error(error.into()));
+        RuntimeLayout::new(&root).unwrap_or_else(|error| terminate_with_error(error.into()));
+    if matches!(&args.command, AocCommand::Uninstall) {
+        if confirm_uninstall().unwrap_or_else(|error| terminate_with_error(error.into())) {
+            layout
+                .uninstall()
+                .unwrap_or_else(|error| terminate_with_error(error.into()));
+        }
+        return;
+    }
     layout
         .bootstrap()
         .unwrap_or_else(|error| terminate_with_error(error.into()));
@@ -40,7 +50,6 @@ fn main() {
         .unwrap_or_else(|error| terminate_with_error(error.into()));
     let content = ContentStore::open(layout.cache_dir())
         .unwrap_or_else(|error| terminate_with_error(error.into()));
-    let args = parsed.unwrap_or_else(|error| error.exit());
     let mut config = Configuration::load(layout.config_dir())
         .unwrap_or_else(|error| terminate_with_error(error.into()));
     let configured_year = match args.year {
@@ -55,6 +64,22 @@ fn main() {
     if let Err(err) = run_aocsuite(args.command, day, year, &content, &workspace, &mut config) {
         terminate_with_error(err);
     }
+}
+
+fn confirm_uninstall() -> std::io::Result<bool> {
+    let mut output = std::io::stdout().lock();
+    write!(
+        output,
+        "Are you sure you want to delete everything in AoCSuite.\nThis includes any solutions you may have made (Y/n) : "
+    )?;
+    output.flush()?;
+
+    let mut response = String::new();
+    if std::io::stdin().lock().read_line(&mut response)? == 0 {
+        return Ok(false);
+    }
+    let response = response.trim().to_ascii_lowercase();
+    Ok(response.is_empty() || response == "y" || response == "yes")
 }
 
 fn resolve_puzzle_date(
@@ -142,6 +167,12 @@ mod tests {
         let (day, year) = puzzle(4, 2024);
         assert_eq!(cli.day, Some(day));
         assert_eq!(cli.year, Some(year));
+    }
+
+    #[test]
+    fn cache_cleanup_uses_the_year_flag() {
+        assert!(AocCli::try_parse_from(["aocsuite-cli", "clean", "cache", "--year"]).is_ok());
+        assert!(AocCli::try_parse_from(["aocsuite-cli", "clean", "cache", "--year-all"]).is_err());
     }
 
     #[test]

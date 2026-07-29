@@ -101,6 +101,14 @@ impl RuntimeLayout {
         self.bootstrap_directories()
     }
 
+    pub fn uninstall(&self) -> Result<(), LayoutError> {
+        match fs::remove_dir_all(&self.root) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     fn bootstrap_directories(&self) -> Result<(), LayoutError> {
         let mut created = Vec::new();
         for directory in [self.cache_dir(), self.workspace_dir(), self.config_dir()] {
@@ -188,4 +196,24 @@ pub enum LayoutError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::RuntimeLayout;
+
+    #[test]
+    fn uninstall_removes_the_runtime_root_and_is_idempotent_when_absent() {
+        let temp = tempfile::tempdir().expect("create temporary parent");
+        let root = temp.path().join("aocsuite");
+        fs::create_dir_all(root.join("user/nested")).expect("create runtime root");
+        fs::write(root.join("user/nested/file.txt"), "user file").expect("write user file");
+        let layout = RuntimeLayout::new(root.clone()).expect("create layout");
+
+        layout.uninstall().expect("uninstall root");
+        assert!(!root.exists());
+        layout.uninstall().expect("repeat uninstall");
+    }
 }

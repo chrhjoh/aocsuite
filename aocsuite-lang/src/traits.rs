@@ -23,7 +23,7 @@ pub trait Solver {
     fn migrate_runtime(&self) -> AocLanguageResult<()>;
     fn main_contents(&self) -> String;
     fn template_contents(&self) -> String;
-    fn clean_cache(&self) -> AocLanguageResult<()>;
+    fn clean_runtime(&self) -> AocLanguageResult<()>;
 
     fn ensure_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
         let path = self.solver_file_path(file);

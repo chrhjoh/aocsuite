@@ -121,10 +121,11 @@ Done:
 - Session storage is separate from non-secret config.
 - Session creation and rewrites use owner-only permissions on Unix.
 - Path and status getters are pure.
+- Typed persisted-cache cleanup and confirmed `RuntimeLayout` root uninstall
+  are storage-owned.
 
 Remaining:
 
-- Complete typed cleanup and uninstall lifecycle.
 - Confirm bootstrap regenerates the workspace `.gitignore`.
 
 Acceptance:
@@ -146,6 +147,7 @@ Done:
 - `.aoccache.json` has been replaced by SQLite metadata.
 - Correct and incorrect submission counts and bounded recent timings are stored.
 - Cache invalidation and basic idempotent cleaning exist.
+- Indexed persisted-cache cleanup preserves unindexed files and `state.sqlite`.
 
 Remaining:
 
@@ -156,8 +158,6 @@ Remaining:
 - Keep unindexed cache files unmanaged.
 - Expose clear path/status/read APIs separately from fetch/refresh/invalidate/
   clean APIs.
-- Add typed idempotent cleanup and uninstall plans and reports.
-- Preserve examples during normal cache cleaning.
 
 Deferred:
 
@@ -166,7 +166,8 @@ Deferred:
 Acceptance:
 
 - Behavior matches `../STORAGE.md`.
-- Unknown files are never claimed or deleted.
+- Unindexed cache files remain unmanaged; full uninstall removes its confirmed
+  runtime root.
 - Invalid remote bodies cannot replace valid cached data.
 - Cleanup scopes are explicit, typed, idempotent, and frontend-confirmed.
 
@@ -210,6 +211,7 @@ Done:
 - Python package operations retain `requirements.txt` and persist successful
   package mutations.
 - Active-link replacement and library validation exist.
+- Runtime cleanup removes only generated runtime files.
 
 Remaining:
 
@@ -217,7 +219,6 @@ Remaining:
 - Expose one public typed operation covering migration, activation, environment
   setup, compilation, execution, and result consumption.
 - Define serialization boundary including timing persistence.
-- Ensure cleanup preserves tracked projects and dependency files.
 - Continue separating pure query operations from mutating setup and execution.
 
 Acceptance:

@@ -48,14 +48,12 @@ impl Solver for RustRunner<'_> {
             )],
         )
     }
-    fn clean_cache(&self) -> AocLanguageResult<()> {
-        execute_command(
-            self.executor,
-            CommandRequest::new("cargo")
-                .arg("clean")
-                .current_dir(&self.root_dir),
-        )?;
-        Ok(())
+    fn clean_runtime(&self) -> AocLanguageResult<()> {
+        crate::runtime::clean_runtime(
+            &self.root_dir,
+            &[self.solver_file_path(&SolverFile::Entrypoint)],
+            &self.src_dir().join("solution.rs"),
+        )
     }
 
     fn solver_file_path(&self, file: &SolverFile) -> std::path::PathBuf {

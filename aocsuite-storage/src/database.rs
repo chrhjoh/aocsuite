@@ -88,6 +88,62 @@ impl StateDatabase {
             .transpose()
     }
 
+    pub(crate) fn cache_entries(&self) -> DatabaseResult<Vec<CacheEntry>> {
+        let mut statement = self.connection.prepare(
+            "
+            SELECT content_type, year, day, relative_path, byte_size, fetched_at, etag, last_modified, is_valid
+            FROM cache_entries
+            ",
+        )?;
+        let entries = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i32>(1)?,
+                    row.get::<_, i64>(2)?,
+                    PathBuf::from(row.get::<_, String>(3)?),
+                    row.get::<_, i64>(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get::<_, i64>(8)?,
+                ))
+            })?
+            .map(|entry| {
+                let (
+                    content_type,
+                    year,
+                    day,
+                    relative_path,
+                    byte_size,
+                    fetched_at,
+                    etag,
+                    last_modified,
+                    is_valid,
+                ) = entry?;
+                let key = cache_key_from_parts(&content_type, year, day)?;
+                let relative_path = validated_relative_path(relative_path)?;
+                let byte_size = u64::try_from(byte_size)
+                    .map_err(|_| DatabaseError::InvalidCacheEntry("negative byte size"))?;
+                let is_valid = match is_valid {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(DatabaseError::InvalidCacheEntry("invalid validity flag")),
+                };
+                Ok(CacheEntry {
+                    key,
+                    relative_path,
+                    byte_size,
+                    fetched_at,
+                    etag,
+                    last_modified,
+                    is_valid,
+                })
+            })
+            .collect::<DatabaseResult<Vec<_>>>()?;
+        Ok(entries)
+    }
+
     pub(crate) fn upsert_cache_entry(&self, entry: &CacheEntry) -> DatabaseResult<()> {
         let relative_path = validated_relative_path(entry.relative_path.clone())?;
         let byte_size = i64::try_from(entry.byte_size)
@@ -139,19 +195,6 @@ impl StateDatabase {
             ",
             params![content_type, year, day],
         )? > 0)
-    }
-
-    pub(crate) fn clear_cache_entries(&self) -> DatabaseResult<()> {
-        self.connection.execute("DELETE FROM cache_entries", [])?;
-        Ok(())
-    }
-
-    pub(crate) fn clear_cache_entries_for_year(&self, year: PuzzleYear) -> DatabaseResult<()> {
-        self.connection.execute(
-            "DELETE FROM cache_entries WHERE year = ?1",
-            params![year.get()],
-        )?;
-        Ok(())
     }
 
     pub(crate) fn increment_submission_count(
@@ -245,6 +288,26 @@ fn cache_key_parts(key: CacheKey) -> (&'static str, i32, i64) {
         ),
         CacheKey::Input(puzzle) => ("input", puzzle.year.get(), i64::from(puzzle.day.get())),
         CacheKey::Calendar(year) => ("calendar", year.get(), 0),
+    }
+}
+
+fn cache_key_from_parts(content_type: &str, year: i32, day: i64) -> DatabaseResult<CacheKey> {
+    let year = PuzzleYear::new(year)
+        .map_err(|_| DatabaseError::InvalidCacheEntry("invalid puzzle year"))?;
+    let puzzle = || -> DatabaseResult<PuzzleId> {
+        let day = u32::try_from(day)
+            .ok()
+            .and_then(|day| aocsuite_utils::PuzzleDay::new(day).ok())
+            .ok_or(DatabaseError::InvalidCacheEntry("invalid puzzle day"))?;
+        Ok::<PuzzleId, DatabaseError>(PuzzleId::new(day, year))
+    };
+    match content_type {
+        "puzzle_html" => Ok(CacheKey::PuzzleHtml(puzzle()?)),
+        "puzzle_markdown" => Ok(CacheKey::PuzzleMarkdown(puzzle()?)),
+        "input" => Ok(CacheKey::Input(puzzle()?)),
+        "calendar" if day == 0 => Ok(CacheKey::Calendar(year)),
+        "calendar" => Err(DatabaseError::InvalidCacheEntry("invalid calendar day")),
+        _ => Err(DatabaseError::InvalidCacheEntry("invalid content type")),
     }
 }
 

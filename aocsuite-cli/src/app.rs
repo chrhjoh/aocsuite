@@ -6,14 +6,14 @@ use std::{
 
 use crate::{
     commands::{CleanAction, ConfigCommandKey, EnvAction, LibAction},
-    AocCliResult, AocCommand, ConfigCommand,
+    AocCliError, AocCliResult, AocCommand, ConfigCommand,
 };
 use aocsuite_client::{AocClient, AocClientOptions, AocPage};
 use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
 use aocsuite_lang::{Language, LanguageRunOutput, PartResult, SolverFile};
 use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
-use aocsuite_storage::{get_aocsuite_dir, CacheCleanScope, ContentStore, GitMode, Workspace};
+use aocsuite_storage::{CacheCleanScope, ContentStore, GitMode, Workspace};
 use aocsuite_utils::{
     valid_puzzle_release, valid_year_release, CommandExecutor, LanguageId, PartSelection,
     PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear, RunHistoryLimit, SystemCommandExecutor,
@@ -249,28 +249,24 @@ pub fn run_aocsuite(
         AocCommand::Clean { action } => match action {
             CleanAction::Cache {
                 all,
-                year_all,
+                year: clean_year,
                 force,
             } => {
                 let clean_scope: CacheCleanScope;
-                let file_prompt: String;
-                let content_prompt: &str;
+                let prompt: String;
 
                 if all {
                     clean_scope = CacheCleanScope::All;
-                    file_prompt = "all cached AoC files".to_string();
-                    content_prompt = "puzzles, inputs and calendars";
-                } else if year_all {
+                    prompt = "all cached AoC files".to_string();
+                } else if clean_year {
                     clean_scope = CacheCleanScope::Year(year);
-                    file_prompt = format!("all cached AoC files for {year}");
-                    content_prompt = "puzzles, inputs and calendar";
+                    prompt = format!("all cached AoC files for {year}");
                 } else {
-                    clean_scope = CacheCleanScope::Puzzle(PuzzleId::new(day, year));
-                    file_prompt = format!("all cached AoC files for day {day} in {year}");
-                    content_prompt = "puzzle and input";
+                    clean_scope = CacheCleanScope::Date(PuzzleId::new(day, year));
+                    prompt = format!("all cached AoC files for day {day} in {year}");
                 }
                 if user_confirm_or_force(
-                    &format!("Do you want to delete {file_prompt} ({content_prompt}) (Y/n) : ",),
+                    &format!("Do you want to delete {prompt} (Y/n) : ",),
                     force,
                 )? {
                     content.clean(clean_scope)?;
@@ -282,30 +278,20 @@ pub fn run_aocsuite(
                 let language_name = language.name();
                 if user_confirm_or_force(
                     &format!(
-                        "Do you want to delete caches for {}  (Y/n) : ",
+                        "Do you want to remove generated runtime files for {}  (Y/n) : ",
                         language_name
                     ),
                     force,
                 )? {
-                    language.clean_cache()?;
+                    language.clean_runtime()?;
                 }
             }
         },
 
         AocCommand::Uninstall => {
-            let aocsuite_dir = get_aocsuite_dir()?;
-            println!(
-                "Ensure you have backed up any solutions. Files can be found at {:?}",
-                aocsuite_dir
-            );
-            if user_confirm(
-                &mut std::io::stdin().lock(),
-                &mut std::io::stdout().lock(),
-                "Are you sure you want to delete everything in AoCSuite.\nThis includes any solutions you may have made (Y/n) : ",
-            )?{
-                std::fs::remove_dir_all(aocsuite_dir)?;
-                println!("Removed the AoCSuite directory")
-            }
+            return Err(AocCliError::NotAllowed(
+                "uninstall must be handled before runtime bootstrap",
+            ));
         }
     }
     Ok(())

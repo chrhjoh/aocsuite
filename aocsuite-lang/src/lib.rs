@@ -142,8 +142,8 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
             .collect())
     }
 
-    pub fn clean_cache(&self) -> AocLanguageResult<()> {
-        self.runner.clean_cache()
+    pub fn clean_runtime(&self) -> AocLanguageResult<()> {
+        self.runner.clean_runtime()
     }
 
     pub fn clean_env(&self) -> AocLanguageResult<()> {
@@ -363,6 +363,60 @@ mod tests {
         );
         assert!(expected.parent().expect("library parent").is_dir());
 
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn runtime_cleanup_removes_only_generated_runtime_files() {
+        for (language_id, entrypoint, active_solution) in [
+            (LanguageId::Rust, "src/main.rs", "src/solution.rs"),
+            (LanguageId::Python, "main.py", "solution.py"),
+        ] {
+            let root = test_root("runtime-cleanup");
+            let workspace = Workspace::new(root.join("workspace"));
+            let language = Language::new(language_id, &workspace, &SYSTEM_EXECUTOR);
+            let project = workspace.language_project_dir(language_id);
+            let entrypoint = project.join(entrypoint);
+            let active_solution = project.join(active_solution);
+            let manifest = project.join(".aocsuite-runtime.json");
+            let preserved = project.join("preserved.txt");
+
+            fs::create_dir_all(entrypoint.parent().expect("entrypoint parent"))
+                .expect("create project directory");
+            fs::write(&entrypoint, "generated entrypoint").expect("write entrypoint");
+            fs::write(&manifest, "generated manifest").expect("write runtime manifest");
+            fs::write(&active_solution, "user file").expect("write non-link active path");
+            fs::write(&preserved, "preserved").expect("write preserved file");
+
+            language.clean_runtime().expect("clean runtime");
+
+            assert!(!entrypoint.exists());
+            assert!(!manifest.exists());
+            assert!(active_solution.exists());
+            assert!(preserved.exists());
+            fs::remove_dir_all(root).expect("remove test runtime");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_cleanup_removes_active_solution_links() {
+        let root = test_root("runtime-active-link-cleanup");
+        let workspace = Workspace::new(root.join("workspace"));
+        let language = Language::new(LanguageId::Rust, &workspace, &SYSTEM_EXECUTOR);
+        let project = workspace.language_project_dir(LanguageId::Rust);
+        let source = project.join("solutions/source.rs");
+        let active = project.join("src/solution.rs");
+
+        fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+        fs::create_dir_all(active.parent().expect("active parent")).expect("create active parent");
+        fs::write(&source, "solution").expect("write solution source");
+        std::os::unix::fs::symlink(&source, &active).expect("create active solution link");
+
+        language.clean_runtime().expect("clean runtime");
+
+        assert!(source.exists());
+        assert!(!active.exists());
         fs::remove_dir_all(root).expect("remove test runtime");
     }
 

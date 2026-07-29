@@ -3,7 +3,6 @@ use std::process::Output;
 use crate::{
     traits::Solver,
     utils::{AocLanguageResult, SolverFile},
-    AocLanguageError,
 };
 use aocsuite_utils::{atomic_write, execute_command, CommandRequest};
 
@@ -32,10 +31,12 @@ impl Solver for PythonRunner<'_> {
                 .current_dir(&self.root_dir),
         )?)
     }
-    fn clean_cache(&self) -> AocLanguageResult<()> {
-        Err(AocLanguageError::Clean(
-            "Python language have no files to clean.".to_string(),
-        ))
+    fn clean_runtime(&self) -> AocLanguageResult<()> {
+        crate::runtime::clean_runtime(
+            &self.root_dir,
+            &[self.solver_file_path(&SolverFile::Entrypoint)],
+            &self.root_dir.join("solution.py"),
+        )
     }
 
     fn migrate_runtime(&self) -> AocLanguageResult<()> {

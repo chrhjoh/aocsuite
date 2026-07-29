@@ -7,8 +7,8 @@ use std::{
 use aocsuite_client::{AocClient, AocClientError, AocPage};
 use aocsuite_parser::{parse_puzzle_markdown, AocSubmissionResult, ParserError};
 use aocsuite_utils::{
-    atomic_write, set_owner_only_permissions, LanguageId, PuzzleDay, PuzzleId, PuzzlePart,
-    PuzzleYear, RunHistoryLimit,
+    atomic_write, set_owner_only_permissions, LanguageId, PuzzleId, PuzzlePart, PuzzleYear,
+    RunHistoryLimit,
 };
 use thiserror::Error;
 
@@ -31,7 +31,13 @@ pub struct ContentStore {
 pub enum CacheCleanScope {
     All,
     Year(PuzzleYear),
-    Puzzle(PuzzleId),
+    Date(PuzzleId),
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CacheCleanReport {
+    pub removed_files: usize,
+    pub already_absent: usize,
 }
 
 impl ContentStore {
@@ -140,29 +146,33 @@ impl ContentStore {
             .map_err(ContentError::from_database)
     }
 
-    pub fn clean(&self, scope: CacheCleanScope) -> ContentResult<()> {
-        match scope {
-            CacheCleanScope::All => {
-                for directory in ["puzzles", "inputs", "calendars"] {
-                    self.remove_directory(directory)?;
-                }
+    pub fn clean(&self, scope: CacheCleanScope) -> ContentResult<CacheCleanReport> {
+        let mut report = CacheCleanReport::default();
+        for entry in self
+            .database
+            .cache_entries()
+            .map_err(ContentError::from_database)?
+            .into_iter()
+            .filter(|entry| scope.includes(entry.key))
+        {
+            if entry.relative_path != self.cache_relative_path(entry.key) {
                 self.database
-                    .clear_cache_entries()
+                    .remove_cache_entry(entry.key)
                     .map_err(ContentError::from_database)?;
+                continue;
             }
-            CacheCleanScope::Year(year) => {
-                for day in PuzzleDay::MIN..=PuzzleDay::MAX {
-                    let day = PuzzleDay::new(u32::from(day)).expect("valid puzzle day");
-                    self.remove_puzzle(PuzzleId::new(day, year))?;
+            match fs::remove_file(self.cache_dir.join(&entry.relative_path)) {
+                Ok(()) => report.removed_files += 1,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    report.already_absent += 1;
                 }
-                self.remove_file(CacheKey::Calendar(year))?;
-                self.database
-                    .clear_cache_entries_for_year(year)
-                    .map_err(ContentError::from_database)?;
+                Err(error) => return Err(error.into()),
             }
-            CacheCleanScope::Puzzle(puzzle) => self.remove_puzzle(puzzle)?,
+            self.database
+                .remove_cache_entry(entry.key)
+                .map_err(ContentError::from_database)?;
         }
-        Ok(())
+        Ok(report)
     }
 
     fn load_or_fetch(
@@ -211,37 +221,6 @@ impl ContentStore {
         Ok(path)
     }
 
-    fn remove_puzzle(&self, puzzle: PuzzleId) -> ContentResult<()> {
-        for key in [
-            CacheKey::PuzzleHtml(puzzle),
-            CacheKey::PuzzleMarkdown(puzzle),
-            CacheKey::Input(puzzle),
-        ] {
-            self.remove_file(key)?;
-        }
-        Ok(())
-    }
-
-    fn remove_file(&self, key: CacheKey) -> ContentResult<()> {
-        match fs::remove_file(self.cache_path(key)) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
-        self.database
-            .remove_cache_entry(key)
-            .map_err(ContentError::from_database)?;
-        Ok(())
-    }
-
-    fn remove_directory(&self, name: &str) -> ContentResult<()> {
-        match fs::remove_dir_all(self.cache_dir.join(name)) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
-        }
-    }
-
     fn cache_path(&self, key: CacheKey) -> PathBuf {
         self.cache_dir.join(self.cache_relative_path(key))
     }
@@ -254,6 +233,27 @@ impl ContentStore {
             }
             CacheKey::Input(puzzle) => PathBuf::from("inputs").join(format!("{puzzle}.txt")),
             CacheKey::Calendar(year) => PathBuf::from("calendars").join(format!("year{year}.html")),
+        }
+    }
+}
+
+impl CacheCleanScope {
+    fn includes(self, key: CacheKey) -> bool {
+        match self {
+            Self::All => true,
+            Self::Year(year) => match key {
+                CacheKey::PuzzleHtml(puzzle)
+                | CacheKey::PuzzleMarkdown(puzzle)
+                | CacheKey::Input(puzzle) => puzzle.year == year,
+                CacheKey::Calendar(calendar_year) => calendar_year == year,
+            },
+            Self::Date(puzzle) => matches!(
+                key,
+                CacheKey::PuzzleHtml(entry_puzzle)
+                    | CacheKey::PuzzleMarkdown(entry_puzzle)
+                    | CacheKey::Input(entry_puzzle)
+                    if entry_puzzle == puzzle
+            ),
         }
     }
 }
@@ -300,3 +300,76 @@ impl ContentError {
 }
 
 pub type ContentResult<T> = Result<T, ContentError>;
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use aocsuite_utils::{PuzzleDay, PuzzleYear};
+    use tempfile::tempdir;
+
+    use super::{CacheCleanScope, CacheKey, ContentStore};
+
+    fn puzzle(day: u32, year: i32) -> aocsuite_utils::PuzzleId {
+        aocsuite_utils::PuzzleId::new(
+            PuzzleDay::new(day).expect("valid puzzle day"),
+            PuzzleYear::new(year).expect("valid puzzle year"),
+        )
+    }
+
+    #[test]
+    fn cleanup_removes_only_indexed_files_for_each_target() {
+        let temp = tempdir().expect("create temporary cache root");
+        let cache_dir = temp.path().join("cache");
+        let store = ContentStore::open(cache_dir.clone()).expect("open content store");
+        let date = puzzle(1, 2024);
+        let other_date = puzzle(2, 2025);
+        let calendar_2024 = PuzzleYear::new(2024).expect("valid year");
+        let calendar_2025 = PuzzleYear::new(2025).expect("valid year");
+
+        for key in [
+            CacheKey::PuzzleHtml(date),
+            CacheKey::PuzzleMarkdown(date),
+            CacheKey::Input(date),
+            CacheKey::Calendar(calendar_2024),
+            CacheKey::PuzzleHtml(other_date),
+            CacheKey::PuzzleMarkdown(other_date),
+            CacheKey::Input(other_date),
+            CacheKey::Calendar(calendar_2025),
+        ] {
+            store
+                .save(key, b"indexed")
+                .expect("save indexed cache file");
+        }
+        let unindexed = [
+            cache_dir.join("puzzles/manual.html"),
+            cache_dir.join("inputs/manual.txt"),
+            cache_dir.join("calendars/manual.html"),
+        ];
+        for path in &unindexed {
+            fs::write(path, "unindexed").expect("write unmanaged cache file");
+        }
+
+        let date_report = store
+            .clean(CacheCleanScope::Date(date))
+            .expect("clean date cache");
+        assert_eq!(date_report.removed_files, 3);
+        assert!(!store.cache_path(CacheKey::PuzzleHtml(date)).exists());
+        assert!(store.cache_path(CacheKey::Calendar(calendar_2024)).exists());
+
+        let year_report = store
+            .clean(CacheCleanScope::Year(calendar_2024))
+            .expect("clean year cache");
+        assert_eq!(year_report.removed_files, 1);
+        assert!(!store.cache_path(CacheKey::Calendar(calendar_2024)).exists());
+
+        let all_report = store.clean(CacheCleanScope::All).expect("clean all cache");
+        assert_eq!(all_report.removed_files, 4);
+        assert!(unindexed.iter().all(|path| path.exists()));
+        assert!(cache_dir.join("state.sqlite").is_file());
+        assert_eq!(
+            store.clean(CacheCleanScope::All).expect("repeat cleanup"),
+            Default::default()
+        );
+    }
+}

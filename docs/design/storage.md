@@ -296,6 +296,10 @@ package mutation, the resolved environment state is atomically persisted through
 Environment cleanup preserves tracked dependency files. General cleanup must not
 delete user solutions, templates, libraries, or project manifests.
 
+Language runtime cleanup removes only generated runtime manifests, entrypoints,
+and active solution links. It does not remove build artifacts, environments,
+dependencies, or tracked project files.
+
 ## Run allocation and timing
 
 Each language run receives a unique transient result path. Result files are
@@ -309,18 +313,13 @@ Storage retains only the latest configured number of runtimes per puzzle part.
 
 ## Cleanup and uninstall
 
-Cleanup is modeled through typed scopes and produces idempotent plans or reports.
-Storage does not prompt and does not accept a generic `force` boolean.
+Persisted-cache cleanup is modeled through typed date, year, and all scopes and
+returns idempotent reports. It removes only indexed puzzle HTML, derived
+Markdown, inputs, and, for year/all scopes, calendar HTML. It clears matching
+cache metadata while preserving `state.sqlite`, shared examples, language
+projects, configuration, and credentials. Storage does not prompt and does not
+accept a generic `force` boolean.
 
-Normal cache cleanup removes disposable content and preserves:
-
-- `state.sqlite`;
-- shared examples;
-- language projects;
-- configuration and credentials.
-
-Example cleanup is an explicit scope. Comprehensive cleanup and uninstall are
-separate explicit scopes confirmed by a frontend.
-
-Before removal, uninstall must distinguish AoC Suite-owned paths from unknown or
-user-owned files and refuse unsafe deletion.
+Full uninstall is a separate frontend-confirmed `RuntimeLayout` operation. It
+recursively removes the explicit runtime root without inspecting or validating
+its contents; an absent root is an idempotent no-op.
