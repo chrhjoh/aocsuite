@@ -48,7 +48,7 @@ pub enum AocCommand {
         #[arg(long)]
         language: Option<LanguageId>,
     },
-    /// Manage library files
+    /// Manage execution environment
     Env {
         #[command(subcommand)]
         action: EnvAction,
