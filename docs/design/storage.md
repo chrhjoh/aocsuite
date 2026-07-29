@@ -63,15 +63,15 @@ environment state.
 AoC Suite may regenerate these files completely:
 
 - `.aocsuite-layout.json`;
-- the workspace `.gitignore`;
+- the initial workspace `.gitignore` when it is absent;
 - versioned language harnesses;
 - `.aocsuite-runtime.json` manifests;
 - derived puzzle Markdown;
 - active solution links;
 - transient run files.
 
-Manual edits to generated harnesses or `.gitignore` are not preserved under the
-current design.
+Manual edits to generated harnesses are not preserved under the current design.
+Manual edits to an existing workspace `.gitignore` are preserved.
 
 ### User-visible persistent state
 
@@ -139,7 +139,6 @@ Bootstrap may create:
 - required directories;
 - `workspace/`;
 - the workspace Git repository;
-- the generated workspace `.gitignore`.
 
 Bootstrap is idempotent and distinguishes:
 
@@ -272,8 +271,9 @@ Storage owns Git operations scoped to `workspace/`.
 Captured Git disables pagers and interactive prompts. Explicit pass-through may
 inherit terminal streams, but it is not a security sandbox.
 
-The workspace `.gitignore` is AoC Suite-owned and regenerated completely. It
-ignores only disposable state, including:
+Workspace initialization creates `.gitignore` when it is absent. An existing
+`.gitignore` is user-managed and preserved. The initial generated file ignores
+only disposable state, including:
 
 - Rust `target/`;
 - Python virtual environments;

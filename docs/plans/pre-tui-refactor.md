@@ -102,7 +102,7 @@ Statuses use:
 - **open**: not implemented;
 - **deferred**: intentionally postponed pending another design decision.
 
-### 1. Runtime layout and configuration — partial
+### 1. Runtime layout and configuration — done
 
 Done:
 
@@ -123,10 +123,8 @@ Done:
 - Path and status getters are pure.
 - Typed persisted-cache cleanup and confirmed `RuntimeLayout` root uninstall
   are storage-owned.
-
-Remaining:
-
-- Confirm bootstrap regenerates the workspace `.gitignore`.
+- Workspace initialization creates a missing `.gitignore` without overwriting
+  an existing user-managed file.
 
 Acceptance:
 

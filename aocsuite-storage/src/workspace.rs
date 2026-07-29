@@ -45,7 +45,10 @@ impl Workspace {
 
     pub fn ensure(&self) -> WorkspaceResult<()> {
         std::fs::create_dir_all(&self.directory)?;
-        atomic_write(&self.gitignore_path(), GITIGNORE.as_bytes())?;
+        let gitignore_path = self.gitignore_path();
+        if !gitignore_path.exists() {
+            atomic_write(&gitignore_path, GITIGNORE.as_bytes())?;
+        }
         Ok(())
     }
 
@@ -195,6 +198,21 @@ mod tests {
         assert!(GITIGNORE.contains("python/venv/"));
         assert!(!GITIGNORE.contains("Cargo.lock"));
         assert!(!GITIGNORE.contains("config.json"));
+    }
+
+    #[test]
+    fn workspace_ensure_preserves_an_existing_gitignore() {
+        let temp = tempfile::tempdir().expect("create temporary workspace");
+        let workspace = Workspace::new(temp.path().to_path_buf());
+        let gitignore = workspace.gitignore_path();
+        std::fs::write(&gitignore, "user rule\n").expect("write user gitignore");
+
+        workspace.ensure().expect("ensure workspace");
+
+        assert_eq!(
+            std::fs::read_to_string(gitignore).expect("read gitignore"),
+            "user rule\n"
+        );
     }
 
     #[test]
