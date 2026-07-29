@@ -146,6 +146,8 @@ Done:
 - Correct and incorrect submission counts and bounded recent timings are stored.
 - Cache invalidation and basic idempotent cleaning exist.
 - Indexed persisted-cache cleanup preserves unindexed files and `state.sqlite`.
+- ContentStore uses its injected client for cache misses and records submission
+  invalidation.
 
 Remaining:
 

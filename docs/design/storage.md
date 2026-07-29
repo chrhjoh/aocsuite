@@ -216,6 +216,8 @@ Schema changes require an explicit migration.
 - input permissions;
 - typed cache cleanup.
 
+It receives an injected AoC client for content retrieval.
+
 Files use flat date-keyed paths under:
 
 - `cache/puzzles`;
@@ -232,6 +234,10 @@ rejected by the client preserve existing valid cache entries.
 
 Cache files without valid metadata remain unmanaged. Storage does not
 reconstruct ownership merely from their filenames.
+
+ContentStore decides whether valid cached content satisfies an operation or an
+AoC request is required. Frontends do not receive the client for cache-backed
+content operations.
 
 Expose pure path, status, and read operations separately from explicit load,
 fetch, refresh, invalidate, and clean operations.

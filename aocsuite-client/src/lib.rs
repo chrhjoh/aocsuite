@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use aocsuite_utils::{PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
+use aocsuite_utils::{PuzzleId, PuzzlePart, PuzzleYear};
 use reqwest::{
     blocking::{Client, Response},
     header::{COOKIE, HeaderMap, HeaderValue},
@@ -13,9 +13,9 @@ const USER_AGENT: &str = concat!("aocsuite/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone, Copy)]
 pub enum AocPage {
-    Puzzle(PuzzleDay, PuzzleYear),
-    Input(PuzzleDay, PuzzleYear),
-    Submit(PuzzleDay, PuzzleYear),
+    Puzzle(PuzzleId),
+    Input(PuzzleId),
+    Submit(PuzzleId),
     Calendar(PuzzleYear),
     Leaderboard(PuzzleYear, Option<u32>),
 }
@@ -24,9 +24,9 @@ impl AocPage {
     fn url(&self, base_url: &str) -> String {
         let base_url = base_url.trim_end_matches('/');
         match self {
-            Self::Puzzle(day, year) => format!("{base_url}/{year}/day/{day}"),
-            Self::Input(day, year) => format!("{base_url}/{year}/day/{day}/input"),
-            Self::Submit(day, year) => format!("{base_url}/{year}/day/{day}/answer"),
+            Self::Puzzle(puzzle) => format!("{base_url}/{}/day/{}", puzzle.year, puzzle.day),
+            Self::Input(puzzle) => format!("{base_url}/{}/day/{}/input", puzzle.year, puzzle.day),
+            Self::Submit(puzzle) => format!("{base_url}/{}/day/{}/answer", puzzle.year, puzzle.day),
             Self::Calendar(year) => format!("{base_url}/{year}"),
             Self::Leaderboard(year, id) => match id {
                 Some(id) => format!("{base_url}/{year}/leaderboard/private/view/{id}"),
@@ -38,7 +38,7 @@ impl AocPage {
     fn requires_session(&self) -> bool {
         matches!(
             self,
-            Self::Input(_, _) | Self::Submit(_, _) | Self::Leaderboard(_, Some(_))
+            Self::Input(_) | Self::Submit(_) | Self::Leaderboard(_, Some(_))
         )
     }
 }
@@ -113,7 +113,7 @@ impl AocClient {
         part: PuzzlePart,
         answer: &str,
     ) -> AocClientResult<String> {
-        let page = AocPage::Submit(puzzle.day, puzzle.year);
+        let page = AocPage::Submit(puzzle);
         self.ensure_session(&page)?;
         let params = [("level", part.to_string()), ("answer", answer.to_owned())];
         let response = self
@@ -253,15 +253,15 @@ mod tests {
         let base = "https://example.com/root/";
 
         assert_eq!(
-            AocPage::Puzzle(puzzle.day, puzzle.year).url(base),
+            AocPage::Puzzle(puzzle).url(base),
             "https://example.com/root/2024/day/1"
         );
         assert_eq!(
-            AocPage::Input(puzzle.day, puzzle.year).url(base),
+            AocPage::Input(puzzle).url(base),
             "https://example.com/root/2024/day/1/input"
         );
         assert_eq!(
-            AocPage::Submit(puzzle.day, puzzle.year).url(base),
+            AocPage::Submit(puzzle).url(base),
             "https://example.com/root/2024/day/1/answer"
         );
         assert_eq!(
@@ -284,12 +284,7 @@ mod tests {
         let client = client(base_url, None);
         let puzzle = puzzle();
 
-        assert_eq!(
-            client
-                .download(&AocPage::Puzzle(puzzle.day, puzzle.year))
-                .unwrap(),
-            "puzzle"
-        );
+        assert_eq!(client.download(&AocPage::Puzzle(puzzle)).unwrap(), "puzzle");
         let request = request.recv().unwrap();
         let request = request.to_ascii_lowercase();
         assert!(request.contains("user-agent: aocsuite-test/1"));
@@ -302,7 +297,7 @@ mod tests {
         let puzzle = puzzle();
 
         assert!(matches!(
-            client.download(&AocPage::Input(puzzle.day, puzzle.year)),
+            client.download(&AocPage::Input(puzzle)),
             Err(AocClientError::MissingSession)
         ));
         assert!(matches!(
@@ -322,7 +317,7 @@ mod tests {
         let puzzle = puzzle();
 
         assert!(matches!(
-            client.download(&AocPage::Puzzle(puzzle.day, puzzle.year)),
+            client.download(&AocPage::Puzzle(puzzle)),
             Err(AocClientError::Http(error)) if error.is_timeout()
         ));
     }
@@ -333,9 +328,7 @@ mod tests {
         let client = client(base_url, Some("test-session"));
         let puzzle = puzzle();
 
-        client
-            .download(&AocPage::Input(puzzle.day, puzzle.year))
-            .unwrap();
+        client.download(&AocPage::Input(puzzle)).unwrap();
         assert!(
             request
                 .recv()
@@ -376,7 +369,7 @@ mod tests {
         ] {
             let (base_url, _) = serve_once(status, "failure");
             let error = client(base_url, None)
-                .download(&AocPage::Puzzle(puzzle.day, puzzle.year))
+                .download(&AocPage::Puzzle(puzzle))
                 .expect_err("request fails");
             match expected {
                 "authentication" => assert!(matches!(error, AocClientError::Authentication)),
@@ -391,7 +384,7 @@ mod tests {
         let (base_url, _) = serve_once(200, "Please log in to get your puzzle input.");
         let puzzle = puzzle();
         let error = client(base_url, Some("expired"))
-            .download(&AocPage::Input(puzzle.day, puzzle.year))
+            .download(&AocPage::Input(puzzle))
             .expect_err("login page is rejected");
 
         assert!(matches!(error, AocClientError::Authentication));

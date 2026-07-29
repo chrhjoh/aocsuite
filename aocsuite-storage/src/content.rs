@@ -22,9 +22,21 @@ pub(crate) enum CacheKey {
     Calendar(PuzzleYear),
 }
 
-pub struct ContentStore {
+impl CacheKey {
+    fn source_page(self) -> Option<AocPage> {
+        match self {
+            Self::PuzzleHtml(puzzle) => Some(AocPage::Puzzle(puzzle)),
+            Self::Input(puzzle) => Some(AocPage::Input(puzzle)),
+            Self::Calendar(year) => Some(AocPage::Calendar(year)),
+            Self::PuzzleMarkdown(_) => None,
+        }
+    }
+}
+
+pub struct ContentStore<'client> {
     cache_dir: PathBuf,
     database: StateDatabase,
+    client: &'client AocClient,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,42 +52,31 @@ pub struct CacheCleanReport {
     pub already_absent: usize,
 }
 
-impl ContentStore {
-    pub fn open(cache_dir: PathBuf) -> ContentResult<Self> {
+impl<'client> ContentStore<'client> {
+    pub fn open(cache_dir: PathBuf, client: &'client AocClient) -> ContentResult<Self> {
         fs::create_dir_all(&cache_dir)?;
         let database = StateDatabase::open(&cache_dir.join("state.sqlite"))
             .map_err(ContentError::from_database)?;
         Ok(Self {
             cache_dir,
             database,
+            client,
         })
     }
 
-    pub fn load_calendar(&self, year: PuzzleYear, client: &AocClient) -> ContentResult<String> {
-        let path = self.load_or_fetch(CacheKey::Calendar(year), AocPage::Calendar(year), client)?;
+    pub fn load_calendar(&self, year: PuzzleYear) -> ContentResult<String> {
+        let path = self.load_or_fetch(CacheKey::Calendar(year))?;
         Ok(fs::read_to_string(path)?)
     }
 
-    pub fn ensure_input(&self, puzzle: PuzzleId, client: &AocClient) -> ContentResult<PathBuf> {
-        let path = self.load_or_fetch(
-            CacheKey::Input(puzzle),
-            AocPage::Input(puzzle.day, puzzle.year),
-            client,
-        )?;
+    pub fn ensure_input(&self, puzzle: PuzzleId) -> ContentResult<PathBuf> {
+        let path = self.load_or_fetch(CacheKey::Input(puzzle))?;
         set_owner_only_permissions(&path)?;
         Ok(path)
     }
 
-    pub fn ensure_puzzle_markdown(
-        &self,
-        puzzle: PuzzleId,
-        client: &AocClient,
-    ) -> ContentResult<PathBuf> {
-        let html_path = self.load_or_fetch(
-            CacheKey::PuzzleHtml(puzzle),
-            AocPage::Puzzle(puzzle.day, puzzle.year),
-            client,
-        )?;
+    pub fn ensure_puzzle_markdown(&self, puzzle: PuzzleId) -> ContentResult<PathBuf> {
+        let html_path = self.load_or_fetch(CacheKey::PuzzleHtml(puzzle))?;
         let markdown_key = CacheKey::PuzzleMarkdown(puzzle);
         if self.is_cached(markdown_key)? {
             return Ok(self.cache_path(markdown_key));
@@ -175,17 +176,13 @@ impl ContentStore {
         Ok(report)
     }
 
-    fn load_or_fetch(
-        &self,
-        key: CacheKey,
-        page: AocPage,
-        client: &AocClient,
-    ) -> ContentResult<PathBuf> {
+    fn load_or_fetch(&self, key: CacheKey) -> ContentResult<PathBuf> {
         if self.is_cached(key)? {
             return Ok(self.cache_path(key));
         }
 
-        let body = client.download(&page)?;
+        let page = key.source_page().expect("cache only fetch source content");
+        let body = self.client.download(&page)?;
         self.save(key, body.as_bytes())
     }
 
@@ -305,7 +302,9 @@ pub type ContentResult<T> = Result<T, ContentError>;
 mod tests {
     use std::fs;
 
-    use aocsuite_utils::{PuzzleDay, PuzzleYear};
+    use aocsuite_client::{AocClient, AocClientOptions, AocPage};
+    use aocsuite_parser::AocSubmissionResult;
+    use aocsuite_utils::{PuzzleDay, PuzzlePart, PuzzleYear};
     use tempfile::tempdir;
 
     use super::{CacheCleanScope, CacheKey, ContentStore};
@@ -317,11 +316,16 @@ mod tests {
         )
     }
 
+    fn client() -> AocClient {
+        AocClient::new(None, AocClientOptions::default()).expect("create test client")
+    }
+
     #[test]
     fn cleanup_removes_only_indexed_files_for_each_target() {
         let temp = tempdir().expect("create temporary cache root");
         let cache_dir = temp.path().join("cache");
-        let store = ContentStore::open(cache_dir.clone()).expect("open content store");
+        let client = client();
+        let store = ContentStore::open(cache_dir.clone(), &client).expect("open content store");
         let date = puzzle(1, 2024);
         let other_date = puzzle(2, 2025);
         let calendar_2024 = PuzzleYear::new(2024).expect("valid year");
@@ -371,5 +375,57 @@ mod tests {
             store.clean(CacheCleanScope::All).expect("repeat cleanup"),
             Default::default()
         );
+    }
+
+    #[test]
+    fn cache_keys_map_only_source_content_to_aoc_pages() {
+        let puzzle = puzzle(1, 2024);
+        let year = PuzzleYear::new(2024).expect("valid year");
+
+        assert!(matches!(
+            CacheKey::PuzzleHtml(puzzle).source_page(),
+            Some(AocPage::Puzzle(page)) if page == puzzle
+        ));
+        assert!(matches!(
+            CacheKey::Input(puzzle).source_page(),
+            Some(AocPage::Input(page)) if page == puzzle
+        ));
+        assert!(matches!(
+            CacheKey::Calendar(year).source_page(),
+            Some(AocPage::Calendar(page_year)) if page_year == year
+        ));
+        assert!(CacheKey::PuzzleMarkdown(puzzle).source_page().is_none());
+    }
+
+    #[test]
+    fn recording_a_correct_submission_invalidates_affected_cache_entries() {
+        let temp = tempdir().expect("create temporary cache root");
+        let cache_dir = temp.path().join("cache");
+        let puzzle = puzzle(1, 2024);
+        let year = PuzzleYear::new(2024).expect("valid year");
+        let client = client();
+        let store = ContentStore::open(cache_dir, &client).expect("open content store");
+
+        for key in [
+            CacheKey::Calendar(year),
+            CacheKey::PuzzleHtml(puzzle),
+            CacheKey::PuzzleMarkdown(puzzle),
+        ] {
+            store.save(key, b"indexed").expect("save indexed content");
+        }
+
+        store
+            .record_submission(puzzle, PuzzlePart::One, &AocSubmissionResult::Correct)
+            .expect("record submission");
+
+        assert!(!store
+            .is_cached(CacheKey::Calendar(year))
+            .expect("check calendar cache"));
+        assert!(!store
+            .is_cached(CacheKey::PuzzleHtml(puzzle))
+            .expect("check puzzle html cache"));
+        assert!(!store
+            .is_cached(CacheKey::PuzzleMarkdown(puzzle))
+            .expect("check puzzle markdown cache"));
     }
 }

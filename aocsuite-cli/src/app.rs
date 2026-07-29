@@ -5,11 +5,11 @@ use std::{
 };
 
 use crate::{
-    commands::{CleanAction, ConfigCommandKey, EnvAction, LibAction},
-    AocCliError, AocCliResult, AocCommand, ConfigCommand,
+    commands::{CleanAction, EnvAction, LibAction},
+    AocCliError, AocCliResult, AocCommand,
 };
-use aocsuite_client::{AocClient, AocClientOptions, AocPage};
-use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
+use aocsuite_client::{AocClient, AocPage};
+use aocsuite_config::{ConfigKey, Configuration};
 use aocsuite_lang::{Language, LanguageRunOutput, PartResult, SolverFile};
 use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
@@ -24,6 +24,7 @@ pub fn run_aocsuite(
     command: AocCommand,
     day: PuzzleDay,
     year: PuzzleYear,
+    client: &AocClient,
     content: &ContentStore,
     workspace: &Workspace,
     config: &mut Configuration,
@@ -31,23 +32,21 @@ pub fn run_aocsuite(
     let executor = SystemCommandExecutor;
     let launcher = Launcher::new(&executor);
     match command {
-        AocCommand::Config { command } => match command {
-            ConfigCommand::Get { key } => {
-                let val = config.get::<String>(key.into())?;
-                println!("{key}: {val}");
-            }
-            ConfigCommand::Set { key } => set_config_value(config, key)?,
-        },
+        AocCommand::Config { .. } => {
+            return Err(AocCliError::NotAllowed(
+                "config must be handled before content service construction",
+            ));
+        }
 
         AocCommand::Calendar => {
             valid_year_release(day, year)?;
-            let calendar = content.load_calendar(year, &resolve_aoc_client(config)?)?;
+            let calendar = content.load_calendar(year)?;
             println!("{}", render_calendar(&parse_calendar(&calendar)?));
         }
 
         AocCommand::View => {
             valid_puzzle_release(day, year)?;
-            launcher.open_browser(&AocPage::Puzzle(day, year).to_string())?;
+            launcher.open_browser(&AocPage::Puzzle(PuzzleId::new(day, year)).to_string())?;
         }
 
         AocCommand::Submit { part, answer } => {
@@ -56,10 +55,9 @@ pub fn run_aocsuite(
                 Some(answer) => answer,
                 None => prompt_answer()?,
             };
-            let output =
-                resolve_aoc_client(config)?.submit(PuzzleId::new(day, year), part, &answer)?;
-            let result = parse_submission(&output)?;
-            content.record_submission(PuzzleId::new(day, year), part, &result)?;
+            let puzzle = PuzzleId::new(day, year);
+            let result = parse_submission(&client.submit(puzzle, part, &answer)?)?;
+            content.record_submission(puzzle, part, &result)?;
             println!("{}", format_submission_result(&result));
         }
 
@@ -78,9 +76,7 @@ pub fn run_aocsuite(
                         resolve_custom_input_path(&file, &std::env::current_dir()?)?
                     }
                 }
-                None => {
-                    content.ensure_input(PuzzleId::new(day, year), &resolve_aoc_client(config)?)?
-                }
+                None => content.ensure_input(PuzzleId::new(day, year))?,
             };
 
             let language = resolve_language(config, language, workspace, &executor)?;
@@ -103,15 +99,14 @@ pub fn run_aocsuite(
 
         AocCommand::Open { language } => {
             valid_puzzle_release(day, year)?;
-            let client = resolve_aoc_client(config)?;
             let language = resolve_language(config, language, workspace, &executor)?;
             let editor_program = config.get::<String>(ConfigKey::Editor)?;
             let puzzle = PuzzleId::new(day, year);
             let request = OpenPuzzleRequest {
-                puzzle: content.ensure_puzzle_markdown(puzzle, &client)?,
+                puzzle: content.ensure_puzzle_markdown(puzzle)?,
                 example: workspace.ensure_example(puzzle)?,
                 solution: language.ensure_solver_file(&SolverFile::ActiveSolution(puzzle))?,
-                input: content.ensure_input(puzzle, &client)?,
+                input: content.ensure_input(puzzle)?,
                 working_directory: language.project_dir().to_path_buf(),
             };
             launcher.open_puzzle(editor_program, request)?;
@@ -386,18 +381,6 @@ fn format_submission_result(result: &AocSubmissionResult) -> String {
     }
 }
 
-fn resolve_aoc_client(config: &Configuration) -> AocCliResult<AocClient> {
-    let session = match config.session() {
-        Ok(session) => Some(session),
-        Err(AocConfigError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(error.into()),
-    };
-    Ok(AocClient::new(
-        session.as_deref(),
-        AocClientOptions::default(),
-    )?)
-}
-
 fn resolve_language<'workspace>(
     config: &Configuration,
     cli_arg: Option<LanguageId>,
@@ -409,30 +392,6 @@ fn resolve_language<'workspace>(
         None => config.get::<LanguageId>(ConfigKey::Language)?,
     };
     Ok(Language::new(language_id, workspace, executor))
-}
-
-fn set_config_value(config: &mut Configuration, key: ConfigCommandKey) -> AocCliResult<()> {
-    if matches!(key, ConfigCommandKey::Session) {
-        let value = rpassword::prompt_password("Enter value for session: ")?;
-        config.set(
-            key.into(),
-            (!value.trim().is_empty()).then_some(value.as_str()),
-        )?;
-        return Ok(());
-    }
-
-    let config_key = key.into();
-    match config.get::<String>(config_key) {
-        Ok(value) => print!("Enter value for {key} [{value}]: "),
-        Err(AocConfigError::NotFound { .. }) => print!("Enter value for {key}: "),
-        Err(error) => return Err(error.into()),
-    }
-    std::io::stdout().flush()?;
-    let mut value = String::new();
-    std::io::stdin().read_line(&mut value)?;
-    let value = (!value.trim().is_empty()).then_some(value.as_str());
-    config.set(config_key, value)?;
-    Ok(())
 }
 
 fn user_confirm(

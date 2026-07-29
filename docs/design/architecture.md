@@ -84,8 +84,9 @@ Storage does not own:
 - editor or browser launching;
 - frontend interaction.
 
-The content module may coordinate injected client and parser interfaces when an
-operation combines remote retrieval with persistent-state updates.
+`ContentStore` receives an injected client and may coordinate it with parser
+interfaces when an operation combines remote retrieval with persistent-state
+updates.
 
 Internal boundaries:
 

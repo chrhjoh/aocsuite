@@ -1,7 +1,8 @@
 use std::io::{BufRead, Write};
 
-use aocsuite_cli::{run_aocsuite, AocCliError, AocCommand};
-use aocsuite_config::{ConfigKey, Configuration};
+use aocsuite_cli::{run_aocsuite, AocCliError, AocCommand, ConfigCommand, ConfigCommandKey};
+use aocsuite_client::{AocClient, AocClientOptions};
+use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
 use aocsuite_storage::{get_aocsuite_dir, ContentStore, RuntimeLayout, Workspace};
 use aocsuite_utils::{default_puzzle_date, PuzzleDay, PuzzleYear};
 
@@ -48,9 +49,21 @@ fn main() {
     workspace
         .ensure()
         .unwrap_or_else(|error| terminate_with_error(error.into()));
-    let content = ContentStore::open(layout.cache_dir())
-        .unwrap_or_else(|error| terminate_with_error(error.into()));
     let mut config = Configuration::load(layout.config_dir())
+        .unwrap_or_else(|error| terminate_with_error(error.into()));
+    if let AocCommand::Config { command } = args.command {
+        run_config_command(command, &mut config)
+            .unwrap_or_else(|error| terminate_with_error(error));
+        return;
+    }
+    let session = match config.session() {
+        Ok(session) => Some(session),
+        Err(AocConfigError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => terminate_with_error(error.into()),
+    };
+    let client = AocClient::new(session.as_deref(), AocClientOptions::default())
+        .unwrap_or_else(|error| terminate_with_error(error.into()));
+    let content = ContentStore::open(layout.cache_dir(), &client)
         .unwrap_or_else(|error| terminate_with_error(error.into()));
     let configured_year = match args.year {
         Some(year) => Some(year),
@@ -61,7 +74,15 @@ fn main() {
         },
     };
     let (day, year) = resolve_puzzle_date(args.day, configured_year, default_puzzle_date());
-    if let Err(err) = run_aocsuite(args.command, day, year, &content, &workspace, &mut config) {
+    if let Err(err) = run_aocsuite(
+        args.command,
+        day,
+        year,
+        &client,
+        &content,
+        &workspace,
+        &mut config,
+    ) {
         terminate_with_error(err);
     }
 }
@@ -80,6 +101,44 @@ fn confirm_uninstall() -> std::io::Result<bool> {
     }
     let response = response.trim().to_ascii_lowercase();
     Ok(response.is_empty() || response == "y" || response == "yes")
+}
+
+fn run_config_command(
+    command: ConfigCommand,
+    config: &mut Configuration,
+) -> Result<(), AocCliError> {
+    match command {
+        ConfigCommand::Get { key } => {
+            let value = config.get::<String>(key.into())?;
+            println!("{key}: {value}");
+        }
+        ConfigCommand::Set { key } => set_config_value(config, key)?,
+    }
+    Ok(())
+}
+
+fn set_config_value(config: &mut Configuration, key: ConfigCommandKey) -> Result<(), AocCliError> {
+    if matches!(key, ConfigCommandKey::Session) {
+        let value = rpassword::prompt_password("Enter value for session: ")?;
+        config.set(
+            key.into(),
+            (!value.trim().is_empty()).then_some(value.as_str()),
+        )?;
+        return Ok(());
+    }
+
+    let config_key = key.into();
+    match config.get::<String>(config_key) {
+        Ok(value) => print!("Enter value for {key} [{value}]: "),
+        Err(AocConfigError::NotFound { .. }) => print!("Enter value for {key}: "),
+        Err(error) => return Err(error.into()),
+    }
+    std::io::stdout().flush()?;
+    let mut value = String::new();
+    std::io::stdin().read_line(&mut value)?;
+    let value = (!value.trim().is_empty()).then_some(value.as_str());
+    config.set(config_key, value)?;
+    Ok(())
 }
 
 fn resolve_puzzle_date(
