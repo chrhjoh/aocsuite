@@ -95,7 +95,17 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
         self.runner.list_packages()
     }
 
-    pub fn get_lib_filepath(&self, lib_name: &str) -> AocLanguageResult<PathBuf> {
+    pub fn ensure_lib_path(&self, lib_name: &str) -> AocLanguageResult<PathBuf> {
+        let lib_path = self.lib_path(lib_name)?;
+        std::fs::create_dir_all(lib_path.parent().expect("library path is not root"))?;
+        Ok(lib_path)
+    }
+
+    pub fn library_exists(&self, lib_name: &str) -> AocLanguageResult<bool> {
+        Ok(self.lib_path(lib_name)?.is_file())
+    }
+
+    fn lib_path(&self, lib_name: &str) -> AocLanguageResult<PathBuf> {
         validate_user_lib(lib_name, &self.language_type)?;
         let lib_path = self.runner.get_lib_path(lib_name);
         ensure_no_case_collision(
@@ -103,17 +113,11 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
             &self.runner.file_extention(),
             lib_name,
         )?;
-
-        if !lib_path.exists() {
-            std::fs::create_dir_all(lib_path.parent().expect("is not root"))?;
-        }
-
         Ok(lib_path)
     }
 
     pub fn remove_lib_file(&self, lib_name: &str) -> AocLanguageResult<()> {
-        validate_user_lib(lib_name, &self.language_type)?;
-        let lib_path = self.runner.get_lib_path(lib_name);
+        let lib_path = self.lib_path(lib_name)?;
         if lib_path.exists() {
             std::fs::remove_file(lib_path)?;
         }
@@ -221,7 +225,12 @@ const PYTHON_RESERVED_NAMES: &[&str] = &[
 ];
 fn scan_lib_directory(dir: &Path, file_extention: &str) -> crate::AocLanguageResult<Vec<String>> {
     let mut lib_files = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(lib_files),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in entries {
         let entry = entry?;
         let path = entry.path();
         if path.is_file() {
@@ -327,6 +336,34 @@ mod tests {
         assert!(ensure_no_case_collision(&dir, "rs", "Helpers").is_ok());
 
         std::fs::remove_dir_all(dir).expect("remove library directory");
+    }
+
+    #[test]
+    fn library_path_queries_do_not_initialize_language_projects() {
+        let root = test_root("library-path");
+        let workspace = Workspace::new(root.join("workspace"));
+        let language = Language::new(LanguageId::Rust, &workspace, &SYSTEM_EXECUTOR);
+        let expected = root.join("workspace/rust/src/helpers.rs");
+
+        assert!(!language.library_exists("helpers").expect("check library"));
+        assert_eq!(
+            language.list_lib_files().expect("list libraries"),
+            Vec::<String>::new()
+        );
+        language
+            .remove_lib_file("helpers")
+            .expect("remove absent library");
+        assert!(!expected.parent().expect("library parent").exists());
+
+        assert_eq!(
+            language
+                .ensure_lib_path("helpers")
+                .expect("ensure library path"),
+            expected
+        );
+        assert!(expected.parent().expect("library parent").is_dir());
+
+        fs::remove_dir_all(root).expect("remove test runtime");
     }
 
     fn assert_requested_solution_is_active(runner: &dyn LanguageHandler) {

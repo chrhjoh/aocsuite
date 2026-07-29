@@ -111,17 +111,18 @@ Done:
 - Config uses explicit paths and non-mutating reads.
 - Configuration values are parsed into typed values during load and provide
   effective defaults.
+- Configurable run-history retention is passed to storage when recording run
+  timings.
 - `RuntimeLayout::new(root)` exists.
 - Layout version 1 and initial bootstrap exist.
 - CLI bootstraps before config and service construction.
 - Every existing unversioned root, including an empty root, is rejected.
 - Newer layout versions are rejected without mutation.
 - Session storage is separate from non-secret config.
+- Path and status getters are pure.
 
 Remaining:
 
-- Wire configurable run-history retention through storage.
-- Make every remaining path/status getter pure.
 - Complete owner-only session behavior where not yet enforced.
 - Complete typed cleanup and uninstall lifecycle.
 - Confirm bootstrap regenerates the workspace `.gitignore`.

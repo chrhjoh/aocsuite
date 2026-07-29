@@ -187,7 +187,7 @@ pub fn run_aocsuite(
             match action {
                 LibAction::Edit { lib } => {
                     let editor_program = config.get::<String>(ConfigKey::Editor)?;
-                    let path = language.get_lib_filepath(&lib)?;
+                    let path = language.ensure_lib_path(&lib)?;
                     launcher.open_file(editor_program, &path, language.project_dir())?;
                 }
                 LibAction::Remove { lib, all, force } => {
@@ -212,8 +212,7 @@ pub fn run_aocsuite(
                         }
                     } else {
                         let lib = lib.expect("Lib only none when all is false");
-                        let file = language.get_lib_filepath(&lib)?;
-                        if !file.exists() {
+                        if !language.library_exists(&lib)? {
                             println!("Library file {lib} was not found");
                             return Ok(());
                         }
