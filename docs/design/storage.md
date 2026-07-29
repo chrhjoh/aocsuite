@@ -239,8 +239,10 @@ ContentStore decides whether valid cached content satisfies an operation or an
 AoC request is required. Frontends do not receive the client for cache-backed
 content operations.
 
-Expose pure path, status, and read operations separately from explicit load,
-fetch, refresh, invalidate, and clean operations.
+ContentStore keeps cache-hit and cache-miss decisions internal. Semantic load
+operations use valid cached content when available and otherwise retrieve and
+persist it; callers do not inspect cache status or select cache-versus-network
+behavior.
 
 ## Workspace
 

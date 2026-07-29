@@ -27,7 +27,7 @@ coordination is outside this plan.
 
 ## Status
 
-Last reviewed: 2026-07-22.
+Last reviewed: 2026-07-29.
 
 Overall status: **in progress**.
 
@@ -133,7 +133,7 @@ Acceptance:
 - No domain input discovers config or the runtime root globally.
 - Focused resolver and layout tests use explicit roots and deterministic seams.
 
-### 2. Storage lifecycle and content — partial
+### 2. Storage lifecycle and content — done
 
 Done:
 
@@ -148,15 +148,10 @@ Done:
 - Indexed persisted-cache cleanup preserves unindexed files and `state.sqlite`.
 - ContentStore uses its injected client for cache misses and records submission
   invalidation.
-
-Remaining:
-
-- Add SQLite integrity checks.
-- Add typed corrupt-database errors.
-- Add transactional schema upgrades and newer-schema rejection.
-- Keep unindexed cache files unmanaged.
-- Expose clear path/status/read APIs separately from fetch/refresh/invalidate/
-  clean APIs.
+- SQLite integrity checks, typed corrupt-database errors, transactional schema
+  upgrades, and newer-schema rejection exist.
+- Focused tests cover corrupt database files, v1 bootstrap, newer-schema
+  rejection, and public error mapping.
 
 Deferred:
 

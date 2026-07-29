@@ -428,4 +428,41 @@ mod tests {
             .is_cached(CacheKey::PuzzleMarkdown(puzzle))
             .expect("check puzzle markdown cache"));
     }
+
+    #[test]
+    fn opening_an_invalid_database_returns_a_typed_corruption_error() {
+        let temp = tempdir().expect("create temporary cache root");
+        let cache_dir = temp.path().join("cache");
+        fs::create_dir_all(&cache_dir).expect("create cache directory");
+        fs::write(cache_dir.join("state.sqlite"), "not a SQLite database")
+            .expect("write invalid database");
+        let client = client();
+
+        assert!(matches!(
+            ContentStore::open(cache_dir, &client),
+            Err(super::ContentError::CorruptStateDatabase { .. })
+        ));
+    }
+
+    #[test]
+    fn opening_a_newer_database_returns_a_typed_schema_error() {
+        let temp = tempdir().expect("create temporary cache root");
+        let cache_dir = temp.path().join("cache");
+        fs::create_dir_all(&cache_dir).expect("create cache directory");
+        let connection =
+            rusqlite::Connection::open(cache_dir.join("state.sqlite")).expect("create database");
+        connection
+            .pragma_update(None, "user_version", 2_u32)
+            .expect("set newer schema version");
+        drop(connection);
+        let client = client();
+
+        assert!(matches!(
+            ContentStore::open(cache_dir, &client),
+            Err(super::ContentError::NewerStateSchema {
+                found: 2,
+                supported: 1,
+            })
+        ));
+    }
 }

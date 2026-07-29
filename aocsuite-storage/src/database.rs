@@ -1,7 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use aocsuite_utils::{LanguageId, PuzzleId, PuzzlePart, PuzzleYear};
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, ErrorCode, OptionalExtension, Transaction};
 use thiserror::Error;
 
 use crate::content::CacheKey;
@@ -422,7 +422,103 @@ pub(crate) enum DatabaseError {
     #[error("invalid run timing: {0}")]
     InvalidTiming(&'static str),
     #[error(transparent)]
-    Sql(#[from] rusqlite::Error),
+    Sql(rusqlite::Error),
+}
+
+impl From<rusqlite::Error> for DatabaseError {
+    fn from(error: rusqlite::Error) -> Self {
+        match &error {
+            rusqlite::Error::SqliteFailure(sqlite_error, _)
+                if matches!(
+                    sqlite_error.code,
+                    ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase
+                ) =>
+            {
+                Self::CorruptDatabase {
+                    result: error.to_string(),
+                }
+            }
+            _ => Self::Sql(error),
+        }
+    }
 }
 
 pub(crate) type DatabaseResult<T> = Result<T, DatabaseError>;
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use rusqlite::Connection;
+    use tempfile::tempdir;
+
+    use super::{DatabaseError, StateDatabase, SCHEMA_VERSION};
+
+    #[test]
+    fn invalid_database_files_return_typed_corruption_errors() {
+        let temp = tempdir().expect("create temporary directory");
+        let path = temp.path().join("state.sqlite");
+        fs::write(&path, "not a SQLite database").expect("write invalid database");
+
+        assert!(matches!(
+            StateDatabase::open(&path),
+            Err(DatabaseError::CorruptDatabase { .. })
+        ));
+    }
+
+    #[test]
+    fn opening_an_empty_database_bootstraps_schema_version_one() {
+        let temp = tempdir().expect("create temporary directory");
+        let path = temp.path().join("state.sqlite");
+
+        drop(StateDatabase::open(&path).expect("bootstrap database"));
+
+        let connection = Connection::open(path).expect("reopen database");
+        let version: u32 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("read schema version");
+        assert_eq!(version, SCHEMA_VERSION);
+
+        for name in [
+            "cache_entries",
+            "calendar_stars",
+            "submission_counts",
+            "run_timings",
+            "run_timings_retention",
+        ] {
+            let exists: bool = connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = ?1)",
+                    [name],
+                    |row| row.get(0),
+                )
+                .expect("query schema object");
+            assert!(exists, "missing schema object {name}");
+        }
+    }
+
+    #[test]
+    fn newer_schema_is_rejected_without_modification() {
+        let temp = tempdir().expect("create temporary directory");
+        let path = temp.path().join("state.sqlite");
+        let connection = Connection::open(&path).expect("create database");
+        connection
+            .pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .expect("set newer schema version");
+        drop(connection);
+
+        assert!(matches!(
+            StateDatabase::open(&path),
+            Err(DatabaseError::NewerSchema {
+                found,
+                supported,
+            }) if found == SCHEMA_VERSION + 1 && supported == SCHEMA_VERSION
+        ));
+
+        let connection = Connection::open(path).expect("reopen database");
+        let version: u32 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("read schema version");
+        assert_eq!(version, SCHEMA_VERSION + 1);
+    }
+}
