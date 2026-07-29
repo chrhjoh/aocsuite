@@ -225,8 +225,10 @@ Files use flat date-keyed paths under:
 Raw puzzle HTML is canonical. Markdown is derived.
 
 Successful HTTP status alone is insufficient to replace valid cached content.
-Puzzle bodies are semantically validated before replacement. Invalid or
-unexpected bodies preserve existing valid cache entries.
+The client rejects bodies matching known invalid AoC response markers before
+returning them. A body returned by the client is cacheable; parser failures
+affect requested transformations but do not reclassify cached content. Bodies
+rejected by the client preserve existing valid cache entries.
 
 Cache files without valid metadata remain unmanaged. Storage does not
 reconstruct ownership merely from their filenames.

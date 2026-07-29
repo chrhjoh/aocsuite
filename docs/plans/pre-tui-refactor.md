@@ -152,7 +152,6 @@ Remaining:
 - Add SQLite integrity checks.
 - Add typed corrupt-database errors.
 - Add transactional schema upgrades and newer-schema rejection.
-- Validate puzzle bodies before replacing valid cached content.
 - Keep unindexed cache files unmanaged.
 - Expose clear path/status/read APIs separately from fetch/refresh/invalidate/
   clean APIs.
@@ -166,7 +165,7 @@ Acceptance:
 - Behavior matches `../STORAGE.md`.
 - Unindexed cache files remain unmanaged; full uninstall removes its confirmed
   runtime root.
-- Invalid remote bodies cannot replace valid cached data.
+- Client-rejected remote bodies cannot replace valid cached data.
 - Cleanup scopes are explicit, typed, idempotent, and frontend-confirmed.
 
 ### 3. HTTP and parser boundaries — partial
@@ -177,6 +176,7 @@ Done:
 - Inputs, submissions, and private leaderboard requests require a session.
 - Public requests may omit a session.
 - Typed status and authorization errors exist.
+- Client rejects bodies matching currently known invalid AoC response markers.
 - Parser APIs are separate, fallible, and semantic.
 - CLI owns calendar presentation.
 
@@ -184,7 +184,6 @@ Remaining:
 
 - Add bounded retry and backoff for transient GET failures.
 - Never retry submissions.
-- Finish semantic body validation before caching.
 - Recognize remaining rate-limit variants.
 - Preserve sanitized unknown submission text.
 
@@ -193,7 +192,7 @@ Acceptance:
 - Client owns transport only.
 - Parser owns transformations only.
 - Storage owns cache lifecycle.
-- Failed or invalid responses do not corrupt valid cache state.
+- Client-rejected responses do not corrupt valid cache state.
 
 ### 4. Language execution and portable projects — partial
 
