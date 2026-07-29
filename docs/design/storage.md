@@ -117,7 +117,9 @@ Derived state may be regenerated or deleted without losing canonical data.
 
 `config/config.json` stores non-secret settings only.
 
-`config/session` stores the AoC session separately and uses mode `0600` on Unix.
+`config/session` stores the AoC session separately. AoC Suite creates and
+rewrites it with mode `0600` on Unix, but does not validate or repair permission
+changes made afterwards by the user.
 
 The session must never be printed, logged, snapshotted, included in errors, or
 returned by ordinary configuration-display operations.

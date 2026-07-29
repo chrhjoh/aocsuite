@@ -119,11 +119,11 @@ Done:
 - Every existing unversioned root, including an empty root, is rejected.
 - Newer layout versions are rejected without mutation.
 - Session storage is separate from non-secret config.
+- Session creation and rewrites use owner-only permissions on Unix.
 - Path and status getters are pure.
 
 Remaining:
 
-- Complete owner-only session behavior where not yet enforced.
 - Complete typed cleanup and uninstall lifecycle.
 - Confirm bootstrap regenerates the workspace `.gitignore`.
 
