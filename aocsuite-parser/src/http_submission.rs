@@ -96,4 +96,17 @@ mod tests {
 
         assert_eq!(result, AocSubmissionResult::RateLimited(60));
     }
+
+    #[test]
+    fn preserves_unknown_submission_article_markdown() {
+        let result = parse_submission(
+            "<main><article><p>Unexpected submission response.</p></article></main>",
+        )
+        .expect("parse submission response");
+
+        assert_eq!(
+            result,
+            AocSubmissionResult::Unknown("Unexpected submission response.".to_owned())
+        );
+    }
 }

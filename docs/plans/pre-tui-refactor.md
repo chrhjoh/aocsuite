@@ -165,7 +165,7 @@ Acceptance:
 - Client-rejected remote bodies cannot replace valid cached data.
 - Cleanup scopes are explicit, typed, idempotent, and frontend-confirmed.
 
-### 3. HTTP and parser boundaries — partial
+### 3. HTTP and parser boundaries — done
 
 Done:
 
@@ -180,10 +180,7 @@ Done:
   failures; submissions are never retried.
 - Submission parsing recognizes explicit numeric cooldown phrases before generic
   incorrect-answer text.
-
-Remaining:
-
-- Preserve sanitized unknown submission text.
+- Unknown submission responses preserve their extracted article Markdown.
 
 Acceptance:
 
