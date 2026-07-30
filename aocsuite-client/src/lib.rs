@@ -1,15 +1,18 @@
-use std::time::Duration;
+use std::{thread, time::Duration};
 
 use aocsuite_utils::{PuzzleId, PuzzlePart, PuzzleYear};
 use reqwest::{
     blocking::{Client, Response},
-    header::{COOKIE, HeaderMap, HeaderValue},
+    header::{COOKIE, HeaderMap, HeaderValue, RETRY_AFTER},
     redirect::Policy,
 };
 use thiserror::Error;
 
 const BASE_URL: &str = "https://adventofcode.com";
 const USER_AGENT: &str = concat!("aocsuite/", env!("CARGO_PKG_VERSION"));
+const GET_RETRY_ATTEMPTS: u32 = 3;
+const INITIAL_GET_RETRY_BACKOFF: Duration = Duration::from_secs(1);
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy)]
 pub enum AocPage {
@@ -71,6 +74,7 @@ pub struct AocClient {
     client: Client,
     base_url: String,
     has_session: bool,
+    _sleep: fn(Duration),
 }
 
 impl AocClient {
@@ -98,13 +102,39 @@ impl AocClient {
             client,
             base_url: options.base_url.trim_end_matches('/').to_owned(),
             has_session: session.is_some(),
+            _sleep: thread::sleep,
         })
     }
 
     pub fn download(&self, page: &AocPage) -> AocClientResult<String> {
         self.ensure_session(page)?;
-        let response = self.client.get(page.url(&self.base_url)).send()?;
-        parse_response(response)
+        let url = page.url(&self.base_url);
+        let mut sleep_timer;
+
+        for retry in 0..=GET_RETRY_ATTEMPTS {
+            match self.client.get(&url).send() {
+                Ok(response) => match parse_response(response) {
+                    Ok(body) => return Ok(body),
+                    Err(AocClientError::RateLimited(delay)) if retry < GET_RETRY_ATTEMPTS => {
+                        sleep_timer = delay.unwrap_or_else(|| default_retry_delay(retry));
+                    }
+                    Err(AocClientError::Http(_)) if retry < GET_RETRY_ATTEMPTS => {
+                        sleep_timer = default_retry_delay(retry);
+                    }
+                    Err(error) => return Err(error),
+                },
+                Err(_) if retry < GET_RETRY_ATTEMPTS => {
+                    sleep_timer = default_retry_delay(retry);
+                }
+                Err(error) => return Err(error.into()),
+            }
+            self.sleep(sleep_timer);
+        }
+
+        unreachable!("GET retry loop always returns on its final attempt")
+    }
+    fn sleep(&self, time: Duration) -> () {
+        (self._sleep)(time)
     }
 
     pub fn submit(
@@ -133,12 +163,39 @@ impl AocClient {
     }
 }
 
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 408 | 429 | 500 | 502 | 503 | 504)
+}
+
+fn retry_delay(status: reqwest::StatusCode, headers: &HeaderMap) -> Option<Duration> {
+    if matches!(status.as_u16(), 429 | 503) {
+        return headers
+            .get(RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_secs)
+            .map(|delay| delay.min(MAX_RETRY_AFTER));
+    }
+
+    None
+}
+
+fn default_retry_delay(retry: u32) -> Duration {
+    INITIAL_GET_RETRY_BACKOFF.saturating_mul(1_u32 << retry)
+}
+
 fn parse_response(response: Response) -> AocClientResult<String> {
     let status = response.status();
     if !status.is_success() {
+        if is_retryable_status(status) {
+            return Err(AocClientError::RateLimited(retry_delay(
+                status,
+                response.headers(),
+            )));
+        }
+
         return Err(match status.as_u16() {
             401 | 403 => AocClientError::Authentication,
-            429 => AocClientError::RateLimited,
             status => AocClientError::HttpStatus(status),
         });
     }
@@ -166,8 +223,8 @@ pub enum AocClientError {
     #[error("AoC authentication failed")]
     Authentication,
 
-    #[error("AoC rate limited the request")]
-    RateLimited,
+    #[error("AoC request can be retried")]
+    RateLimited(Option<Duration>),
 
     #[error("AoC returned HTTP status {0}")]
     HttpStatus(u16),
@@ -185,7 +242,14 @@ mod tests {
 
     use aocsuite_utils::{PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
 
-    use super::{AocClient, AocClientError, AocClientOptions, AocPage};
+    use super::{
+        AocClient, AocClientError, AocClientOptions, AocPage, GET_RETRY_ATTEMPTS,
+        default_retry_delay, retry_delay,
+    };
+    use reqwest::{
+        StatusCode,
+        header::{HeaderMap, HeaderValue, RETRY_AFTER},
+    };
 
     fn puzzle() -> PuzzleId {
         PuzzleId::new(
@@ -214,7 +278,7 @@ mod tests {
     }
 
     fn client(base_url: String, session: Option<&str>) -> AocClient {
-        AocClient::new(
+        let mut client = AocClient::new(
             session,
             AocClientOptions {
                 base_url,
@@ -222,7 +286,52 @@ mod tests {
                 ..AocClientOptions::default()
             },
         )
-        .expect("build test client")
+        .expect("build test client");
+        client._sleep = |_| {};
+        client
+    }
+
+    fn serve_responses(
+        responses: Vec<(u16, &'static str, Option<&'static str>)>,
+    ) -> (String, Receiver<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let address = listener.local_addr().expect("read test server address");
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let mut requests = Vec::new();
+            for (status, body, retry_after) in responses {
+                let (mut stream, _) = listener.accept().expect("accept test request");
+                let mut request = [0; 4096];
+                let bytes = stream.read(&mut request).expect("read test request");
+                requests.push(String::from_utf8_lossy(&request[..bytes]).into_owned());
+                let retry_after = retry_after
+                    .map(|value| format!("Retry-After: {value}\r\n"))
+                    .unwrap_or_default();
+                write!(
+                    stream,
+                    "HTTP/1.1 {status} Test\r\n{retry_after}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .expect("write test response");
+            }
+            sender.send(requests).expect("send requests");
+        });
+        (format!("http://{address}"), receiver)
+    }
+
+    fn serve_disconnections(count: u32) -> (String, Receiver<u32>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let address = listener.local_addr().expect("read test server address");
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            for _ in 0..count {
+                let (mut stream, _) = listener.accept().expect("accept test request");
+                let mut request = [0; 1024];
+                let _ = stream.read(&mut request);
+            }
+            sender.send(count).expect("send request count");
+        });
+        (format!("http://{address}"), receiver)
     }
 
     fn serve_after(delay: Duration) -> String {
@@ -313,7 +422,8 @@ mod tests {
             timeout: Duration::from_millis(20),
             ..AocClientOptions::default()
         };
-        let client = AocClient::new(None, options).unwrap();
+        let mut client = AocClient::new(None, options).unwrap();
+        client._sleep = |_| {};
         let puzzle = puzzle();
 
         assert!(matches!(
@@ -358,25 +468,92 @@ mod tests {
     }
 
     #[test]
+    fn submissions_are_not_retried_after_a_transient_status() {
+        let (base_url, request) = serve_once(503, "try later");
+
+        assert!(matches!(
+            client(base_url, Some("test-session")).submit(puzzle(), PuzzlePart::One, "12345"),
+            Err(AocClientError::RateLimited(None))
+        ));
+        assert!(
+            request
+                .recv()
+                .unwrap()
+                .starts_with("POST /2024/day/1/answer HTTP/1.1")
+        );
+    }
+
+    #[test]
     fn failed_http_statuses_return_typed_errors() {
         let puzzle = puzzle();
-        for (status, expected) in [
-            (302, "status"),
-            (400, "status"),
-            (401, "authentication"),
-            (429, "rate-limit"),
-            (500, "status"),
-        ] {
+        for (status, expected) in [(302, "status"), (400, "status"), (401, "authentication")] {
             let (base_url, _) = serve_once(status, "failure");
             let error = client(base_url, None)
                 .download(&AocPage::Puzzle(puzzle))
                 .expect_err("request fails");
             match expected {
                 "authentication" => assert!(matches!(error, AocClientError::Authentication)),
-                "rate-limit" => assert!(matches!(error, AocClientError::RateLimited)),
                 _ => assert!(matches!(error, AocClientError::HttpStatus(code) if code == status)),
             }
         }
+    }
+
+    #[test]
+    fn transient_get_status_is_retried_until_a_response_succeeds() {
+        let (base_url, requests) =
+            serve_responses(vec![(500, "retry", None), (200, "puzzle", None)]);
+
+        assert_eq!(
+            client(base_url, None)
+                .download(&AocPage::Puzzle(puzzle()))
+                .unwrap(),
+            "puzzle"
+        );
+        assert_eq!(requests.recv().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn exhausted_transient_get_status_returns_the_final_typed_error() {
+        let (base_url, requests) = serve_responses(vec![(429, "retry", None); 4]);
+
+        assert!(matches!(
+            client(base_url, None).download(&AocPage::Puzzle(puzzle())),
+            Err(AocClientError::RateLimited(None))
+        ));
+        assert_eq!(requests.recv().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn get_transport_errors_are_retried() {
+        let (base_url, requests) = serve_disconnections(GET_RETRY_ATTEMPTS + 1);
+
+        assert!(matches!(
+            client(base_url, None).download(&AocPage::Puzzle(puzzle())),
+            Err(AocClientError::Http(_))
+        ));
+        assert_eq!(requests.recv().unwrap(), GET_RETRY_ATTEMPTS + 1);
+    }
+
+    #[test]
+    fn retry_after_is_used_only_for_rate_limited_and_unavailable_responses() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_static("90"));
+
+        assert_eq!(
+            retry_delay(StatusCode::TOO_MANY_REQUESTS, &headers),
+            Some(Duration::from_secs(60))
+        );
+        assert_eq!(
+            retry_delay(StatusCode::SERVICE_UNAVAILABLE, &headers),
+            Some(Duration::from_secs(60))
+        );
+        assert_eq!(
+            retry_delay(StatusCode::INTERNAL_SERVER_ERROR, &headers),
+            None
+        );
+        assert_eq!(default_retry_delay(0), Duration::from_secs(1));
+        assert_eq!(default_retry_delay(1), Duration::from_secs(2));
+        assert_eq!(default_retry_delay(2), Duration::from_secs(4));
     }
 
     #[test]

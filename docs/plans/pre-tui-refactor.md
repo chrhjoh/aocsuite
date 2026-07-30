@@ -176,11 +176,11 @@ Done:
 - Client rejects bodies matching currently known invalid AoC response markers.
 - Parser APIs are separate, fallible, and semantic.
 - CLI owns calendar presentation.
+- GET requests use bounded retries and backoff for transient HTTP and transport
+  failures; submissions are never retried.
 
 Remaining:
 
-- Add bounded retry and backoff for transient GET failures.
-- Never retry submissions.
 - Recognize remaining rate-limit variants.
 - Preserve sanitized unknown submission text.
 
