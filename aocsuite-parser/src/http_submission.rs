@@ -28,14 +28,14 @@ pub fn parse_submission(html: &str) -> ParserResult<AocSubmissionResult> {
         || markdown.contains("You don't need to guess; you've already completed this puzzle.")
     {
         AocSubmissionResult::AlreadyCompleted
+    } else if let Some(wait_secs) = extract_wait_time(&markdown) {
+        AocSubmissionResult::RateLimited(wait_secs)
     } else if markdown.contains("too high") {
         AocSubmissionResult::IncorrectTooHigh
     } else if markdown.contains("too low") {
         AocSubmissionResult::IncorrectTooLow
     } else if markdown.contains("That's not the right answer") {
         AocSubmissionResult::Incorrect
-    } else if let Some(wait_secs) = extract_wait_time(&markdown) {
-        AocSubmissionResult::RateLimited(wait_secs)
     } else if markdown.contains("haven't unlocked this part yet") {
         AocSubmissionResult::Locked
     } else if markdown.contains("did not provide an answer") {
@@ -49,7 +49,7 @@ pub fn parse_submission(html: &str) -> ParserResult<AocSubmissionResult> {
 
 fn extract_wait_time(text: &str) -> Option<u64> {
     let re = Regex::new(
-        r"(?i)\byou\s+have(?:\s+to\s+wait)?\s+(?:(\d+)\s*(?:minutes?|mins?|m)\b(?:\s*(?:and\s*)?(\d+)\s*(?:seconds?|secs?|s)\b)?|(\d+)\s*(?:seconds?|secs?|s)\b)",
+        r"(?i)\b(?:you\s+have(?:\s+to\s+wait)?|please\s+wait)\s+(?:(\d+)\s*(?:minutes?|mins?|m)\b(?:\s*(?:and\s*)?(\d+)\s*(?:seconds?|secs?|s)\b)?|(\d+)\s*(?:seconds?|secs?|s)\b)",
     )
     .ok()?;
     let caps = re.captures(text)?;
@@ -68,7 +68,7 @@ fn extract_wait_time(text: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_wait_time;
+    use super::{AocSubmissionResult, extract_wait_time, parse_submission};
 
     #[test]
     fn extracts_aoc_wait_times() {
@@ -78,11 +78,22 @@ mod tests {
             ("You have 2 minutes left to wait.", Some(120)),
             ("You have 1m 47s left to wait.", Some(107)),
             ("YOU HAVE 3 MINUTES AND 2 SECONDS LEFT TO WAIT.", Some(182)),
+            ("Please wait 8 seconds before trying again.", Some(8)),
             ("You have to wait soon.", None),
         ];
 
         for (message, expected) in cases {
             assert_eq!(extract_wait_time(message), expected, "{message}");
         }
+    }
+
+    #[test]
+    fn recognizes_explicit_cooldowns_before_incorrect_answers() {
+        let result = parse_submission(
+            "<main><article><p>That's not the right answer. Please wait 1 minute before trying again.</p></article></main>",
+        )
+        .expect("parse submission response");
+
+        assert_eq!(result, AocSubmissionResult::RateLimited(60));
     }
 }

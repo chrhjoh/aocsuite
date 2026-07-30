@@ -178,10 +178,11 @@ Done:
 - CLI owns calendar presentation.
 - GET requests use bounded retries and backoff for transient HTTP and transport
   failures; submissions are never retried.
+- Submission parsing recognizes explicit numeric cooldown phrases before generic
+  incorrect-answer text.
 
 Remaining:
 
-- Recognize remaining rate-limit variants.
 - Preserve sanitized unknown submission text.
 
 Acceptance:
