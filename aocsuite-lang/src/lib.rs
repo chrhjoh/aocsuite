@@ -8,7 +8,7 @@ mod utils;
 use std::path::{Path, PathBuf};
 
 use aocsuite_storage::Workspace;
-use aocsuite_utils::{CommandExecutor, LanguageId, PartSelection, PuzzleId};
+use aocsuite_utils::{atomic_write, CommandExecutor, LanguageId, PartSelection, PuzzleId};
 use utils::{read_result, with_result_file, LanguageRunner};
 pub use utils::{
     AocLanguageError, AocLanguageResult, CompileOutput, PartResult, PuzzleResult, RunOutput,
@@ -19,6 +19,11 @@ pub use utils::{
 pub struct LanguageRunOutput {
     pub compile: CompileOutput,
     pub run: RunOutput,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ConfirmedTemplateReset {
+    Confirmed,
 }
 
 pub struct Language<'workspace, 'executor> {
@@ -75,6 +80,13 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
     pub fn ensure_solver_file(&self, file: &SolverFile) -> AocLanguageResult<PathBuf> {
         self.runner.migrate_runtime()?;
         self.runner.ensure_solver_file(file)
+    }
+
+    pub fn reset_template(&self, _: ConfirmedTemplateReset) -> AocLanguageResult<PathBuf> {
+        self.runner.migrate_runtime()?;
+        let path = self.runner.solver_file_path(&SolverFile::SolutionTemplate);
+        atomic_write(&path, self.runner.template_contents().as_bytes())?;
+        Ok(path)
     }
 
     pub fn project_dir(&self) -> &Path {
@@ -257,7 +269,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{ensure_no_case_collision, validate_user_lib, Language};
+    use super::{ensure_no_case_collision, validate_user_lib, ConfirmedTemplateReset, Language};
     use crate::{
         python::PythonRunner,
         rust::RustRunner,
@@ -364,6 +376,31 @@ mod tests {
         assert!(expected.parent().expect("library parent").is_dir());
 
         fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn confirmed_template_reset_replaces_custom_template() {
+        for language_id in [LanguageId::Rust, LanguageId::Python] {
+            let root = test_root(&format!("{language_id}-template-reset"));
+            let workspace = Workspace::new(root.join("workspace"));
+            let language = Language::new(language_id, &workspace, &SYSTEM_EXECUTOR);
+            let template = language
+                .ensure_solver_file(&SolverFile::SolutionTemplate)
+                .expect("create template");
+            fs::write(&template, "custom template").expect("write custom template");
+
+            assert_eq!(
+                language
+                    .reset_template(ConfirmedTemplateReset::Confirmed)
+                    .expect("reset template"),
+                template
+            );
+            assert!(fs::read_to_string(&template)
+                .expect("read reset template")
+                .contains("part1"));
+
+            fs::remove_dir_all(root).expect("remove test runtime");
+        }
     }
 
     #[test]

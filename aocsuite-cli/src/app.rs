@@ -10,7 +10,7 @@ use crate::{
 };
 use aocsuite_client::{AocClient, AocPage};
 use aocsuite_config::{ConfigKey, Configuration};
-use aocsuite_lang::{Language, LanguageRunOutput, PartResult, SolverFile};
+use aocsuite_lang::{ConfirmedTemplateReset, Language, LanguageRunOutput, PartResult, SolverFile};
 use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
 use aocsuite_storage::{CacheCleanScope, ContentStore, GitMode, Workspace};
@@ -114,18 +114,17 @@ pub fn run_aocsuite(
         AocCommand::Template { language, reset } => {
             let language = resolve_language(config, language, workspace, executor)?;
             let editor_program = config.get::<String>(ConfigKey::Editor)?;
-            if reset {
-                let template_path = language.ensure_solver_file(&SolverFile::SolutionTemplate)?;
-                if user_confirm(
+            let template_path = language.ensure_solver_file(&SolverFile::SolutionTemplate)?;
+            let path = if reset
+                && user_confirm(
                     &mut std::io::stdin().lock(),
                     &mut std::io::stdout().lock(),
                     "Are you sure you want to delete template file? (Y/n):",
                 )? {
-                    std::fs::remove_file(template_path)?;
-                }
-            }
-            // Ensure the template exists before opening it; recreate it after a confirmed reset.
-            let path = language.ensure_solver_file(&SolverFile::SolutionTemplate)?;
+                language.reset_template(ConfirmedTemplateReset::Confirmed)?
+            } else {
+                template_path
+            };
             launcher.open_file(editor_program, &path, language.project_dir())?;
         }
         AocCommand::Git { args } => {
