@@ -4,8 +4,9 @@
 
 This document defines the intended GitHub Actions and release policy.
 
-It separates stable automation decisions from rollout status. Current completion
-status is tracked in `plans/pre-tui-refactor.md`.
+It separates stable automation decisions from rollout status. Pre-TUI completion
+status is tracked in `plans/pre-tui-refactor.md`; initial TUI implementation
+sequencing is tracked in `plans/tui-implementation.md`.
 
 ## Goals
 

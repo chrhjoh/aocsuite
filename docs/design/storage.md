@@ -6,7 +6,8 @@ This document records settled persistent-state design: runtime-root resolution,
 layout ownership, canonical data, initialization, migrations, cleanup, and
 uninstall safety.
 
-Implementation status belongs in `plans/pre-tui-refactor.md`. Crate boundaries
+Pre-TUI implementation status belongs in `../plans/pre-tui-refactor.md`; initial
+TUI sequencing belongs in `../plans/tui-implementation.md`. Crate boundaries
 belong in `architecture.md`.
 
 ## Goals
@@ -191,8 +192,10 @@ It does not store:
 - cooldown state;
 - private leaderboard data;
 - complete submission events;
-- typed calendar state or derived stars until the TUI calendar contract is
-  defined.
+- typed calendar state or derived stars.
+
+The initial TUI derives completion from the currently loaded semantic calendar.
+It does not persist a typed calendar or derived completion state.
 
 Database bootstrap must provide:
 
@@ -243,6 +246,10 @@ ContentStore keeps cache-hit and cache-miss decisions internal. Semantic load
 operations use valid cached content when available and otherwise retrieve and
 persist it; callers do not inspect cache status or select cache-versus-network
 behavior.
+
+An explicit calendar refresh bypasses an existing valid calendar cache entry.
+It replaces cached calendar content only after the client returns a valid
+response; a failed refresh preserves the existing cached calendar.
 
 ## Workspace
 
