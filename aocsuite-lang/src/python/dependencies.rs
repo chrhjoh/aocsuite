@@ -27,7 +27,11 @@ impl DepManager for PythonRunner<'_> {
         Ok(None)
     }
     fn clean_env(&self) -> AocLanguageResult<()> {
-        std::fs::remove_dir_all(self.root_dir.join("venv"))?;
+        match std::fs::remove_dir_all(self.root_dir.join("venv")) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
         Ok(())
     }
 

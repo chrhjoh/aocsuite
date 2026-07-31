@@ -24,7 +24,9 @@ impl DepManager for RustRunner<'_> {
         Ok(())
     }
     fn clean_env(&self) -> AocLanguageResult<()> {
-        self.migrate_runtime()?;
+        if !self.root_dir.join("Cargo.toml").is_file() {
+            return Ok(());
+        }
         execute_command(
             self.executor,
             CommandRequest::new("cargo")

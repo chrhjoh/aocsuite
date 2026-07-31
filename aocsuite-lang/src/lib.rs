@@ -367,6 +367,27 @@ mod tests {
     }
 
     #[test]
+    fn environment_cleanup_does_not_initialize_absent_projects() {
+        struct NoCommandExecutor;
+
+        impl CommandExecutor for NoCommandExecutor {
+            fn execute(&self, _: &CommandRequest) -> std::io::Result<std::process::Output> {
+                panic!("cleanup must not run a command for an absent project");
+            }
+        }
+
+        for language_id in [LanguageId::Rust, LanguageId::Python] {
+            let root = test_root(&format!("{language_id}-environment-cleanup"));
+            let workspace = Workspace::new(root.join("workspace"));
+            let language = Language::new(language_id, &workspace, &NoCommandExecutor);
+
+            language.clean_env().expect("clean absent environment");
+
+            assert!(!workspace.language_project_dir(language_id).exists());
+        }
+    }
+
+    #[test]
     fn runtime_cleanup_removes_only_generated_runtime_files() {
         for (language_id, entrypoint, active_solution) in [
             (LanguageId::Rust, "src/main.rs", "src/solution.rs"),

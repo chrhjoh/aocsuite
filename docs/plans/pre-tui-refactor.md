@@ -189,7 +189,7 @@ Acceptance:
 - Storage owns cache lifecycle.
 - Client-rejected responses do not corrupt valid cache state.
 
-### 4. Language execution and portable projects — partial
+### 4. Language execution and portable projects — done
 
 Done:
 
@@ -209,10 +209,8 @@ Done:
   compilation, execution, and result consumption.
 - Language jobs are frontend-scheduled and serialized per runtime-root workspace
   through timing persistence.
-
-Remaining:
-
-- Continue separating pure query operations from mutating setup and execution.
+- Query and cleanup operations do not initialize language projects, environments,
+  or compilation.
 
 Acceptance:
 
