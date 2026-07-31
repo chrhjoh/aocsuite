@@ -204,10 +204,10 @@ Done:
   package mutations.
 - Active-link replacement and library validation exist.
 - Runtime cleanup removes only generated runtime files.
+- Migration and activation occur before public compile-and-run execution.
 
 Remaining:
 
-- Ensure migration and activation occur in every compile and run entry point.
 - Expose one public typed operation covering migration, activation, environment
   setup, compilation, execution, and result consumption.
 - Define serialization boundary including timing persistence.

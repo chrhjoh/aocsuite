@@ -513,17 +513,33 @@ mod tests {
     }
 
     #[test]
-    fn language_run_returns_a_result() {
+    fn language_execute_prepares_runtime_before_running_solver() {
         struct ScriptedExecutor {
             requests: Mutex<Vec<CommandRequest>>,
+            project_dir: PathBuf,
+            active_solution: PathBuf,
+            entrypoint: PathBuf,
         }
 
         impl CommandExecutor for ScriptedExecutor {
             fn execute(&self, request: &CommandRequest) -> std::io::Result<std::process::Output> {
                 self.requests.lock().unwrap().push(request.clone());
-                if request.args.len() == 4 {
+                if request
+                    .args
+                    .last()
+                    .is_some_and(|argument| argument == "both")
+                {
+                    assert!(self.project_dir.join(".aocsuite-runtime.json").is_file());
+                    assert!(self.entrypoint.is_file());
+                    assert!(self.active_solution.exists());
+
+                    let output_file = if request.args.len() == 4 {
+                        &request.args[2]
+                    } else {
+                        &request.args[1]
+                    };
                     std::fs::write(
-                        std::path::PathBuf::from(request.args[2].clone()),
+                        std::path::PathBuf::from(output_file),
                         r#"{"part1":{"answer":"example","runtime_ms":3},"part2":{"answer":"8","runtime_ms":4}}"#,
                     )?;
                 }
@@ -531,49 +547,54 @@ mod tests {
             }
         }
 
-        let root = test_root("python-execution");
-        let workspace = Workspace::new(root.clone());
-        let input = root.join("input.txt");
-        fs::create_dir_all(&root).expect("create test workspace");
-        fs::write(&input, "example\n").expect("write input");
-        let executor = ScriptedExecutor {
-            requests: Mutex::new(Vec::new()),
-        };
-        let language = Language::new(LanguageId::Python, &workspace, &executor);
+        for (language_id, entrypoint, active_solution) in [
+            (LanguageId::Rust, "src/main.rs", "src/solution.rs"),
+            (LanguageId::Python, "main.py", "solution.py"),
+        ] {
+            let root = test_root(&format!("{language_id}-execution"));
+            let workspace = Workspace::new(root.clone());
+            let input = root.join("input.txt");
+            let project_dir = workspace.language_project_dir(language_id);
+            fs::create_dir_all(&root).expect("create test workspace");
+            fs::write(&input, "example\n").expect("write input");
+            let executor = ScriptedExecutor {
+                requests: Mutex::new(Vec::new()),
+                active_solution: project_dir.join(active_solution),
+                entrypoint: project_dir.join(entrypoint),
+                project_dir,
+            };
+            let language = Language::new(language_id, &workspace, &executor);
 
-        let result = language
-            .execute(
-                PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap()),
-                PartSelection::Both,
-                &input,
-            )
-            .expect("run Python solution");
+            let result = language
+                .execute(
+                    PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap()),
+                    PartSelection::Both,
+                    &input,
+                )
+                .expect("run solution");
 
-        assert_eq!(
-            result
-                .run
-                .result
-                .part(PuzzlePart::One)
-                .expect("part one result")
-                .answer(),
-            "example"
-        );
-        assert_eq!(
-            result
-                .run
-                .result
-                .part(PuzzlePart::Two)
-                .expect("part two result")
-                .answer(),
-            "8"
-        );
-        assert_eq!(result.run.stdout, "command output");
-        assert_eq!(
-            executor.requests.lock().unwrap()[0].program,
-            std::ffi::OsString::from("python3")
-        );
+            assert_eq!(
+                result
+                    .run
+                    .result
+                    .part(PuzzlePart::One)
+                    .expect("part one result")
+                    .answer(),
+                "example"
+            );
+            assert_eq!(
+                result
+                    .run
+                    .result
+                    .part(PuzzlePart::Two)
+                    .expect("part two result")
+                    .answer(),
+                "8"
+            );
+            assert_eq!(result.run.stdout, "command output");
 
-        fs::remove_dir_all(root).expect("remove test runtime");
+            fs::remove_dir_all(root).expect("remove test runtime");
+        }
     }
 
     #[cfg(unix)]
