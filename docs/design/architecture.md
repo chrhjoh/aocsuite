@@ -226,8 +226,8 @@ Use explicit mutation verbs such as:
 - `clean`;
 - `uninstall`.
 
-Prefer structurally valid request enums over optional day values or boolean
-combinations.
+Prefer validated inputs over optional values or boolean combinations that
+require validation within the function.
 
 Destructive services receive typed, already-confirmed scopes and return
 idempotent plans or reports. They do not prompt and do not accept a generic

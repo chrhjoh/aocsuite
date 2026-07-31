@@ -205,11 +205,11 @@ Done:
 - Active-link replacement and library validation exist.
 - Runtime cleanup removes only generated runtime files.
 - Migration and activation occur before public compile-and-run execution.
+- One public typed operation covers migration, activation, environment setup,
+  compilation, execution, and result consumption.
 
 Remaining:
 
-- Expose one public typed operation covering migration, activation, environment
-  setup, compilation, execution, and result consumption.
 - Define serialization boundary including timing persistence.
 - Continue separating pure query operations from mutating setup and execution.
 
