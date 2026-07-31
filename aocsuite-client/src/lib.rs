@@ -133,7 +133,7 @@ impl AocClient {
 
         unreachable!("GET retry loop always returns on its final attempt")
     }
-    fn sleep(&self, time: Duration) -> () {
+    fn sleep(&self, time: Duration) {
         (self._sleep)(time)
     }
 

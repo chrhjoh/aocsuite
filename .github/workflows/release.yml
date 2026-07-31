@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      AOCSUITE_DATA_DIR: ${{ runner.temp }}/aocsuite-data
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+
+      - name: Validate release tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+
+          tag = os.environ["TAG"]
+          if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+              sys.exit(f"release tag must use vMAJOR.MINOR.PATCH, got {tag!r}")
+          version = tag[1:]
+          metadata = json.loads(subprocess.check_output([
+              "cargo", "metadata", "--no-deps", "--format-version", "1", "--locked"
+          ]))
+          versions = {package["version"] for package in metadata["packages"]}
+          if versions != {version}:
+              sys.exit(f"workspace package versions {sorted(versions)!r} do not match {tag}")
+          PY
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Build documentation
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
+      - name: Check workspace
+        run: cargo check --workspace --locked
+
+      - name: Test workspace
+        run: cargo test --workspace --locked
+
+      - name: Smoke test CLI help
+        run: cargo run -p aocsuite-cli --locked -- --help
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            extension: tar.gz
+            checksum: sha256sum
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            extension: zip
+            checksum: sha256sum
+          - os: macos-14
+            target: aarch64-apple-darwin
+            extension: tar.gz
+            checksum: shasum -a 256
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+
+      - name: Build CLI
+        run: cargo build -p aocsuite-cli --release --locked
+
+      - name: Smoke test packaged binary
+        shell: bash
+        run: target/release/aocsuite-cli${{ runner.os == 'Windows' && '.exe' || '' }} --help
+
+      - name: Package release archive
+        id: package
+        shell: bash
+        run: |
+          archive="aocsuite-cli-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.extension }}"
+          binary="target/release/aocsuite-cli${{ runner.os == 'Windows' && '.exe' || '' }}"
+          if [[ "${{ matrix.extension }}" == "zip" ]]; then
+            7z a "$archive" "$binary" README.md LICENSE
+          else
+            tar -czf "$archive" "$binary" README.md LICENSE
+          fi
+          ${{ matrix.checksum }} "$archive" > "$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes release/*

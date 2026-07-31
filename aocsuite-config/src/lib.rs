@@ -32,7 +32,7 @@ impl Configuration {
 
         Ok(Self {
             config_path,
-            session_path: session_path.into(),
+            session_path,
             values,
         })
     }

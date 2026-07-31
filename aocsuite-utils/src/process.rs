@@ -82,8 +82,8 @@ pub enum CommandError {
 
     #[error("command failed: {request:?}: {output:?}")]
     Failed {
-        request: CommandRequest,
-        output: Output,
+        request: Box<CommandRequest>,
+        output: Box<Output>,
     },
 }
 
@@ -95,7 +95,10 @@ pub fn execute_command(
     if output.status.success() {
         Ok(output)
     } else {
-        Err(CommandError::Failed { request, output })
+        Err(CommandError::Failed {
+            request: Box::new(request),
+            output: Box::new(output),
+        })
     }
 }
 

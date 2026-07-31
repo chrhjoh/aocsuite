@@ -1,6 +1,6 @@
 use std::{
     env, fs,
-    path::{Component, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 use aocsuite_utils::atomic_write;
@@ -53,7 +53,7 @@ pub fn get_aocsuite_dir() -> Result<PathBuf, LayoutError> {
     Err(LayoutError::MissingHome)
 }
 
-fn valid_environment_path(path: &PathBuf) -> bool {
+fn valid_environment_path(path: &Path) -> bool {
     !path.as_os_str().is_empty() && path.is_absolute()
 }
 
@@ -116,9 +116,9 @@ impl RuntimeLayout {
                 if let Err(err) = fs::create_dir(&directory) {
                     for path in created.iter().rev() {
                         let _ = fs::remove_dir(path);
-                        return Err(LayoutError::Io(err));
                     }
-
+                    return Err(LayoutError::Io(err));
+                } else {
                     created.push(directory.clone());
                 }
             }
@@ -159,7 +159,7 @@ impl LayoutManifest {
         //TODO: migration logic
         Ok(())
     }
-    fn write(&self, path: &PathBuf) -> Result<(), LayoutError> {
+    fn write(&self, path: &Path) -> Result<(), LayoutError> {
         atomic_write(path, &serde_json::to_vec_pretty(&self)?)?;
         Ok(())
     }

@@ -55,13 +55,14 @@ A crate, type, or initial schema existing does not make its phase complete.
 ### Current verification baseline
 
 Passing:
-On next pass add cargo clippy to this baseline.
 
 ```text
 cargo check --workspace --locked
 cargo test --workspace --locked
 cargo run -p aocsuite-cli --locked -- --help
 cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
 ## Remaining pre-TUI blockers
@@ -241,21 +242,27 @@ Acceptance:
 - CLI contains interaction and rendering, not domain policy.
 - `aocsuite-cli/src/app.rs` is not used as a service by another frontend.
 
-### 6. CI and releases — partial
+### 6. CI and releases — done
 
 Done:
 
 - Baseline Ubuntu CI runs locked workspace check, tests, and CLI help.
+- Strict Clippy baseline passes.
+- Required CI separates formatting, Clippy, and rustdoc quality gates from the
+  Ubuntu functional test job.
+- Dependabot tracks Cargo and GitHub Actions updates.
+- A version-tagged workflow verifies, builds, packages, checksums, and publishes
+  native CLI releases.
 
-Remaining:
+Deferred:
 
-- Fix the strict Clippy baseline.
-- Add deterministic cross-platform required jobs when supporting tests are
-  reliable.
-- Add formatting, Clippy, and rustdoc gates after their baselines pass.
-- Add `cargo-deny` and Dependabot.
-- Add the tag-driven CLI release workflow.
-- Add TUI artifacts only after TUI parity.
+- Validate the quality workflow on the next qualifying pull request and the
+  release workflow on the next actual version tag; do not create a release tag
+  solely for workflow validation.
+- Required Windows and macOS matrix jobs pending a cross-platform readiness
+  decision.
+- `cargo-deny` enforcement pending an approved license policy.
+- TUI artifacts until TUI parity.
 
 Acceptance:
 

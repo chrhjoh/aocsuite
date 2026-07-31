@@ -20,6 +20,7 @@ use aocsuite_utils::{
 };
 use colored::Colorize;
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_aocsuite(
     command: AocCommand,
     day: PuzzleDay,

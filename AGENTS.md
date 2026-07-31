@@ -89,8 +89,13 @@ Use explicit temporary roots and deterministic clock, environment, process, and
 HTTP seams. Normal tests must not invoke real Git, Cargo, Python, pip, editors,
 browsers, terminals, or Advent of Code requests.
 
-Run the broadest applicable checks:
+For code changes, run the broadest applicable checks:
 
 - `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`
 - `cargo check --workspace --locked`
 - `cargo test --workspace --locked`
+
+For documentation-only changes, review the diff and run no Rust checks unless
+the documentation change is accompanied by code changes.
