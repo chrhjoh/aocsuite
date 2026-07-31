@@ -4,7 +4,7 @@ use aocsuite_cli::{run_aocsuite, AocCliError, AocCommand, ConfigCommand, ConfigC
 use aocsuite_client::{AocClient, AocClientOptions};
 use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
 use aocsuite_storage::{get_aocsuite_dir, ContentStore, RuntimeLayout, Workspace};
-use aocsuite_utils::{default_puzzle_date, PuzzleDay, PuzzleYear};
+use aocsuite_utils::{default_puzzle_date, PuzzleDay, PuzzleYear, SystemCommandExecutor};
 
 use clap::Parser;
 
@@ -74,6 +74,7 @@ fn main() {
         },
     };
     let (day, year) = resolve_puzzle_date(args.day, configured_year, default_puzzle_date());
+    let executor = SystemCommandExecutor;
     if let Err(err) = run_aocsuite(
         args.command,
         day,
@@ -82,6 +83,7 @@ fn main() {
         &content,
         &workspace,
         &mut config,
+        &executor,
     ) {
         terminate_with_error(err);
     }

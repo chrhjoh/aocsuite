@@ -16,7 +16,7 @@ use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Cal
 use aocsuite_storage::{CacheCleanScope, ContentStore, GitMode, Workspace};
 use aocsuite_utils::{
     valid_puzzle_release, valid_year_release, CommandExecutor, LanguageId, PartSelection,
-    PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear, RunHistoryLimit, SystemCommandExecutor,
+    PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear, RunHistoryLimit,
 };
 use colored::Colorize;
 
@@ -28,9 +28,9 @@ pub fn run_aocsuite(
     content: &ContentStore,
     workspace: &Workspace,
     config: &mut Configuration,
+    executor: &dyn CommandExecutor,
 ) -> AocCliResult<()> {
-    let executor = SystemCommandExecutor;
-    let launcher = Launcher::new(&executor);
+    let launcher = Launcher::new(executor);
     match command {
         AocCommand::Config { .. } => {
             return Err(AocCliError::NotAllowed(
@@ -79,7 +79,7 @@ pub fn run_aocsuite(
                 None => content.ensure_input(PuzzleId::new(day, year))?,
             };
 
-            let language = resolve_language(config, language, workspace, &executor)?;
+            let language = resolve_language(config, language, workspace, executor)?;
             let run_history_limit = config.get::<RunHistoryLimit>(ConfigKey::RunHistoryLimit)?;
             let puzzle = PuzzleId::new(day, year);
             let run = language.execute(puzzle, part, path.as_ref())?;
@@ -99,7 +99,7 @@ pub fn run_aocsuite(
 
         AocCommand::Open { language } => {
             valid_puzzle_release(day, year)?;
-            let language = resolve_language(config, language, workspace, &executor)?;
+            let language = resolve_language(config, language, workspace, executor)?;
             let editor_program = config.get::<String>(ConfigKey::Editor)?;
             let puzzle = PuzzleId::new(day, year);
             let request = OpenPuzzleRequest {
@@ -112,7 +112,7 @@ pub fn run_aocsuite(
             launcher.open_puzzle(editor_program, request)?;
         }
         AocCommand::Template { language, reset } => {
-            let language = resolve_language(config, language, workspace, &executor)?;
+            let language = resolve_language(config, language, workspace, executor)?;
             let editor_program = config.get::<String>(ConfigKey::Editor)?;
             if reset {
                 let template_path = language.ensure_solver_file(&SolverFile::SolutionTemplate)?;
@@ -134,7 +134,7 @@ pub fn run_aocsuite(
             } else {
                 GitMode::Captured
             };
-            let output = workspace.run_git(&args, mode, &executor)?;
+            let output = workspace.run_git(&args, mode, executor)?;
             if !output.is_empty() {
                 println!("{}", output);
             }
@@ -146,7 +146,7 @@ pub fn run_aocsuite(
             launcher.open_file(editor_program, &path, workspace.root_dir())?;
         }
         AocCommand::Env { action, language } => {
-            let language = resolve_language(config, language, workspace, &executor)?;
+            let language = resolve_language(config, language, workspace, executor)?;
             match action {
                 EnvAction::Add { package } => {
                     language.add_package(&package)?;
@@ -178,7 +178,7 @@ pub fn run_aocsuite(
             }
         }
         AocCommand::Lib { action, language } => {
-            let language = resolve_language(config, language, workspace, &executor)?;
+            let language = resolve_language(config, language, workspace, executor)?;
             match action {
                 LibAction::Edit { lib } => {
                     let editor_program = config.get::<String>(ConfigKey::Editor)?;
@@ -269,7 +269,7 @@ pub fn run_aocsuite(
             }
 
             CleanAction::Lang { language, force } => {
-                let language = resolve_language(config, language, workspace, &executor)?;
+                let language = resolve_language(config, language, workspace, executor)?;
                 let language_name = language.name();
                 if user_confirm_or_force(
                     &format!(
@@ -447,13 +447,20 @@ mod tests {
         io::Cursor,
         path::PathBuf,
         process,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Mutex,
+        },
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use aocsuite_client::{AocClient, AocClientOptions};
     use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
+    use aocsuite_storage::{ContentStore, Workspace};
+    use aocsuite_utils::{CommandExecutor, CommandRequest, ProcessMode, PuzzleDay, PuzzleYear};
 
-    use super::{resolve_custom_input_path, user_confirm};
+    use super::{resolve_custom_input_path, run_aocsuite, user_confirm};
+    use crate::AocCommand;
 
     static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -539,5 +546,75 @@ mod tests {
             !user_confirm(&mut Cursor::new(b"no\n"), &mut output, "Confirm? ")
                 .expect("read rejection")
         );
+    }
+
+    #[test]
+    fn run_aocsuite_uses_the_injected_executor_for_git() {
+        struct FakeExecutor {
+            requests: Mutex<Vec<CommandRequest>>,
+        }
+
+        impl CommandExecutor for FakeExecutor {
+            fn execute(&self, request: &CommandRequest) -> std::io::Result<process::Output> {
+                self.requests.lock().unwrap().push(request.clone());
+                Ok(successful_output())
+            }
+        }
+
+        let root = test_root();
+        fs::create_dir_all(&root).expect("create test runtime");
+        let client = AocClient::new(None, AocClientOptions::default()).expect("create client");
+        let content = ContentStore::open(root.join("cache"), &client).expect("open content store");
+        let workspace = Workspace::new(root.join("workspace"));
+        let mut config = Configuration::load(root.join("config")).expect("load configuration");
+        let executor = FakeExecutor {
+            requests: Mutex::new(Vec::new()),
+        };
+
+        run_aocsuite(
+            AocCommand::Git {
+                args: vec!["status".to_string()],
+            },
+            PuzzleDay::new(1).expect("valid test day"),
+            PuzzleYear::new(2024).expect("valid test year"),
+            &client,
+            &content,
+            &workspace,
+            &mut config,
+            &executor,
+        )
+        .expect("run git command");
+
+        let requests = executor.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].program, "git");
+        assert_eq!(requests[0].args[0], "status");
+        assert_eq!(requests[0].mode, ProcessMode::Captured);
+
+        drop(requests);
+        drop(content);
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[cfg(unix)]
+    fn successful_output() -> process::Output {
+        use std::os::unix::process::ExitStatusExt;
+
+        process::Output {
+            status: process::ExitStatus::from_raw(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        }
+    }
+
+    #[cfg(windows)]
+    fn successful_output() -> process::Output {
+        use std::os::windows::process::ExitStatusExt;
+
+        process::Output {
+            status: process::ExitStatus::from_raw(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        }
     }
 }

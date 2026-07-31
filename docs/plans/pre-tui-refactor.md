@@ -231,11 +231,10 @@ Done:
 - Foreground terminal handoff remains frontend-owned.
 - Destructive CLI confirmation treats an empty line as confirmation and EOF as
   cancellation.
+- CLI command execution receives an injected executor from the composition root.
 
 Remaining:
 
-- Refactor `run_aocsuite` into thin frontend command handlers over injectable
-  typed services.
 - Remove remaining domain policy from CLI orchestration.
 - Preserve exact executable resolution without adding alias translation.
 
