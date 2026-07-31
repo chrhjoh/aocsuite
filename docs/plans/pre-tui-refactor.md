@@ -207,10 +207,11 @@ Done:
 - Migration and activation occur before public compile-and-run execution.
 - One public typed operation covers migration, activation, environment setup,
   compilation, execution, and result consumption.
+- Language jobs are frontend-scheduled and serialized per runtime-root workspace
+  through timing persistence.
 
 Remaining:
 
-- Define serialization boundary including timing persistence.
 - Continue separating pure query operations from mutating setup and execution.
 
 Acceptance:

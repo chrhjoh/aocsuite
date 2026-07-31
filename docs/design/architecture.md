@@ -31,6 +31,7 @@ CLI or TUI code responsible for:
 - rendering and output formatting;
 - terminal suspension and restoration;
 - frontend-specific background job scheduling;
+- serialization of language jobs within a runtime-root workspace;
 - constructing and invoking domain services.
 
 ### Domain crate

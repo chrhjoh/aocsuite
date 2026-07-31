@@ -319,6 +319,11 @@ Active links remain shared mutable workspace state. Operations spanning
 activation, harness migration, environment setup, build, execution, result
 consumption, and timing persistence must be serialized.
 
+The frontend scheduler serializes one language job per runtime-root workspace.
+The job remains serialized until timing persistence completes. If timing
+persistence fails after solver execution, it returns the typed persistence error
+without rerunning the solver.
+
 Storage retains only the latest configured number of runtimes per puzzle part.
 
 ## Cleanup and uninstall
