@@ -105,7 +105,7 @@ impl<'executor> Launcher<'executor> {
 
 #[cfg(test)]
 mod browser_tests {
-    use std::{io, process::Output};
+    use std::{io, process::Output, sync::Mutex};
 
     use aocsuite_utils::{CommandExecutor, CommandRequest, ProcessMode};
 
@@ -113,10 +113,21 @@ mod browser_tests {
 
     struct FakeExecutor;
 
+    struct CapturingExecutor {
+        request: Mutex<Option<CommandRequest>>,
+    }
+
     impl CommandExecutor for FakeExecutor {
         fn execute(&self, request: &CommandRequest) -> io::Result<Output> {
             assert_eq!(request.mode, ProcessMode::Foreground);
             Ok(failed_output())
+        }
+    }
+
+    impl CommandExecutor for CapturingExecutor {
+        fn execute(&self, request: &CommandRequest) -> io::Result<Output> {
+            *self.request.lock().unwrap() = Some(request.clone());
+            Ok(successful_output())
         }
     }
 
@@ -148,5 +159,56 @@ mod browser_tests {
             Launcher::new(&FakeExecutor).open_browser("https://example.com"),
             Err(AocLauncherError::Command(_))
         ));
+    }
+
+    #[test]
+    fn open_file_preserves_an_explicit_editor_path() {
+        let editor = std::env::current_exe().expect("locate test executable");
+        let working_directory = editor.parent().expect("test executable has a parent");
+        let file = working_directory.join("configured-editor-test.txt");
+        let executor = CapturingExecutor {
+            request: Mutex::new(None),
+        };
+
+        Launcher::new(&executor)
+            .open_file(
+                editor.to_string_lossy().into_owned(),
+                &file,
+                working_directory,
+            )
+            .expect("launch configured editor");
+
+        let request = executor
+            .request
+            .lock()
+            .unwrap()
+            .take()
+            .expect("capture editor request");
+        assert_eq!(request.program, editor.as_os_str());
+        assert_eq!(request.args[0], file.as_os_str());
+        assert_eq!(request.current_dir.as_deref(), Some(working_directory));
+        assert_eq!(request.mode, ProcessMode::Foreground);
+    }
+
+    #[cfg(unix)]
+    fn successful_output() -> Output {
+        use std::os::unix::process::ExitStatusExt;
+
+        Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        }
+    }
+
+    #[cfg(windows)]
+    fn successful_output() -> Output {
+        use std::os::windows::process::ExitStatusExt;
+
+        Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        }
     }
 }

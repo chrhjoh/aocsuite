@@ -219,7 +219,7 @@ Acceptance:
 - Query and cleanup operations do not create environments or compile projects.
 - Projects remain usable outside AoC Suite.
 
-### 5. CLI, launcher, and Git — partial
+### 5. CLI, launcher, and Git — done
 
 Done:
 
@@ -233,10 +233,7 @@ Done:
   cancellation.
 - CLI command execution receives an injected executor from the composition root.
 - Language owns confirmed template reset and atomic template replacement.
-
-Remaining:
-
-- Preserve exact executable resolution without adding alias translation.
+- Configured editor executables are launched without alias translation.
 
 Acceptance:
 
