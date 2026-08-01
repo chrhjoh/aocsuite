@@ -3,10 +3,12 @@ use std::collections::HashMap;
 use aocsuite_parser::{Calendar, CalendarStars};
 use aocsuite_utils::PuzzleId;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Tabs, Wrap},
+    widgets::{
+        Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs, Wrap,
+    },
     Frame,
 };
 
@@ -86,11 +88,7 @@ fn render_calendar_tab(frame: &mut Frame<'_>, area: Rect, app: &App) {
 }
 
 fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let title = if app.calendar_loading {
-        format!(" {} - loading... ", app.selected_year)
-    } else {
-        format!(" {} ", app.selected_year)
-    };
+    let title = format!(" {} ", app.selected_year);
     let body = match &app.calendar {
         Some(calendar) => {
             let (stars, total, completed) = completion(calendar);
@@ -101,17 +99,12 @@ fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
                     .iter()
                     .rposition(|row| row.cells.iter().any(|cell| cell.puzzle == Some(puzzle)))
             });
-            let selection = selected_puzzle.map_or_else(
-                || "no puzzle selected".to_owned(),
-                |puzzle| format!("selected {puzzle}"),
-            );
             let mut lines = vec![Line::from(vec![
                 Span::styled(
                     format!("{stars}/{total} stars"),
                     Style::default().fg(Color::Yellow),
                 ),
                 Span::raw(format!("  {completed} completed days")),
-                Span::raw(format!("  {selection}")),
             ])];
             lines.push(Line::default());
             lines.extend(calendar.rows.iter().enumerate().map(|(row_index, row)| {
@@ -134,7 +127,7 @@ fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
             }));
             lines
         }
-        None if app.calendar_loading => vec![Line::from("Loading calendar...")],
+        None if app.calendar_loading => Vec::new(),
         None => vec![Line::from("Calendar unavailable. Press r to retry.")],
     };
     frame.render_widget(
@@ -148,7 +141,7 @@ fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
 fn render_description(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let Some(puzzle) = app.selected_puzzle() else {
         frame.render_widget(
-            Paragraph::new("No calendar puzzle is selected.")
+            Paragraph::new("")
                 .block(Block::default().borders(Borders::ALL).title(" Puzzle "))
                 .wrap(Wrap { trim: false }),
             area,
@@ -156,7 +149,9 @@ fn render_description(frame: &mut Frame<'_>, area: Rect, app: &App) {
         return;
     };
     let downloading = app.description_downloading(puzzle);
+    let scrollable = matches!(app.description, DescriptionState::Loaded { .. });
     let (title, text) = match &app.description {
+        DescriptionState::CheckingCache(_) => (format!(" Day {} ", puzzle.day), String::new()),
         DescriptionState::Empty if downloading => (
             format!(" Day {} - downloading... ", puzzle.day),
             "Downloading puzzle description...".to_owned(),
@@ -181,13 +176,31 @@ fn render_description(frame: &mut Frame<'_>, area: Rect, app: &App) {
             (format!(" Day {} - error ", puzzle.day), message.clone())
         }
     };
+    let block = Block::default().borders(Borders::ALL).title(title);
+    let inner = block.inner(area);
+    let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
+    let content_length = paragraph.line_count(inner.width);
     frame.render_widget(
-        Paragraph::new(text)
-            .block(Block::default().borders(Borders::ALL).title(title))
-            .wrap(Wrap { trim: false })
-            .scroll((app.description_scroll, 0)),
+        paragraph.block(block).scroll((app.description_scroll, 0)),
         area,
     );
+    if scrollable && content_length > usize::from(inner.height) {
+        let mut state = ScrollbarState::new(content_length)
+            .viewport_content_length(usize::from(inner.height))
+            .position(usize::from(app.description_scroll));
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(None)
+                .thumb_symbol("▐"),
+            area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
+            &mut state,
+        );
+    }
 }
 
 fn render_placeholder(frame: &mut Frame<'_>, area: Rect, title: &str, text: &str) {
@@ -204,15 +217,19 @@ fn render_placeholder(frame: &mut Frame<'_>, area: Rect, title: &str, text: &str
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let help = match app.active_tab {
-        Tab::Calendar => {
-            "q quit | Tab switch | arrows select | Ctrl+arrows scroll calendar | d download | r refresh | b browser | o open"
-        }
-        _ => "q quit | Tab/Shift-Tab switch",
+    let (help, secondary) = match app.active_tab {
+        Tab::Calendar => (
+            "q quit | Tab tabs | arrows select | PgUp/PgDn description",
+            Some("Ctrl+arrows pan | d download | r refresh | b browser | o open"),
+        ),
+        _ => ("q quit | Tab/Shift-Tab switch", None),
     };
     let text = match &app.status {
         Some(status) => format!("{help}\n{status}"),
-        None => help.to_owned(),
+        None => secondary.map_or_else(
+            || help.to_owned(),
+            |secondary| format!("{help}\n{secondary}"),
+        ),
     };
     frame.render_widget(
         Paragraph::new(text).style(Style::default().fg(Color::Gray)),
@@ -263,7 +280,7 @@ mod tests {
             result: Ok(Calendar {
                 rows: vec![CalendarRow {
                     cells: vec![CalendarCell {
-                        text: puzzle.to_string(),
+                        text: "calendar puzzle".to_owned(),
                         color: Rgb {
                             red: 255,
                             green: 255,
@@ -283,12 +300,67 @@ mod tests {
         let backend = TestBackend::new(70, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         let app = app();
+        let selected = app.selected_puzzle().unwrap();
 
         terminal.draw(|frame| render(frame, &app)).unwrap();
 
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains("Calendar"));
-        assert!(rendered.contains("Press d to download"));
+        assert!(rendered.contains("Day 10"));
+        assert!(!rendered.contains("Press d to download"));
+        assert!(!rendered.contains("loading..."));
+        assert!(rendered.contains("0/2 stars"));
+        assert!(!rendered.contains(&selected.to_string()));
+        assert!(rendered.contains("PgUp/PgDn description"));
+        assert!(rendered.contains("d download"));
+    }
+
+    #[test]
+    fn pending_calendar_and_selection_render_blank_panes() {
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let latest = PuzzleId::new(PuzzleDay::new(10).unwrap(), PuzzleYear::new(2026).unwrap());
+        let mut app = App::new(None, latest, LanguageId::Rust);
+        app.initial_effects();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("2026"));
+        assert!(rendered.contains("Puzzle"));
+        assert!(!rendered.to_lowercase().contains("loading"));
+        assert!(!rendered.contains("No calendar puzzle is selected"));
+    }
+
+    #[test]
+    fn cache_check_remains_blank_when_a_download_is_requested() {
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::DownloadDescription);
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Day 10"));
+        assert!(!rendered.contains("Press d to download"));
+        assert!(!rendered.contains("downloading..."));
+    }
+
+    #[test]
+    fn confirmed_cache_miss_renders_the_download_prompt() {
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        let puzzle = app.selected_puzzle().unwrap();
+        app.update(Action::CachedDescriptionFinished {
+            puzzle,
+            result: Ok(None),
+        });
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        assert!(buffer_text(terminal.backend().buffer()).contains("Press d to download"));
     }
 
     #[test]
@@ -309,6 +381,44 @@ mod tests {
         assert!(rendered.contains("existing preview"));
         assert!(rendered.contains("downloading..."));
         assert!(rendered.contains("d download"));
+    }
+
+    #[test]
+    fn overflowing_description_renders_a_positioned_scrollbar() {
+        let backend = TestBackend::new(100, 28);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        let puzzle = app.selected_puzzle().unwrap();
+        app.update(Action::CachedDescriptionFinished {
+            puzzle,
+            result: Ok(Some("wrapped description ".repeat(500))),
+        });
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let initial_thumb = symbol_y(terminal.backend().buffer(), "▐").unwrap();
+        assert!(buffer_text(terminal.backend().buffer()).contains("PgUp/PgDn description"));
+
+        app.description_scroll = 30;
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let scrolled_thumb = symbol_y(terminal.backend().buffer(), "▐").unwrap();
+
+        assert!(scrolled_thumb > initial_thumb);
+    }
+
+    #[test]
+    fn fitting_description_does_not_render_a_scrollbar() {
+        let backend = TestBackend::new(100, 28);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        let puzzle = app.selected_puzzle().unwrap();
+        app.update(Action::CachedDescriptionFinished {
+            puzzle,
+            result: Ok(Some("short description".to_owned())),
+        });
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        assert_eq!(symbol_y(terminal.backend().buffer(), "▐"), None);
     }
 
     #[test]
@@ -412,6 +522,18 @@ mod tests {
                 let cell = &buffer[(x, y)];
                 if cell.symbol() == symbol {
                     return Some(cell.bg);
+                }
+            }
+        }
+        None
+    }
+
+    fn symbol_y(buffer: &ratatui::buffer::Buffer, symbol: &str) -> Option<u16> {
+        let area = buffer.area;
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                if buffer[(x, y)].symbol() == symbol {
+                    return Some(y);
                 }
             }
         }
