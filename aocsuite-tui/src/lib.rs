@@ -70,10 +70,12 @@ pub fn run() -> TuiResult<()> {
         language,
     );
     let effects = EffectRunner::new(layout.clone());
-    effects.submit(match app.initial_effect() {
-        Effect::Background(effect) => effect,
-        Effect::Foreground(_) => unreachable!("initial effect is background work"),
-    })?;
+    for effect in app.initial_effects() {
+        match effect {
+            Effect::Background(effect) => effects.submit(effect)?,
+            Effect::Foreground(_) => unreachable!("initial effects are background work"),
+        }
+    }
 
     let mut terminal = TerminalSession::enter()?;
     let executor = SystemCommandExecutor;
@@ -112,11 +114,32 @@ fn dispatch_effects(
         match effect {
             Effect::Background(effect) => {
                 let was_exercise = matches!(&effect, BackgroundEffect::PrepareExercise(_));
+                let cached_puzzle = match &effect {
+                    BackgroundEffect::LoadCachedDescription(puzzle) => Some(*puzzle),
+                    _ => None,
+                };
+                let downloaded_puzzle = match &effect {
+                    BackgroundEffect::DownloadDescription(puzzle) => Some(*puzzle),
+                    _ => None,
+                };
                 if let Err(error) = runner.submit(effect) {
+                    let message = error.to_string();
                     if was_exercise {
                         app.exercise_preparing = false;
                     }
-                    app.update(Action::EffectFailed(error.to_string()));
+                    if let Some(puzzle) = cached_puzzle {
+                        app.update(Action::CachedDescriptionFinished {
+                            puzzle,
+                            result: Err(message),
+                        });
+                    } else if let Some(puzzle) = downloaded_puzzle {
+                        app.update(Action::DescriptionDownloaded {
+                            puzzle,
+                            result: Err(message),
+                        });
+                    } else {
+                        app.update(Action::EffectFailed(message));
+                    }
                 }
             }
             Effect::Foreground(effect) => {
@@ -144,7 +167,7 @@ fn action_for_key(key: KeyEvent) -> Option<Action> {
         (KeyCode::Right, _) => Some(Action::NextYear),
         (KeyCode::Up, _) => Some(Action::PreviousDay),
         (KeyCode::Down, _) => Some(Action::NextDay),
-        (KeyCode::Char('d'), _) => Some(Action::LoadDescription),
+        (KeyCode::Char('d'), _) => Some(Action::DownloadDescription),
         (KeyCode::Char('r'), _) => Some(Action::RefreshCalendar),
         (KeyCode::Char('b'), _) => Some(Action::OpenBrowser),
         (KeyCode::Char('o'), _) | (KeyCode::Enter, _) => Some(Action::OpenExercise),
@@ -164,7 +187,7 @@ mod tests {
     fn key_mapping_keeps_event_handling_separate_from_state_updates() {
         assert!(matches!(
             action_for_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE)),
-            Some(Action::LoadDescription)
+            Some(Action::DownloadDescription)
         ));
         assert!(matches!(
             action_for_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),

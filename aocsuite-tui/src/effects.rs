@@ -104,11 +104,19 @@ fn run_background_effect(layout: &RuntimeLayout, effect: BackgroundEffect) -> Ac
                 result,
             }
         }
-        BackgroundEffect::LoadDescription(puzzle) => {
-            let result =
-                with_content_store(layout, |content| Ok(content.load_puzzle_markdown(puzzle)?))
-                    .map_err(|error| format!("Could not load {puzzle}: {error}"));
-            Action::DescriptionFinished { puzzle, result }
+        BackgroundEffect::LoadCachedDescription(puzzle) => {
+            let result = with_content_store(layout, |content| {
+                Ok(content.load_cached_puzzle_markdown(puzzle)?)
+            })
+            .map_err(|error| format!("Could not read cached {puzzle}: {error}"));
+            Action::CachedDescriptionFinished { puzzle, result }
+        }
+        BackgroundEffect::DownloadDescription(puzzle) => {
+            let result = with_content_store(layout, |content| {
+                Ok(content.download_puzzle_markdown(puzzle)?)
+            })
+            .map_err(|error| format!("Could not download {puzzle}: {error}"));
+            Action::DescriptionDownloaded { puzzle, result }
         }
         BackgroundEffect::PrepareExercise(puzzle) => {
             let executor = SystemCommandExecutor;

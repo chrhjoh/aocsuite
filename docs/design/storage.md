@@ -247,6 +247,18 @@ operations use valid cached content when available and otherwise retrieve and
 persist it; callers do not inspect cache status or select cache-versus-network
 behavior.
 
+A cached puzzle-preview query is a read-only exception to normal semantic load
+behavior. It returns Markdown only when the managed derived Markdown entry is
+valid and present. It does not fall back to raw HTML, perform an AoC request, or
+create or update cache state.
+
+An explicit puzzle-description download bypasses cached puzzle content. Storage
+validates the downloaded HTML and derives Markdown before replacing either
+file. The canonical HTML, derived Markdown, and both metadata entries are
+replaced as one rollback-protected operation. Download, parsing, file, or
+metadata failures preserve the previous managed cache, and unmanaged files are
+never replaced.
+
 An explicit calendar refresh bypasses an existing valid calendar cache entry.
 It replaces cached calendar content only after the client returns a valid
 response; a failed refresh preserves the existing cached calendar.
