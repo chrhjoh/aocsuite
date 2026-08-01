@@ -14,8 +14,8 @@ use ratatui::{
 };
 
 use crate::app::{
-    App, DescriptionState, LanguageConfirmation, LanguageDialog, LanguageFocus,
-    LanguageOperationState, LanguageTextInput, Tab,
+    App, ConfigDialog, ConfigField, ConfigOperationState, DescriptionState, LanguageConfirmation,
+    LanguageDialog, LanguageFocus, LanguageOperationState, LanguageTextInput, Tab,
 };
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
@@ -31,16 +31,15 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     match app.active_tab {
         Tab::Calendar => render_calendar_tab(frame, root[1], app),
         Tab::Language => render_language_tab(frame, root[1], app),
-        Tab::Config => render_placeholder(
-            frame,
-            root[1],
-            "Config",
-            "Configuration management is the next implementation slice.",
-        ),
+        Tab::Config => render_config_tab(frame, root[1], app),
     }
     render_footer(frame, root[2], app);
-    if let Some(dialog) = &app.language_dialog {
+    if let Some(dialog) = &app.config_dialog {
+        render_config_dialog(frame, dialog);
+    } else if let Some(dialog) = &app.language_dialog {
         render_language_dialog(frame, dialog);
+    } else if app.help_open {
+        render_help_dialog(frame, app);
     }
 }
 
@@ -226,10 +225,6 @@ fn render_language_tab(frame: &mut Frame<'_>, area: Rect, app: &App) {
             Span::styled("Rust", rust_style),
             Span::raw(" | "),
             Span::styled("Python", python_style),
-            Span::styled(
-                "   s switches for this session",
-                Style::default().fg(Color::Gray),
-            ),
         ]))
         .block(Block::default().borders(Borders::ALL).title(" Language ")),
         sections[0],
@@ -341,14 +336,10 @@ fn render_language_dialog(frame: &mut Frame<'_>, dialog: &LanguageDialog) {
             frame.render_widget(
                 Paragraph::new(vec![
                     Line::from(prompt),
-                    Line::styled(value, Style::default().fg(Color::Yellow)),
+                    input_line(value),
                     Line::styled(
                         error.as_deref().unwrap_or_default(),
                         Style::default().fg(Color::Red),
-                    ),
-                    Line::styled(
-                        "Enter accept | Esc cancel",
-                        Style::default().fg(Color::Gray),
                     ),
                 ])
                 .block(Block::default().borders(Borders::ALL).title(title)),
@@ -394,10 +385,6 @@ fn render_language_dialog(frame: &mut Frame<'_>, dialog: &LanguageDialog) {
                         Span::raw("   "),
                         Span::styled(format!("[ {destructive} ]"), confirm_style),
                     ]),
-                    Line::styled(
-                        "Left/Right choose | Enter accept | Esc cancel",
-                        Style::default().fg(Color::Gray),
-                    ),
                 ])
                 .block(Block::default().borders(Borders::ALL).title(title)),
                 area,
@@ -405,14 +392,152 @@ fn render_language_dialog(frame: &mut Frame<'_>, dialog: &LanguageDialog) {
         }
         LanguageDialog::Message(message) => {
             frame.render_widget(
-                Paragraph::new(vec![
-                    Line::from(message.as_str()),
-                    Line::default(),
-                    Line::styled("Enter/Esc dismiss", Style::default().fg(Color::Gray)),
-                ])
-                .wrap(Wrap { trim: false })
-                .block(Block::default().borders(Borders::ALL).title(" Error ")),
+                Paragraph::new(vec![Line::from(message.as_str())])
+                    .wrap(Wrap { trim: false })
+                    .block(Block::default().borders(Borders::ALL).title(" Error ")),
                 area,
+            );
+        }
+    }
+}
+
+fn render_config_tab(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let title = match app.config_operation {
+        ConfigOperationState::Idle => " Config ".to_owned(),
+        ConfigOperationState::Running(activity) => format!(" Config - {activity} "),
+    };
+    let lines = ConfigField::ALL
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            let selected = index == app.config_selection;
+            let value = app
+                .config
+                .as_ref()
+                .map_or_else(String::new, |config| match field {
+                    ConfigField::Year => config.year.clone(),
+                    ConfigField::Editor => config
+                        .editor
+                        .clone()
+                        .unwrap_or_else(|| "Not configured".to_owned()),
+                    ConfigField::RunHistoryLimit => config.run_history_limit.clone(),
+                    ConfigField::Session if config.session_configured => "Configured".to_owned(),
+                    ConfigField::Session => "Not configured".to_owned(),
+                });
+            let style = if selected {
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            Line::styled(
+                format!(
+                    "{} {:<24} {value}",
+                    if selected { ">" } else { " " },
+                    field.label()
+                ),
+                style,
+            )
+        })
+        .collect::<Vec<_>>();
+    let visible_rows = usize::from(area.height.saturating_sub(2));
+    let offset = app
+        .config_selection
+        .saturating_add(1)
+        .saturating_sub(visible_rows)
+        .min(u16::MAX as usize) as u16;
+    frame.render_widget(
+        Paragraph::new(lines)
+            .scroll((offset, 0))
+            .block(Block::default().borders(Borders::ALL).title(title)),
+        area,
+    );
+}
+
+fn render_config_dialog(frame: &mut Frame<'_>, dialog: &ConfigDialog) {
+    let area = centered_dialog(frame.area());
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    match dialog {
+        ConfigDialog::Text {
+            field,
+            value,
+            error,
+        } => {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(field.label()),
+                    input_line(value),
+                    Line::styled(
+                        error.as_deref().unwrap_or_default(),
+                        Style::default().fg(Color::Red),
+                    ),
+                ])
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Edit setting "),
+                ),
+                area,
+            );
+        }
+        ConfigDialog::Session { value, error } => {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from("Set or replace session"),
+                    input_line(if value.is_empty() { "" } else { "********" }),
+                    Line::styled(
+                        error.as_deref().unwrap_or_default(),
+                        Style::default().fg(Color::Red),
+                    ),
+                ])
+                .block(Block::default().borders(Borders::ALL).title(" Session ")),
+                area,
+            );
+        }
+        ConfigDialog::ConfirmRemoveSession { confirmed } => {
+            let cancel_style = if *confirmed {
+                Style::default()
+            } else {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            };
+            let remove_style = if *confirmed {
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from("Remove the configured session?"),
+                    Line::default(),
+                    Line::from(vec![
+                        Span::styled("[ Cancel ]", cancel_style),
+                        Span::raw("   "),
+                        Span::styled("[ Remove ]", remove_style),
+                    ]),
+                ])
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Remove session "),
+                ),
+                area,
+            );
+        }
+        ConfigDialog::Message { message, scroll } => {
+            let block = Block::default().borders(Borders::ALL).title(" Error ");
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            frame.render_widget(
+                Paragraph::new(message.as_str())
+                    .scroll((*scroll, 0))
+                    .wrap(Wrap { trim: false }),
+                inner,
             );
         }
     }
@@ -429,42 +554,98 @@ fn centered_dialog(area: Rect) -> Rect {
     )
 }
 
-fn render_placeholder(frame: &mut Frame<'_>, area: Rect, title: &str, text: &str) {
-    frame.render_widget(
-        Paragraph::new(text)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(format!(" {title} ")),
-            )
-            .wrap(Wrap { trim: true }),
-        area,
-    );
-}
-
 fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let (help, secondary) = match app.active_tab {
-        Tab::Calendar => (
-            "q quit | Tab tabs | arrows select | PgUp/PgDn description",
-            Some("Ctrl+arrows pan | d download | r refresh | b browser | o open"),
-        ),
-        Tab::Language => (
-            "q quit | Tab tabs | s language | arrows select | r refresh",
-            Some("a add package | x remove | n new library | o/Enter open | t/T template"),
-        ),
-        Tab::Config => ("q quit | Tab/Shift-Tab switch", None),
-    };
     let text = match &app.status {
-        Some(status) => format!("{help}\n{status}"),
-        None => secondary.map_or_else(
-            || help.to_owned(),
-            |secondary| format!("{help}\n{secondary}"),
-        ),
+        Some(status) => format!("? help\n{status}"),
+        None => "? help".to_owned(),
     };
     frame.render_widget(
         Paragraph::new(text).style(Style::default().fg(Color::Gray)),
         area,
     );
+}
+
+fn render_help_dialog(frame: &mut Frame<'_>, app: &App) {
+    let area = help_dialog_area(frame.area());
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    let mut lines = vec![
+        key_line("q", "Quit", area.width),
+        key_line("Tab / Shift-Tab", "Next / previous tab", area.width),
+        Line::default(),
+    ];
+    match app.active_tab {
+        Tab::Calendar => lines.extend([
+            key_line("Up / Down", "Select puzzle", area.width),
+            key_line("Left / Right", "Previous / next year", area.width),
+            key_line("Ctrl + arrows", "Pan calendar", area.width),
+            key_line("PageUp / PageDown", "Scroll puzzle description", area.width),
+            key_line("d", "Download or refresh puzzle description", area.width),
+            key_line("r", "Refresh calendar", area.width),
+            key_line("b", "Open puzzle in browser", area.width),
+            key_line("Enter", "Open exercise in editor", area.width),
+        ]),
+        Tab::Language => lines.extend([
+            key_line("s", "Switch session language", area.width),
+            key_line(
+                "Left / Right",
+                "Select packages / libraries pane",
+                area.width,
+            ),
+            key_line("Up / Down", "Select package or library", area.width),
+            key_line("r", "Reload package and library lists", area.width),
+            key_line("a", "Add package", area.width),
+            key_line("x", "Remove selected package or library", area.width),
+            key_line("n", "Create library", area.width),
+            key_line("Enter", "Open selected library", area.width),
+            key_line("t / T", "Open / reset template", area.width),
+        ]),
+        Tab::Config => lines.extend([
+            key_line("Up / Down", "Select configuration field", area.width),
+            key_line("Enter", "Edit selected field", area.width),
+            key_line("r", "Reload configuration", area.width),
+            key_line("x", "Reset field / remove session", area.width),
+        ]),
+    }
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" {} keymap ", app.active_tab.title())),
+            )
+            .scroll((app.help_scroll, 0))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn key_line(key: &'static str, description: &'static str, width: u16) -> Line<'static> {
+    let key_width = if width < 50 { 12 } else { 20 };
+    Line::from(vec![
+        Span::styled(
+            format!("{key:<key_width$}"),
+            Style::default().fg(Color::Yellow),
+        ),
+        Span::raw(description),
+    ])
+}
+
+fn input_line(value: &str) -> Line<'_> {
+    Line::from(format!("> {value}"))
+}
+
+fn help_dialog_area(area: Rect) -> Rect {
+    let width = area.width.saturating_sub(4).min(72);
+    let height = area.height.saturating_sub(2).min(18);
+    Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    )
 }
 
 fn completion(calendar: &Calendar) -> (usize, usize, usize) {
@@ -497,7 +678,7 @@ mod tests {
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
     use ratatui::{backend::TestBackend, style::Color, Terminal};
 
-    use crate::app::{Action, App, LanguageData, Tab};
+    use crate::app::{Action, App, ConfigData, LanguageData, SecretCharacter, Tab};
 
     use super::render;
 
@@ -541,8 +722,8 @@ mod tests {
         assert!(!rendered.contains("loading..."));
         assert!(rendered.contains("0/2 stars"));
         assert!(!rendered.contains(&selected.to_string()));
-        assert!(rendered.contains("PgUp/PgDn description"));
-        assert!(rendered.contains("d download"));
+        assert!(rendered.contains("? help"));
+        assert!(!rendered.contains("d download"));
     }
 
     #[test]
@@ -610,7 +791,7 @@ mod tests {
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains("existing preview"));
         assert!(rendered.contains("downloading..."));
-        assert!(rendered.contains("d download"));
+        assert!(rendered.contains("? help"));
     }
 
     #[test]
@@ -626,7 +807,7 @@ mod tests {
 
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let initial_thumb = symbol_y(terminal.backend().buffer(), "▐").unwrap();
-        assert!(buffer_text(terminal.backend().buffer()).contains("PgUp/PgDn description"));
+        assert!(buffer_text(terminal.backend().buffer()).contains("? help"));
 
         app.description_scroll = 30;
         terminal.draw(|frame| render(frame, &app)).unwrap();
@@ -663,12 +844,171 @@ mod tests {
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains("Packages"));
         assert!(rendered.contains("Libraries"));
-        assert!(rendered.contains("t/T template"));
+        assert!(rendered.contains("? help"));
 
         app.update(Action::NextTab);
         assert_eq!(app.active_tab, Tab::Config);
         terminal.draw(|frame| render(frame, &app)).unwrap();
-        assert!(buffer_text(terminal.backend().buffer()).contains("Configuration management"));
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Default year"));
+        assert!(rendered.contains("Editor executable"));
+        assert!(rendered.contains("Run-history retention"));
+        assert!(rendered.contains("Session"));
+    }
+
+    #[test]
+    fn help_popup_is_hidden_until_requested_and_is_tab_specific() {
+        let backend = TestBackend::new(100, 28);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        assert!(!buffer_text(terminal.backend().buffer()).contains("Download or refresh"));
+
+        app.update(Action::OpenHelp);
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Calendar keymap"));
+        assert!(rendered.contains("Download or refresh"));
+
+        app.update(Action::CloseHelp);
+        app.update(Action::NextTab);
+        app.update(Action::OpenHelp);
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Language keymap"));
+        assert!(rendered.contains("Add package"));
+
+        app.update(Action::CloseHelp);
+        app.update(Action::NextTab);
+        app.update(Action::OpenHelp);
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Config keymap"));
+        assert!(rendered.contains("Edit selected field"));
+    }
+
+    #[test]
+    fn help_popup_scrolls_in_a_short_narrow_terminal() {
+        let backend = TestBackend::new(36, 9);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::OpenHelp);
+
+        for _ in 0..8 {
+            app.update(Action::ScrollHelpDown);
+        }
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Calendar keymap"));
+        assert!(rendered.contains("Download"));
+    }
+
+    #[test]
+    fn visible_modal_matches_input_priority() {
+        let backend = TestBackend::new(70, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::OpenHelp);
+        app.config_dialog = Some(crate::app::ConfigDialog::Message {
+            message: "config failed".to_owned(),
+            scroll: 0,
+        });
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("config failed"));
+        assert!(!rendered.contains("Calendar keymap"));
+    }
+
+    #[test]
+    fn long_config_errors_scroll_in_a_narrow_terminal() {
+        let backend = TestBackend::new(36, 9);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.config_dialog = Some(crate::app::ConfigDialog::Message {
+            message: format!("{}final-marker", "context ".repeat(24)),
+            scroll: 5,
+        });
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        assert!(buffer_text(terminal.backend().buffer()).contains("final-marker"));
+    }
+
+    #[test]
+    fn config_tab_renders_fields_without_a_language_setting() {
+        let backend = TestBackend::new(70, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::PreviousTab);
+        app.update(Action::ConfigLoaded {
+            result: Ok(ConfigData {
+                year: "2026".to_owned(),
+                editor: None,
+                run_history_limit: "10".to_owned(),
+                session_configured: false,
+            }),
+        });
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("2026"));
+        assert!(rendered.contains("Not configured"));
+        assert!(!rendered.contains("Default language"));
+    }
+
+    #[test]
+    fn short_config_pane_keeps_the_selected_field_visible() {
+        let backend = TestBackend::new(36, 9);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::PreviousTab);
+        app.update(Action::ConfigLoaded {
+            result: Ok(ConfigData {
+                year: "2026".to_owned(),
+                editor: Some("vim".to_owned()),
+                run_history_limit: "10".to_owned(),
+                session_configured: true,
+            }),
+        });
+        app.config_selection = 3;
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        assert!(buffer_text(terminal.backend().buffer()).contains("> Session"));
+    }
+
+    #[test]
+    fn session_input_is_masked_in_the_rendered_buffer() {
+        let backend = TestBackend::new(70, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::PreviousTab);
+        app.update(Action::ConfigLoaded {
+            result: Ok(ConfigData {
+                year: "2026".to_owned(),
+                editor: Some("vim".to_owned()),
+                run_history_limit: "10".to_owned(),
+                session_configured: false,
+            }),
+        });
+        app.config_selection = 3;
+        app.update(Action::EditConfigField);
+        for character in "sensitive-value".chars() {
+            app.update(Action::ConfigSecretInput(SecretCharacter(character)));
+        }
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(!rendered.contains("sensitive-value"));
+        assert!(rendered.contains("> ********"));
+        assert!(!rendered.contains("***************"));
+        assert!(rendered.contains("Set or replace session"));
     }
 
     #[test]
@@ -717,7 +1057,7 @@ mod tests {
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains("Error"));
         assert!(rendered.contains("package query failed"));
-        assert!(rendered.contains("Enter/Esc dismiss"));
+        assert!(!rendered.contains("dismiss"));
     }
 
     #[test]

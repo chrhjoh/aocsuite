@@ -17,9 +17,11 @@ use aocsuite_utils::{
     default_puzzle_date, LanguageId, PuzzleId, ReleaseError, SystemCommandExecutor,
 };
 pub use app::{
-    Action, App, BackgroundEffect, Effect, ForegroundEffect, LanguageConfirmation, LanguageData,
+    Action, App, BackgroundEffect, ConfigData, ConfigDialog, ConfigField, ConfigMutation,
+    ConfigOperationState, Effect, ForegroundEffect, LanguageConfirmation, LanguageData,
     LanguageDialog, LanguageFileKind, LanguageFocus, LanguageMutation, LanguageOperationState,
-    LanguageTextInput, PreparedExercise, PreparedLanguageFile, Tab,
+    LanguageTextInput, NonSecretConfigField, PreparedExercise, PreparedLanguageFile,
+    SecretCharacter, SecretString, Tab,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use effects::{run_foreground_effect, EffectRunner};
@@ -124,6 +126,10 @@ fn dispatch_effects(
                         | BackgroundEffect::MutateLanguage { .. }
                         | BackgroundEffect::PrepareLanguageFile { .. }
                 );
+                let was_config = matches!(
+                    &effect,
+                    BackgroundEffect::LoadConfig { .. } | BackgroundEffect::MutateConfig { .. }
+                );
                 let cached_puzzle = match &effect {
                     BackgroundEffect::LoadCachedDescription(puzzle) => Some(*puzzle),
                     _ => None,
@@ -137,7 +143,9 @@ fn dispatch_effects(
                     if was_exercise {
                         app.exercise_preparing = false;
                     }
-                    if was_language {
+                    if was_config {
+                        app.update(Action::ConfigEffectFailed(message));
+                    } else if was_language {
                         app.update(Action::LanguageEffectFailed(message));
                     } else if let Some(puzzle) = cached_puzzle {
                         app.update(Action::CachedDescriptionFinished {
@@ -168,6 +176,41 @@ fn dispatch_effects(
 }
 
 fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
+    if let Some(dialog) = &app.config_dialog {
+        return match dialog {
+            ConfigDialog::Text { .. } => match key.code {
+                KeyCode::Esc => Some(Action::ConfigCancel),
+                KeyCode::Enter => Some(Action::ConfigSubmit),
+                KeyCode::Backspace => Some(Action::ConfigBackspace),
+                KeyCode::Char(character) => Some(Action::ConfigInput(character)),
+                _ => None,
+            },
+            ConfigDialog::Session { .. } => match key.code {
+                KeyCode::Esc => Some(Action::ConfigCancel),
+                KeyCode::Enter => Some(Action::ConfigSubmit),
+                KeyCode::Backspace => Some(Action::ConfigBackspace),
+                KeyCode::Char(character) => {
+                    Some(Action::ConfigSecretInput(SecretCharacter(character)))
+                }
+                _ => None,
+            },
+            ConfigDialog::ConfirmRemoveSession { confirmed } => match key.code {
+                KeyCode::Esc => Some(Action::ConfigCancel),
+                KeyCode::Enter => Some(Action::ConfigSubmit),
+                KeyCode::Left if *confirmed => Some(Action::ConfigToggleConfirmation),
+                KeyCode::Right if !*confirmed => Some(Action::ConfigToggleConfirmation),
+                KeyCode::Tab | KeyCode::BackTab => Some(Action::ConfigToggleConfirmation),
+                _ => None,
+            },
+            ConfigDialog::Message { .. } => match key.code {
+                KeyCode::Esc | KeyCode::Enter => Some(Action::ConfigCancel),
+                KeyCode::Up | KeyCode::PageUp => Some(Action::ConfigScrollMessageUp),
+                KeyCode::Down | KeyCode::PageDown => Some(Action::ConfigScrollMessageDown),
+                _ => None,
+            },
+        };
+    }
+
     if let Some(dialog) = &app.language_dialog {
         return match dialog {
             LanguageDialog::Text { .. } => match key.code {
@@ -192,7 +235,22 @@ fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
         };
     }
 
+    if app.help_open {
+        return match (key.code, key.modifiers) {
+            (KeyCode::Char('q'), _) => Some(Action::Quit),
+            (KeyCode::Tab, KeyModifiers::SHIFT) | (KeyCode::BackTab, _) => {
+                Some(Action::PreviousTab)
+            }
+            (KeyCode::Tab, _) => Some(Action::NextTab),
+            (KeyCode::Esc | KeyCode::Enter | KeyCode::Char('?'), _) => Some(Action::CloseHelp),
+            (KeyCode::Up | KeyCode::PageUp, _) => Some(Action::ScrollHelpUp),
+            (KeyCode::Down | KeyCode::PageDown, _) => Some(Action::ScrollHelpDown),
+            _ => None,
+        };
+    }
+
     match (key.code, key.modifiers) {
+        (KeyCode::Char('?'), _) => return Some(Action::OpenHelp),
         (KeyCode::Char('q'), _) => return Some(Action::Quit),
         (KeyCode::Tab, KeyModifiers::SHIFT) | (KeyCode::BackTab, _) => {
             return Some(Action::PreviousTab);
@@ -212,9 +270,20 @@ fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
             KeyCode::Char('a') => Some(Action::AddPackage),
             KeyCode::Char('x') => Some(Action::RemoveLanguageItem),
             KeyCode::Char('n') => Some(Action::NewLibrary),
-            KeyCode::Enter | KeyCode::Char('o') => Some(Action::OpenLanguageItem),
+            KeyCode::Enter => Some(Action::OpenLanguageItem),
             KeyCode::Char('T') => Some(Action::ResetTemplate),
             KeyCode::Char('t') => Some(Action::OpenTemplate),
+            _ => None,
+        };
+    }
+
+    if app.active_tab == Tab::Config {
+        return match key.code {
+            KeyCode::Char('r') => Some(Action::RefreshConfig),
+            KeyCode::Up => Some(Action::PreviousConfigField),
+            KeyCode::Down => Some(Action::NextConfigField),
+            KeyCode::Enter => Some(Action::EditConfigField),
+            KeyCode::Char('x') => Some(Action::RemoveConfigValue),
             _ => None,
         };
     }
@@ -231,7 +300,7 @@ fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('d'), _) => Some(Action::DownloadDescription),
         (KeyCode::Char('r'), _) => Some(Action::RefreshCalendar),
         (KeyCode::Char('b'), _) => Some(Action::OpenBrowser),
-        (KeyCode::Char('o'), _) | (KeyCode::Enter, _) => Some(Action::OpenExercise),
+        (KeyCode::Enter, _) => Some(Action::OpenExercise),
         (KeyCode::PageUp, _) => Some(Action::ScrollDescriptionUp),
         (KeyCode::PageDown, _) => Some(Action::ScrollDescriptionDown),
         _ => None,
@@ -244,7 +313,9 @@ mod tests {
 
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
 
-    use super::{action_for_key, Action, App, LanguageData, LanguageDialog};
+    use super::{
+        action_for_key, Action, App, ConfigData, LanguageData, LanguageDialog, SecretCharacter,
+    };
 
     fn app() -> App {
         App::new(
@@ -319,6 +390,74 @@ mod tests {
                 confirmed: true,
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn session_keystrokes_are_redacted_actions() {
+        let mut app = app();
+        app.update(Action::PreviousTab);
+        app.update(Action::ConfigLoaded {
+            result: Ok(ConfigData {
+                year: "2026".to_owned(),
+                editor: Some("vim".to_owned()),
+                run_history_limit: "10".to_owned(),
+                session_configured: false,
+            }),
+        });
+        app.config_selection = 3;
+        app.update(Action::EditConfigField);
+
+        let action =
+            action_for_key(&app, KeyEvent::new(KeyCode::Char('Z'), KeyModifiers::NONE)).unwrap();
+
+        assert!(matches!(
+            &action,
+            Action::ConfigSecretInput(SecretCharacter(_))
+        ));
+        assert!(!format!("{action:?}").contains("'Z'"));
+    }
+
+    #[test]
+    fn help_popup_keeps_advertised_global_shortcuts_active() {
+        let mut app = app();
+        let open =
+            action_for_key(&app, KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE)).unwrap();
+        assert!(matches!(open, Action::OpenHelp));
+        app.update(open);
+
+        assert!(matches!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
+            Some(Action::Quit)
+        ));
+        assert!(matches!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            Some(Action::NextTab)
+        ));
+        assert!(matches!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE)),
+            Some(Action::CloseHelp)
+        ));
+    }
+
+    #[test]
+    fn enter_is_the_only_open_or_edit_shortcut() {
+        let mut app = app();
+        assert!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE)).is_none()
+        );
+        assert!(matches!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(Action::OpenExercise)
+        ));
+
+        app.update(Action::PreviousTab);
+        assert!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE)).is_none()
+        );
+        assert!(matches!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(Action::EditConfigField)
         ));
     }
 }

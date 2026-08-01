@@ -18,8 +18,9 @@ use aocsuite_utils::{
 
 use crate::{
     app::{
-        Action, BackgroundEffect, ForegroundEffect, LanguageData, LanguageFileKind,
-        LanguageMutation, PreparedExercise, PreparedLanguageFile,
+        Action, BackgroundEffect, ConfigData, ConfigMutation, ForegroundEffect, LanguageData,
+        LanguageFileKind, LanguageMutation, NonSecretConfigField, PreparedExercise,
+        PreparedLanguageFile,
     },
     TuiError,
 };
@@ -158,6 +159,32 @@ fn run_background_effect(
             let result = prepare_language_file(layout, language, kind, reset, executor)
                 .map_err(|error| format!("Could not prepare {context} editor: {error}"));
             Action::LanguageFilePrepared { language, result }
+        }
+        BackgroundEffect::LoadConfig { latest_year } => {
+            let config_dir = layout.config_dir();
+            let result = load_config_data(layout, latest_year).map_err(|error| {
+                format!(
+                    "Could not load configuration from '{}': {error}",
+                    config_dir.display()
+                )
+            });
+            Action::ConfigLoaded { result }
+        }
+        BackgroundEffect::MutateConfig {
+            latest_year,
+            mutation,
+        } => {
+            let operation = config_operation(&mutation);
+            let target = match &mutation {
+                ConfigMutation::SetSession(_) | ConfigMutation::RemoveSession => {
+                    layout.config_dir().join("session")
+                }
+                ConfigMutation::Set { .. } => layout.config_dir().join("config.json"),
+            };
+            let result = mutate_config(layout, latest_year, mutation).map_err(|failure| {
+                config_mutation_failure_message(layout, operation, &target, failure)
+            });
+            Action::ConfigSaved { result }
         }
     }
 }
@@ -305,6 +332,103 @@ fn prepare_language_file(
     })
 }
 
+fn load_config_data(
+    layout: &RuntimeLayout,
+    latest_year: aocsuite_utils::PuzzleYear,
+) -> Result<ConfigData, TuiError> {
+    let config = Configuration::load(layout.config_dir())?;
+    let year = match config.get::<aocsuite_utils::PuzzleYear>(ConfigKey::Year) {
+        Ok(year) => year,
+        Err(AocConfigError::NotFound {
+            key: ConfigKey::Year,
+        }) => latest_year,
+        Err(error) => return Err(error.into()),
+    };
+    let editor = match config.get::<String>(ConfigKey::Editor) {
+        Ok(editor) => Some(editor),
+        Err(AocConfigError::Environment(_)) => None,
+        Err(error) => return Err(error.into()),
+    };
+    let run_history_limit = config
+        .get::<aocsuite_utils::RunHistoryLimit>(ConfigKey::RunHistoryLimit)?
+        .to_string();
+    Ok(ConfigData {
+        year: year.to_string(),
+        editor,
+        run_history_limit,
+        session_configured: config.session_configured()?,
+    })
+}
+
+fn mutate_config(
+    layout: &RuntimeLayout,
+    latest_year: aocsuite_utils::PuzzleYear,
+    mutation: ConfigMutation,
+) -> Result<ConfigData, ConfigMutationFailure> {
+    let mut config = Configuration::load(layout.config_dir())
+        .map_err(|error| ConfigMutationFailure::Load(error.into()))?;
+    match mutation {
+        ConfigMutation::Set { field, value } => {
+            let key = match field {
+                NonSecretConfigField::Year => ConfigKey::Year,
+                NonSecretConfigField::Editor => ConfigKey::Editor,
+                NonSecretConfigField::RunHistoryLimit => ConfigKey::RunHistoryLimit,
+            };
+            config
+                .set(key, value.as_deref())
+                .map_err(|error| ConfigMutationFailure::Write(error.into()))?;
+        }
+        ConfigMutation::SetSession(session) => {
+            config
+                .set(ConfigKey::Session, Some(session.expose()))
+                .map_err(|error| ConfigMutationFailure::Write(error.into()))?;
+        }
+        ConfigMutation::RemoveSession => config
+            .set(ConfigKey::Session, None)
+            .map_err(|error| ConfigMutationFailure::Write(error.into()))?,
+    }
+    load_config_data(layout, latest_year).map_err(ConfigMutationFailure::Reload)
+}
+
+enum ConfigMutationFailure {
+    Load(TuiError),
+    Write(TuiError),
+    Reload(TuiError),
+}
+
+fn config_mutation_failure_message(
+    layout: &RuntimeLayout,
+    operation: &str,
+    target: &std::path::Path,
+    failure: ConfigMutationFailure,
+) -> String {
+    match failure {
+        ConfigMutationFailure::Load(error) => format!(
+            "Could not load configuration from '{}': {error}",
+            layout.config_dir().join("config.json").display()
+        ),
+        ConfigMutationFailure::Write(error) => {
+            format!("Could not {operation} at '{}': {error}", target.display())
+        }
+        ConfigMutationFailure::Reload(error) => format!(
+            "Saved the configuration, but could not reload it from '{}': {error}",
+            layout.config_dir().display()
+        ),
+    }
+}
+
+fn config_operation(mutation: &ConfigMutation) -> &'static str {
+    match mutation {
+        ConfigMutation::Set { field, .. } => match field {
+            NonSecretConfigField::Year => "save the default year",
+            NonSecretConfigField::Editor => "save the editor executable",
+            NonSecretConfigField::RunHistoryLimit => "save run-history retention",
+        },
+        ConfigMutation::SetSession(_) => "save the session",
+        ConfigMutation::RemoveSession => "remove the session",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::process::{ExitStatus, Output};
@@ -314,13 +438,26 @@ mod tests {
     };
     use std::{fs, io};
 
+    use aocsuite_config::{ConfigKey, Configuration};
     use aocsuite_storage::RuntimeLayout;
     use aocsuite_utils::{CommandExecutor, CommandRequest, LanguageId, ProcessMode, PuzzleYear};
 
-    use super::{run_background_effect, run_foreground_effect, worker_loop};
-    use crate::app::{
-        Action, BackgroundEffect, ForegroundEffect, LanguageFileKind, PreparedLanguageFile,
+    use super::{
+        config_mutation_failure_message, run_background_effect, run_foreground_effect, worker_loop,
+        ConfigMutationFailure,
     };
+    use crate::app::{
+        Action, BackgroundEffect, ConfigMutation, ForegroundEffect, LanguageFileKind,
+        NonSecretConfigField, PreparedLanguageFile, SecretString,
+    };
+
+    struct PanicExecutor;
+
+    impl CommandExecutor for PanicExecutor {
+        fn execute(&self, _: &CommandRequest) -> io::Result<Output> {
+            panic!("this effect must not run a process");
+        }
+    }
 
     #[test]
     fn shutdown_abandons_effects_queued_after_active_work() {
@@ -357,14 +494,6 @@ mod tests {
 
     #[test]
     fn language_list_effect_does_not_initialize_an_absent_project() {
-        struct PanicExecutor;
-
-        impl CommandExecutor for PanicExecutor {
-            fn execute(&self, _: &CommandRequest) -> io::Result<Output> {
-                panic!("an absent project must not run a process");
-            }
-        }
-
         let root = std::env::temp_dir().join(format!(
             "aocsuite-tui-language-list-{}-{}",
             std::process::id(),
@@ -438,6 +567,198 @@ mod tests {
         assert_eq!(requests[0].mode, ProcessMode::Foreground);
     }
 
+    #[test]
+    fn config_load_is_non_mutating_and_uses_effective_defaults() {
+        let root = test_root("config-load");
+        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
+
+        let action = run_background_effect(
+            &layout,
+            BackgroundEffect::LoadConfig {
+                latest_year: PuzzleYear::new(2026).unwrap(),
+            },
+            &PanicExecutor,
+        );
+
+        match action {
+            Action::ConfigLoaded { result: Ok(config) } => {
+                assert_eq!(config.year, "2026");
+                assert_eq!(config.run_history_limit, "10");
+                assert!(!config.session_configured);
+            }
+            action => panic!("unexpected action: {action:?}"),
+        }
+        assert!(!layout.config_dir().exists());
+        fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn config_mutation_preserves_other_explicit_settings() {
+        let root = test_root("config-mutation");
+        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
+        fs::create_dir_all(layout.config_dir()).unwrap();
+        let mut config = Configuration::load(layout.config_dir()).unwrap();
+        config.set(ConfigKey::Language, Some("python")).unwrap();
+
+        let action = run_background_effect(
+            &layout,
+            BackgroundEffect::MutateConfig {
+                latest_year: PuzzleYear::new(2026).unwrap(),
+                mutation: ConfigMutation::Set {
+                    field: NonSecretConfigField::Year,
+                    value: Some("2025".to_owned()),
+                },
+            },
+            &PanicExecutor,
+        );
+
+        assert!(matches!(action, Action::ConfigSaved { result: Ok(_) }));
+        let config = Configuration::load(layout.config_dir()).unwrap();
+        assert_eq!(
+            config.get::<LanguageId>(ConfigKey::Language).unwrap(),
+            LanguageId::Python
+        );
+        assert_eq!(
+            config.get::<PuzzleYear>(ConfigKey::Year).unwrap(),
+            PuzzleYear::new(2025).unwrap()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn blank_config_mutations_restore_effective_defaults() {
+        let root = test_root("config-reset");
+        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
+        fs::create_dir_all(layout.config_dir()).unwrap();
+        let mut config = Configuration::load(layout.config_dir()).unwrap();
+        config.set(ConfigKey::Year, Some("2025")).unwrap();
+        config.set(ConfigKey::Editor, Some("vim")).unwrap();
+        config.set(ConfigKey::RunHistoryLimit, Some("7")).unwrap();
+
+        let mut last = None;
+        for field in [
+            NonSecretConfigField::Year,
+            NonSecretConfigField::Editor,
+            NonSecretConfigField::RunHistoryLimit,
+        ] {
+            last = Some(run_background_effect(
+                &layout,
+                BackgroundEffect::MutateConfig {
+                    latest_year: PuzzleYear::new(2026).unwrap(),
+                    mutation: ConfigMutation::Set { field, value: None },
+                },
+                &PanicExecutor,
+            ));
+        }
+
+        assert!(matches!(
+            last,
+            Some(Action::ConfigSaved {
+                result: Ok(crate::app::ConfigData {
+                    ref year,
+                    ref run_history_limit,
+                    ..
+                })
+            }) if year == "2026" && run_history_limit == "10"
+        ));
+        let persisted = fs::read_to_string(layout.config_dir().join("config.json")).unwrap();
+        assert!(!persisted.contains("\"year\""));
+        assert!(!persisted.contains("\"editor\""));
+        assert!(!persisted.contains("\"run_history_limit\""));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn session_mutations_return_only_configured_status() {
+        let root = test_root("config-session");
+        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
+        fs::create_dir_all(layout.config_dir()).unwrap();
+        let sensitive = "sensitive-value";
+
+        let saved = run_background_effect(
+            &layout,
+            BackgroundEffect::MutateConfig {
+                latest_year: PuzzleYear::new(2026).unwrap(),
+                mutation: ConfigMutation::SetSession(SecretString::new(sensitive.to_owned())),
+            },
+            &PanicExecutor,
+        );
+        assert!(!format!("{saved:?}").contains(sensitive));
+        assert!(matches!(
+            saved,
+            Action::ConfigSaved {
+                result: Ok(crate::app::ConfigData {
+                    session_configured: true,
+                    ..
+                })
+            }
+        ));
+
+        let removed = run_background_effect(
+            &layout,
+            BackgroundEffect::MutateConfig {
+                latest_year: PuzzleYear::new(2026).unwrap(),
+                mutation: ConfigMutation::RemoveSession,
+            },
+            &PanicExecutor,
+        );
+        assert!(matches!(
+            removed,
+            Action::ConfigSaved {
+                result: Ok(crate::app::ConfigData {
+                    session_configured: false,
+                    ..
+                })
+            }
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn config_mutation_failures_identify_phase_and_path() {
+        let root = test_root("config-errors");
+        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
+        let target = layout.config_dir().join("session");
+        let error = || {
+            crate::TuiError::Io(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "permission denied",
+            ))
+        };
+
+        let load = config_mutation_failure_message(
+            &layout,
+            "remove the session",
+            &target,
+            ConfigMutationFailure::Load(error()),
+        );
+        assert!(load.contains(
+            &layout
+                .config_dir()
+                .join("config.json")
+                .display()
+                .to_string()
+        ));
+
+        let write = config_mutation_failure_message(
+            &layout,
+            "remove the session",
+            &target,
+            ConfigMutationFailure::Write(error()),
+        );
+        assert!(write.contains(&target.display().to_string()));
+
+        let reload = config_mutation_failure_message(
+            &layout,
+            "remove the session",
+            &target,
+            ConfigMutationFailure::Reload(error()),
+        );
+        assert!(reload.contains("Saved the configuration"));
+        assert!(reload.contains(&layout.config_dir().display().to_string()));
+        fs::remove_dir(root).unwrap();
+    }
+
     #[cfg(unix)]
     fn successful_status() -> ExitStatus {
         use std::os::unix::process::ExitStatusExt;
@@ -451,4 +772,14 @@ mod tests {
     }
 
     static TEST_ROOT: AtomicUsize = AtomicUsize::new(0);
+
+    fn test_root(label: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "aocsuite-tui-{label}-{}-{}",
+            std::process::id(),
+            TEST_ROOT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root).unwrap();
+        root
+    }
 }

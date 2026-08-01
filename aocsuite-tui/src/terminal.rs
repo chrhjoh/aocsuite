@@ -61,6 +61,7 @@ impl TerminalSession {
             return Err(error);
         }
         self.terminal.clear()?;
+        self.terminal.hide_cursor()?;
         self.active = true;
         Ok(())
     }
