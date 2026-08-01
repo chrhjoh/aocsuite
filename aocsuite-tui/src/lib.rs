@@ -165,8 +165,8 @@ fn action_for_key(key: KeyEvent) -> Option<Action> {
         (KeyCode::Right, KeyModifiers::CONTROL) => Some(Action::ScrollCalendarRight),
         (KeyCode::Left, _) => Some(Action::PreviousYear),
         (KeyCode::Right, _) => Some(Action::NextYear),
-        (KeyCode::Up, _) => Some(Action::PreviousDay),
-        (KeyCode::Down, _) => Some(Action::NextDay),
+        (KeyCode::Up, _) => Some(Action::PreviousCalendarPuzzle),
+        (KeyCode::Down, _) => Some(Action::NextCalendarPuzzle),
         (KeyCode::Char('d'), _) => Some(Action::DownloadDescription),
         (KeyCode::Char('r'), _) => Some(Action::RefreshCalendar),
         (KeyCode::Char('b'), _) => Some(Action::OpenBrowser),
@@ -192,6 +192,10 @@ mod tests {
         assert!(matches!(
             action_for_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
             Some(Action::PreviousTab)
+        ));
+        assert!(matches!(
+            action_for_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
+            Some(Action::NextCalendarPuzzle)
         ));
     }
 }

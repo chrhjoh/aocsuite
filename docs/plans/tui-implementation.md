@@ -19,7 +19,7 @@ Implemented in the first slice:
 - pure tab and calendar state reduction;
 - serialized background calendar and puzzle-description effects;
 - cache-first puzzle descriptions and safe calendar refresh;
-- released-year and day navigation;
+- released-year and visual calendar-puzzle navigation;
 - calendar completion rendering, cached Markdown preview, and explicit redownload;
 - foreground browser and exercise-editor handoff;
 - deterministic reducer and `ratatui::TestBackend` render tests.
@@ -50,16 +50,29 @@ release.
 - Allow navigation from 2015 through the latest released AoC year.
 - Render the parsed AoC calendar as a selectable grid while preserving its
   semantic colors.
+- Navigate puzzle links in their parsed visual order: rows from top to bottom
+  and cells from left to right. Skip rows without puzzle links, treat repeated
+  cells from a multi-line puzzle link as one target, and do not wrap at the
+  first or last puzzle.
+- Select the first puzzle in visual order after the initial or a year-changing
+  calendar load. A calendar refresh preserves the selected puzzle when it is
+  still present and otherwise selects the first puzzle.
+- Puzzle navigation moves the selection without moving the calendar viewport.
+  Keep Ctrl+arrow manual scrolling available when the terminal is too short or
+  narrow to show the full calendar at once.
+- Highlight only the final visual row of the selected puzzle link so a
+  multi-line entry has one selection line.
 - Show selected-year completion using AoC calendar stars:
   - earned stars out of the year's available total;
   - completed days.
 - Use a split layout with the calendar and completion summary on the left and a
   puzzle-detail panel on the right.
 
-Startup and calendar navigation automatically load valid cached puzzle Markdown
-without triggering puzzle-description HTTP requests. Changing the highlighted
-day clears the detail panel while that cache lookup runs so that a previously
-loaded description cannot be mistaken for the new selection.
+After the calendar establishes its initial selection, calendar navigation
+automatically loads valid cached puzzle Markdown without triggering
+puzzle-description HTTP requests. Changing the highlighted puzzle clears the
+detail panel while that cache lookup runs so that a previously loaded
+description cannot be mistaken for the new selection.
 
 ### Puzzle descriptions
 

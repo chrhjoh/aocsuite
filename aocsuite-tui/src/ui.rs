@@ -94,16 +94,27 @@ fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let body = match &app.calendar {
         Some(calendar) => {
             let (stars, total, completed) = completion(calendar);
+            let selected_puzzle = app.selected_puzzle();
+            let selected_row = selected_puzzle.and_then(|puzzle| {
+                calendar
+                    .rows
+                    .iter()
+                    .rposition(|row| row.cells.iter().any(|cell| cell.puzzle == Some(puzzle)))
+            });
+            let selection = selected_puzzle.map_or_else(
+                || "no puzzle selected".to_owned(),
+                |puzzle| format!("selected {puzzle}"),
+            );
             let mut lines = vec![Line::from(vec![
                 Span::styled(
                     format!("{stars}/{total} stars"),
                     Style::default().fg(Color::Yellow),
                 ),
                 Span::raw(format!("  {completed} completed days")),
-                Span::raw(format!("  selected day {}", app.selected_day)),
+                Span::raw(format!("  {selection}")),
             ])];
             lines.push(Line::default());
-            lines.extend(calendar.rows.iter().map(|row| {
+            lines.extend(calendar.rows.iter().enumerate().map(|(row_index, row)| {
                 Line::from(
                     row.cells
                         .iter()
@@ -113,7 +124,7 @@ fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
                                 cell.color.green,
                                 cell.color.blue,
                             ));
-                            if cell.puzzle == Some(app.selected_puzzle()) {
+                            if selected_row == Some(row_index) && cell.puzzle == selected_puzzle {
                                 style = style.bg(Color::DarkGray).add_modifier(Modifier::BOLD);
                             }
                             Span::styled(cell.text.clone(), style)
@@ -135,7 +146,15 @@ fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
 }
 
 fn render_description(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let puzzle = app.selected_puzzle();
+    let Some(puzzle) = app.selected_puzzle() else {
+        frame.render_widget(
+            Paragraph::new("No calendar puzzle is selected.")
+                .block(Block::default().borders(Borders::ALL).title(" Puzzle "))
+                .wrap(Wrap { trim: false }),
+            area,
+        );
+        return;
+    };
     let downloading = app.description_downloading(puzzle);
     let (title, text) = match &app.description {
         DescriptionState::Empty if downloading => (
@@ -229,18 +248,34 @@ fn completion(calendar: &Calendar) -> (usize, usize, usize) {
 mod tests {
     use aocsuite_parser::{Calendar, CalendarCell, CalendarRow, Rgb};
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{backend::TestBackend, style::Color, Terminal};
 
     use crate::app::{Action, App, Tab};
 
     use super::render;
 
     fn app() -> App {
-        App::new(
-            None,
-            PuzzleId::new(PuzzleDay::new(10).unwrap(), PuzzleYear::new(2026).unwrap()),
-            LanguageId::Rust,
-        )
+        let puzzle = PuzzleId::new(PuzzleDay::new(10).unwrap(), PuzzleYear::new(2026).unwrap());
+        let mut app = App::new(None, puzzle, LanguageId::Rust);
+        app.update(Action::CalendarFinished {
+            year: puzzle.year,
+            refresh: false,
+            result: Ok(Calendar {
+                rows: vec![CalendarRow {
+                    cells: vec![CalendarCell {
+                        text: puzzle.to_string(),
+                        color: Rgb {
+                            red: 255,
+                            green: 255,
+                            blue: 255,
+                        },
+                        stars: None,
+                        puzzle: Some(puzzle),
+                    }],
+                }],
+            }),
+        });
+        app
     }
 
     #[test]
@@ -261,7 +296,7 @@ mod tests {
         let backend = TestBackend::new(100, 28);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = app();
-        let puzzle = app.selected_puzzle();
+        let puzzle = app.selected_puzzle().unwrap();
         app.update(Action::CachedDescriptionFinished {
             puzzle,
             result: Ok(Some("existing preview".to_owned())),
@@ -325,6 +360,62 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains("calendar-row-14"), "{rendered}");
+    }
+
+    #[test]
+    fn selected_multiline_puzzle_highlights_only_its_final_row() {
+        let backend = TestBackend::new(100, 28);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        let selected = PuzzleId::new(PuzzleDay::new(8).unwrap(), PuzzleYear::new(2026).unwrap());
+        let other = PuzzleId::new(PuzzleDay::new(10).unwrap(), PuzzleYear::new(2026).unwrap());
+        app.update(Action::CalendarFinished {
+            year: other.year,
+            refresh: false,
+            result: Ok(Calendar {
+                rows: vec![
+                    calendar_row("D", None),
+                    calendar_row("@", Some(selected)),
+                    calendar_row("#", Some(selected)),
+                    calendar_row("&", Some(other)),
+                ],
+            }),
+        });
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_ne!(symbol_background(buffer, "@"), Some(Color::DarkGray));
+        assert_eq!(symbol_background(buffer, "#"), Some(Color::DarkGray));
+        assert_ne!(symbol_background(buffer, "&"), Some(Color::DarkGray));
+    }
+
+    fn calendar_row(text: &str, puzzle: Option<PuzzleId>) -> CalendarRow {
+        CalendarRow {
+            cells: vec![CalendarCell {
+                text: text.to_owned(),
+                color: Rgb {
+                    red: 255,
+                    green: 255,
+                    blue: 255,
+                },
+                stars: None,
+                puzzle,
+            }],
+        }
+    }
+
+    fn symbol_background(buffer: &ratatui::buffer::Buffer, symbol: &str) -> Option<Color> {
+        let area = buffer.area;
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                let cell = &buffer[(x, y)];
+                if cell.symbol() == symbol {
+                    return Some(cell.bg);
+                }
+            }
+        }
+        None
     }
 
     fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
