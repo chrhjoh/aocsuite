@@ -26,6 +26,11 @@ pub enum ConfirmedTemplateReset {
     Confirmed,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ConfirmedLibraryRemoval {
+    Confirmed,
+}
+
 pub struct Language<'workspace, 'executor> {
     language_type: LanguageId,
     project_dir: PathBuf,
@@ -109,7 +114,12 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
 
     pub fn ensure_lib_path(&self, lib_name: &str) -> AocLanguageResult<PathBuf> {
         let lib_path = self.lib_path(lib_name)?;
-        std::fs::create_dir_all(lib_path.parent().expect("library path is not root"))?;
+        let parent = lib_path.parent().expect("library path is not root");
+        std::fs::create_dir_all(parent).map_err(|source| AocLanguageError::LibraryIo {
+            operation: "create the parent directory for",
+            path: parent.to_path_buf(),
+            source,
+        })?;
         Ok(lib_path)
     }
 
@@ -128,12 +138,21 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
         Ok(lib_path)
     }
 
-    pub fn remove_lib_file(&self, lib_name: &str) -> AocLanguageResult<()> {
+    pub fn remove_lib_file(
+        &self,
+        lib_name: &str,
+        _: ConfirmedLibraryRemoval,
+    ) -> AocLanguageResult<()> {
         let lib_path = self.lib_path(lib_name)?;
-        if lib_path.exists() {
-            std::fs::remove_file(lib_path)?;
+        match std::fs::remove_file(&lib_path) {
+            Ok(()) => Ok(()),
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(source) => Err(AocLanguageError::LibraryIo {
+                operation: "remove",
+                path: lib_path,
+                source,
+            }),
         }
-        Ok(())
     }
 
     pub fn name(&self) -> String {
@@ -240,10 +259,20 @@ fn scan_lib_directory(dir: &Path, file_extention: &str) -> crate::AocLanguageRes
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(lib_files),
-        Err(error) => return Err(error.into()),
+        Err(source) => {
+            return Err(AocLanguageError::LibraryIo {
+                operation: "read",
+                path: dir.to_path_buf(),
+                source,
+            });
+        }
     };
     for entry in entries {
-        let entry = entry?;
+        let entry = entry.map_err(|source| AocLanguageError::LibraryIo {
+            operation: "read an entry from",
+            path: dir.to_path_buf(),
+            source,
+        })?;
         let path = entry.path();
         if path.is_file() {
             if let Some(file_name) = path.file_stem() {
@@ -269,7 +298,10 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{ensure_no_case_collision, validate_user_lib, ConfirmedTemplateReset, Language};
+    use super::{
+        ensure_no_case_collision, validate_user_lib, ConfirmedLibraryRemoval,
+        ConfirmedTemplateReset, Language,
+    };
     use crate::{
         python::PythonRunner,
         rust::RustRunner,
@@ -362,9 +394,6 @@ mod tests {
             language.list_lib_files().expect("list libraries"),
             Vec::<String>::new()
         );
-        language
-            .remove_lib_file("helpers")
-            .expect("remove absent library");
         assert!(!expected.parent().expect("library parent").exists());
 
         assert_eq!(
@@ -376,6 +405,45 @@ mod tests {
         assert!(expected.parent().expect("library parent").is_dir());
 
         fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn confirmed_library_removal_deletes_validated_target() {
+        let root = test_root("library-removal");
+        let workspace = Workspace::new(root.join("workspace"));
+        let language = Language::new(LanguageId::Rust, &workspace, &SYSTEM_EXECUTOR);
+        let target = language
+            .ensure_lib_path("helpers")
+            .expect("ensure target library path");
+        let preserved = language
+            .ensure_lib_path("preserved")
+            .expect("ensure preserved library path");
+        fs::write(&target, "target").expect("write target library");
+        fs::write(&preserved, "preserved").expect("write preserved library");
+
+        language
+            .remove_lib_file("helpers", ConfirmedLibraryRemoval::Confirmed)
+            .expect("remove confirmed library");
+
+        assert!(!target.exists());
+        assert!(preserved.is_file());
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn confirmed_absent_library_removal_is_idempotent() {
+        let root = test_root("absent-library-removal");
+        let workspace = Workspace::new(root.join("workspace"));
+        let language = Language::new(LanguageId::Rust, &workspace, &SYSTEM_EXECUTOR);
+        let expected = root.join("workspace/rust/src/helpers.rs");
+
+        for _ in 0..2 {
+            language
+                .remove_lib_file("helpers", ConfirmedLibraryRemoval::Confirmed)
+                .expect("remove absent library");
+        }
+
+        assert!(!expected.parent().expect("library parent").exists());
     }
 
     #[test]

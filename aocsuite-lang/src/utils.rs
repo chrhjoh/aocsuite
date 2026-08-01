@@ -225,6 +225,14 @@ pub enum AocLanguageError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("could not {operation} library path '{}': {source}", path.display())]
+    LibraryIo {
+        operation: &'static str,
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error(transparent)]
     Workspace(#[from] WorkspaceError),
 
