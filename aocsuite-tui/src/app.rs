@@ -1,7 +1,7 @@
 use std::{collections::HashSet, path::PathBuf};
 
 use aocsuite_parser::Calendar;
-use aocsuite_utils::{LanguageId, PuzzleId, PuzzleYear};
+use aocsuite_utils::{LanguageId, PuzzleId, PuzzleYear, RunHistoryLimit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -116,6 +116,148 @@ pub struct PreparedLanguageFile {
     pub working_directory: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigField {
+    Year,
+    Editor,
+    RunHistoryLimit,
+    Session,
+}
+
+impl ConfigField {
+    pub const ALL: [Self; 4] = [
+        Self::Year,
+        Self::Editor,
+        Self::RunHistoryLimit,
+        Self::Session,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Year => "Default year",
+            Self::Editor => "Editor executable",
+            Self::RunHistoryLimit => "Run-history retention",
+            Self::Session => "Session",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NonSecretConfigField {
+    Year,
+    Editor,
+    RunHistoryLimit,
+}
+
+impl NonSecretConfigField {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Year => ConfigField::Year.label(),
+            Self::Editor => ConfigField::Editor.label(),
+            Self::RunHistoryLimit => ConfigField::RunHistoryLimit.label(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigData {
+    pub year: String,
+    pub editor: Option<String>,
+    pub run_history_limit: String,
+    pub session_configured: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigOperationState {
+    Idle,
+    Running(&'static str),
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SecretString(String);
+
+impl SecretString {
+    pub fn empty() -> Self {
+        Self(String::new())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    fn push(&mut self, character: char) {
+        self.0.push(character);
+    }
+
+    fn pop(&mut self) {
+        self.0.pop();
+    }
+
+    fn trimmed(mut self) -> Option<Self> {
+        let trimmed = self.0.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            self.0 = trimmed.to_owned();
+            Some(self)
+        }
+    }
+
+    pub(crate) fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for SecretString {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SecretString([REDACTED])")
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct SecretCharacter(pub(crate) char);
+
+impl std::fmt::Debug for SecretCharacter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SecretCharacter([REDACTED])")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigDialog {
+    Text {
+        field: NonSecretConfigField,
+        value: String,
+        error: Option<String>,
+    },
+    Session {
+        value: SecretString,
+        error: Option<String>,
+    },
+    ConfirmRemoveSession {
+        confirmed: bool,
+    },
+    Message {
+        message: String,
+        scroll: u16,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigMutation {
+    Set {
+        field: NonSecretConfigField,
+        value: Option<String>,
+    },
+    SetSession(SecretString),
+    RemoveSession,
+}
+
 pub struct App {
     pub active_tab: Tab,
     pub calendar: Option<Calendar>,
@@ -138,6 +280,13 @@ pub struct App {
     pub language_dialog: Option<LanguageDialog>,
     language_loaded: bool,
     language_file_opening: Option<LanguageFileKind>,
+    pub config: Option<ConfigData>,
+    pub config_selection: usize,
+    pub config_operation: ConfigOperationState,
+    pub config_dialog: Option<ConfigDialog>,
+    pub help_open: bool,
+    pub help_scroll: u16,
+    quit_after_config_save: bool,
     pub status: Option<String>,
     pub should_quit: bool,
 }
@@ -167,6 +316,23 @@ pub enum Action {
     OpenLanguageItem,
     OpenTemplate,
     ResetTemplate,
+    RefreshConfig,
+    PreviousConfigField,
+    NextConfigField,
+    EditConfigField,
+    RemoveConfigValue,
+    ConfigInput(char),
+    ConfigSecretInput(SecretCharacter),
+    ConfigBackspace,
+    ConfigToggleConfirmation,
+    ConfigScrollMessageUp,
+    ConfigScrollMessageDown,
+    ConfigSubmit,
+    ConfigCancel,
+    OpenHelp,
+    CloseHelp,
+    ScrollHelpUp,
+    ScrollHelpDown,
     DialogInput(char),
     DialogBackspace,
     DialogToggleConfirmation,
@@ -209,6 +375,13 @@ pub enum Action {
         result: Result<PreparedLanguageFile, String>,
     },
     LanguageEffectFailed(String),
+    ConfigLoaded {
+        result: Result<ConfigData, String>,
+    },
+    ConfigSaved {
+        result: Result<ConfigData, String>,
+    },
+    ConfigEffectFailed(String),
     ForegroundFinished(Result<(), String>),
     EffectFailed(String),
 }
@@ -236,6 +409,13 @@ pub enum BackgroundEffect {
         language: LanguageId,
         kind: LanguageFileKind,
         reset: bool,
+    },
+    LoadConfig {
+        latest_year: PuzzleYear,
+    },
+    MutateConfig {
+        latest_year: PuzzleYear,
+        mutation: ConfigMutation,
     },
 }
 
@@ -294,6 +474,13 @@ impl App {
             language_dialog: None,
             language_loaded: false,
             language_file_opening: None,
+            config: None,
+            config_selection: 0,
+            config_operation: ConfigOperationState::Idle,
+            config_dialog: None,
+            help_open: false,
+            help_scroll: 0,
+            quit_after_config_save: false,
             status: None,
             should_quit: false,
         }
@@ -309,7 +496,21 @@ impl App {
 
     pub fn update(&mut self, action: Action) -> Vec<Effect> {
         match action {
+            Action::Quit if self.config_saving() => {
+                self.quit_after_config_save = true;
+                self.status = Some("Wait for the configuration save to finish".to_owned());
+            }
             Action::Quit => self.should_quit = true,
+            Action::OpenHelp => {
+                self.help_open = true;
+                self.help_scroll = 0;
+            }
+            Action::CloseHelp => {
+                self.help_open = false;
+                self.help_scroll = 0;
+            }
+            Action::ScrollHelpUp => self.help_scroll = self.help_scroll.saturating_sub(1),
+            Action::ScrollHelpDown => self.help_scroll = self.help_scroll.saturating_add(1),
             Action::NextTab => return self.select_tab(self.active_tab.next()),
             Action::PreviousTab => return self.select_tab(self.active_tab.previous()),
             Action::PreviousYear if self.active_tab == Tab::Calendar => {
@@ -478,6 +679,98 @@ impl App {
                     });
                 }
             }
+            Action::RefreshConfig if self.active_tab == Tab::Config => {
+                if !self.config_busy() {
+                    return self.load_config();
+                }
+            }
+            Action::PreviousConfigField
+                if self.active_tab == Tab::Config && self.config_dialog.is_none() =>
+            {
+                self.config_selection = self.config_selection.saturating_sub(1);
+            }
+            Action::NextConfigField
+                if self.active_tab == Tab::Config && self.config_dialog.is_none() =>
+            {
+                self.config_selection = (self.config_selection + 1).min(ConfigField::ALL.len() - 1);
+            }
+            Action::EditConfigField if self.active_tab == Tab::Config => {
+                if !self.config_busy() {
+                    self.open_config_editor();
+                }
+            }
+            Action::RemoveConfigValue if self.active_tab == Tab::Config => {
+                if !self.config_busy() && self.config.is_some() {
+                    match self.selected_config_field() {
+                        ConfigField::Year => {
+                            return self.save_config(ConfigMutation::Set {
+                                field: NonSecretConfigField::Year,
+                                value: None,
+                            });
+                        }
+                        ConfigField::Editor => {
+                            return self.save_config(ConfigMutation::Set {
+                                field: NonSecretConfigField::Editor,
+                                value: None,
+                            });
+                        }
+                        ConfigField::RunHistoryLimit => {
+                            return self.save_config(ConfigMutation::Set {
+                                field: NonSecretConfigField::RunHistoryLimit,
+                                value: None,
+                            });
+                        }
+                        ConfigField::Session
+                            if self
+                                .config
+                                .as_ref()
+                                .is_some_and(|config| config.session_configured) =>
+                        {
+                            self.config_dialog =
+                                Some(ConfigDialog::ConfirmRemoveSession { confirmed: false });
+                        }
+                        ConfigField::Session => {}
+                    }
+                }
+            }
+            Action::ConfigInput(character) => {
+                if let Some(ConfigDialog::Text { value, error, .. }) = &mut self.config_dialog {
+                    value.push(character);
+                    *error = None;
+                }
+            }
+            Action::ConfigSecretInput(character) => {
+                if let Some(ConfigDialog::Session { value, error }) = &mut self.config_dialog {
+                    value.push(character.0);
+                    *error = None;
+                }
+            }
+            Action::ConfigBackspace => match &mut self.config_dialog {
+                Some(ConfigDialog::Text { value, .. }) => {
+                    value.pop();
+                }
+                Some(ConfigDialog::Session { value, .. }) => value.pop(),
+                _ => {}
+            },
+            Action::ConfigToggleConfirmation => {
+                if let Some(ConfigDialog::ConfirmRemoveSession { confirmed }) =
+                    &mut self.config_dialog
+                {
+                    *confirmed = !*confirmed;
+                }
+            }
+            Action::ConfigScrollMessageUp => {
+                if let Some(ConfigDialog::Message { scroll, .. }) = &mut self.config_dialog {
+                    *scroll = scroll.saturating_sub(1);
+                }
+            }
+            Action::ConfigScrollMessageDown => {
+                if let Some(ConfigDialog::Message { scroll, .. }) = &mut self.config_dialog {
+                    *scroll = scroll.saturating_add(1);
+                }
+            }
+            Action::ConfigSubmit => return self.submit_config_dialog(),
+            Action::ConfigCancel => self.config_dialog = None,
             Action::DialogInput(character) => {
                 if let Some(LanguageDialog::Text { value, error, .. }) = &mut self.language_dialog {
                     value.push(character);
@@ -665,6 +958,35 @@ impl App {
                 self.language_file_opening = None;
                 self.show_language_error(message);
             }
+            Action::ConfigLoaded { result } => match result {
+                Ok(config) => {
+                    self.config = Some(config);
+                    self.config_operation = ConfigOperationState::Idle;
+                    self.config_dialog = None;
+                    self.status = None;
+                }
+                Err(message) => self.show_config_error(message),
+            },
+            Action::ConfigSaved { result } => match result {
+                Ok(config) => {
+                    self.config = Some(config);
+                    self.config_operation = ConfigOperationState::Idle;
+                    self.config_dialog = None;
+                    self.status = None;
+                    if self.quit_after_config_save {
+                        self.should_quit = true;
+                    }
+                    self.quit_after_config_save = false;
+                }
+                Err(message) => {
+                    self.quit_after_config_save = false;
+                    self.show_config_error(message);
+                }
+            },
+            Action::ConfigEffectFailed(message) => {
+                self.quit_after_config_save = false;
+                self.show_config_error(message);
+            }
             Action::ForegroundFinished(result) => {
                 if let Some(kind) = self.language_file_opening.take() {
                     match result {
@@ -707,10 +1029,154 @@ impl App {
 
     fn select_tab(&mut self, tab: Tab) -> Vec<Effect> {
         self.active_tab = tab;
+        if self.help_open {
+            self.help_scroll = 0;
+        }
         if tab == Tab::Language && !self.language_loaded && !self.language_busy() {
             return self.load_language_data();
         }
+        if tab == Tab::Config && self.config.is_none() && !self.config_busy() {
+            return self.load_config();
+        }
         Vec::new()
+    }
+
+    fn config_busy(&self) -> bool {
+        matches!(self.config_operation, ConfigOperationState::Running(_))
+    }
+
+    fn config_saving(&self) -> bool {
+        self.config_operation == ConfigOperationState::Running("saving...")
+    }
+
+    fn load_config(&mut self) -> Vec<Effect> {
+        self.config_operation = ConfigOperationState::Running("loading...");
+        vec![Effect::Background(BackgroundEffect::LoadConfig {
+            latest_year: self.latest_puzzle.year,
+        })]
+    }
+
+    fn selected_config_field(&self) -> ConfigField {
+        ConfigField::ALL[self.config_selection]
+    }
+
+    fn open_config_editor(&mut self) {
+        if self.config.is_none() {
+            return;
+        }
+        let field = self.selected_config_field();
+        self.config_dialog = Some(match field {
+            ConfigField::Year => ConfigDialog::Text {
+                field: NonSecretConfigField::Year,
+                value: String::new(),
+                error: None,
+            },
+            ConfigField::Editor => ConfigDialog::Text {
+                field: NonSecretConfigField::Editor,
+                value: String::new(),
+                error: None,
+            },
+            ConfigField::RunHistoryLimit => ConfigDialog::Text {
+                field: NonSecretConfigField::RunHistoryLimit,
+                value: String::new(),
+                error: None,
+            },
+            ConfigField::Session => ConfigDialog::Session {
+                value: SecretString::empty(),
+                error: None,
+            },
+        });
+    }
+
+    fn submit_config_dialog(&mut self) -> Vec<Effect> {
+        let Some(dialog) = self.config_dialog.take() else {
+            return Vec::new();
+        };
+        match dialog {
+            ConfigDialog::Text {
+                field,
+                value,
+                error: _,
+            } => {
+                let value = value.trim().to_owned();
+                let mutation = match field {
+                    NonSecretConfigField::Year if value.is_empty() => {
+                        ConfigMutation::Set { field, value: None }
+                    }
+                    NonSecretConfigField::Year => match value.parse::<PuzzleYear>() {
+                        Ok(year) if year <= self.latest_puzzle.year => ConfigMutation::Set {
+                            field,
+                            value: Some(year.to_string()),
+                        },
+                        _ => {
+                            self.config_dialog = Some(ConfigDialog::Text {
+                                field,
+                                value,
+                                error: Some(format!(
+                                    "Enter a released year from {} through {}",
+                                    PuzzleYear::MIN,
+                                    self.latest_puzzle.year
+                                )),
+                            });
+                            return Vec::new();
+                        }
+                    },
+                    NonSecretConfigField::Editor => ConfigMutation::Set {
+                        field,
+                        value: (!value.is_empty()).then_some(value),
+                    },
+                    NonSecretConfigField::RunHistoryLimit if value.is_empty() => {
+                        ConfigMutation::Set { field, value: None }
+                    }
+                    NonSecretConfigField::RunHistoryLimit => {
+                        if value.parse::<RunHistoryLimit>().is_err() {
+                            self.config_dialog = Some(ConfigDialog::Text {
+                                field,
+                                value,
+                                error: Some("Enter a positive integer".to_owned()),
+                            });
+                            return Vec::new();
+                        }
+                        ConfigMutation::Set {
+                            field,
+                            value: Some(value),
+                        }
+                    }
+                };
+                self.save_config(mutation)
+            }
+            ConfigDialog::Session { value, error: _ } => {
+                let Some(value) = value.trimmed() else {
+                    self.config_dialog = Some(ConfigDialog::Session {
+                        value: SecretString::empty(),
+                        error: Some("Session cannot be empty".to_owned()),
+                    });
+                    return Vec::new();
+                };
+                self.save_config(ConfigMutation::SetSession(value))
+            }
+            ConfigDialog::ConfirmRemoveSession { confirmed } => {
+                if confirmed {
+                    self.save_config(ConfigMutation::RemoveSession)
+                } else {
+                    Vec::new()
+                }
+            }
+            ConfigDialog::Message { .. } => Vec::new(),
+        }
+    }
+
+    fn save_config(&mut self, mutation: ConfigMutation) -> Vec<Effect> {
+        self.config_operation = ConfigOperationState::Running("saving...");
+        vec![Effect::Background(BackgroundEffect::MutateConfig {
+            latest_year: self.latest_puzzle.year,
+            mutation,
+        })]
+    }
+
+    fn show_config_error(&mut self, message: String) {
+        self.config_operation = ConfigOperationState::Idle;
+        self.config_dialog = Some(ConfigDialog::Message { message, scroll: 0 });
     }
 
     fn language_busy(&self) -> bool {
@@ -971,9 +1437,10 @@ mod tests {
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
 
     use super::{
-        Action, App, BackgroundEffect, DescriptionState, Effect, ForegroundEffect, LanguageData,
+        Action, App, BackgroundEffect, ConfigData, ConfigDialog, ConfigField, ConfigMutation,
+        ConfigOperationState, DescriptionState, Effect, ForegroundEffect, LanguageData,
         LanguageDialog, LanguageFileKind, LanguageMutation, LanguageOperationState,
-        PreparedExercise,
+        NonSecretConfigField, PreparedExercise,
     };
 
     fn puzzle(day: u32, year: i32) -> PuzzleId {
@@ -995,6 +1462,20 @@ mod tests {
             result: Ok(LanguageData {
                 packages: vec!["anyhow".to_owned()],
                 libraries: vec!["grid".to_owned()],
+            }),
+        });
+        app
+    }
+
+    fn config_app(session_configured: bool) -> App {
+        let mut app = app();
+        app.update(Action::PreviousTab);
+        app.update(Action::ConfigLoaded {
+            result: Ok(ConfigData {
+                year: "2026".to_owned(),
+                editor: Some("vim".to_owned()),
+                run_history_limit: "10".to_owned(),
+                session_configured,
             }),
         });
         app
@@ -1711,6 +2192,278 @@ mod tests {
                 packages: None,
                 libraries: Some("loading...".to_owned()),
             }
+        );
+    }
+
+    #[test]
+    fn entering_config_loads_fields_lazily() {
+        let mut app = app();
+
+        assert_eq!(
+            app.update(Action::PreviousTab),
+            vec![Effect::Background(BackgroundEffect::LoadConfig {
+                latest_year: PuzzleYear::new(2026).unwrap(),
+            })]
+        );
+        assert_eq!(app.active_tab, super::Tab::Config);
+        assert_eq!(
+            app.config_operation,
+            ConfigOperationState::Running("loading...")
+        );
+        assert_eq!(ConfigField::ALL.len(), 4);
+        assert!(!ConfigField::ALL
+            .iter()
+            .any(|field| field.label().contains("Language")));
+    }
+
+    #[test]
+    fn config_editors_start_with_an_empty_input() {
+        for selection in 0..ConfigField::ALL.len() {
+            let mut app = config_app(false);
+            app.config_selection = selection;
+
+            app.update(Action::EditConfigField);
+
+            match app.config_dialog {
+                Some(ConfigDialog::Text { value, .. }) => assert!(value.is_empty()),
+                Some(ConfigDialog::Session { value, .. }) => assert!(value.is_empty()),
+                dialog => panic!("unexpected config dialog: {dialog:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn config_year_is_released_and_does_not_move_the_calendar() {
+        let mut app = config_app(false);
+        let selected_year = app.selected_year;
+        app.config_dialog = Some(ConfigDialog::Text {
+            field: NonSecretConfigField::Year,
+            value: "2027".to_owned(),
+            error: None,
+        });
+
+        assert!(app.update(Action::ConfigSubmit).is_empty());
+        assert!(matches!(
+            app.config_dialog,
+            Some(ConfigDialog::Text { error: Some(_), .. })
+        ));
+
+        app.config_dialog = Some(ConfigDialog::Text {
+            field: NonSecretConfigField::Year,
+            value: "2025".to_owned(),
+            error: None,
+        });
+        assert_eq!(
+            app.update(Action::ConfigSubmit),
+            vec![Effect::Background(BackgroundEffect::MutateConfig {
+                latest_year: PuzzleYear::new(2026).unwrap(),
+                mutation: ConfigMutation::Set {
+                    field: NonSecretConfigField::Year,
+                    value: Some("2025".to_owned()),
+                },
+            })]
+        );
+        assert_eq!(app.selected_year, selected_year);
+    }
+
+    #[test]
+    fn blank_non_secret_config_values_reset_the_override() {
+        let mut app = config_app(false);
+        app.config_dialog = Some(ConfigDialog::Text {
+            field: NonSecretConfigField::Year,
+            value: String::new(),
+            error: None,
+        });
+
+        assert_eq!(
+            app.update(Action::ConfigSubmit),
+            vec![Effect::Background(BackgroundEffect::MutateConfig {
+                latest_year: PuzzleYear::new(2026).unwrap(),
+                mutation: ConfigMutation::Set {
+                    field: NonSecretConfigField::Year,
+                    value: None,
+                },
+            })]
+        );
+    }
+
+    #[test]
+    fn reset_key_resets_each_non_secret_config_field() {
+        for (selection, field) in [
+            (0, NonSecretConfigField::Year),
+            (1, NonSecretConfigField::Editor),
+            (2, NonSecretConfigField::RunHistoryLimit),
+        ] {
+            let mut app = config_app(false);
+            app.config_selection = selection;
+
+            assert_eq!(
+                app.update(Action::RemoveConfigValue),
+                vec![Effect::Background(BackgroundEffect::MutateConfig {
+                    latest_year: PuzzleYear::new(2026).unwrap(),
+                    mutation: ConfigMutation::Set { field, value: None },
+                })]
+            );
+        }
+    }
+
+    #[test]
+    fn config_editor_and_run_history_use_domain_validation() {
+        let mut app = config_app(false);
+        app.config_dialog = Some(ConfigDialog::Text {
+            field: NonSecretConfigField::RunHistoryLimit,
+            value: "0".to_owned(),
+            error: None,
+        });
+        assert!(app.update(Action::ConfigSubmit).is_empty());
+        assert!(matches!(
+            app.config_dialog,
+            Some(ConfigDialog::Text { error: Some(_), .. })
+        ));
+
+        app.config_dialog = Some(ConfigDialog::Text {
+            field: NonSecretConfigField::Editor,
+            value: "  code --wait  ".to_owned(),
+            error: None,
+        });
+        assert!(matches!(
+            app.update(Action::ConfigSubmit).as_slice(),
+            [Effect::Background(BackgroundEffect::MutateConfig {
+                mutation: ConfigMutation::Set {
+                    field: NonSecretConfigField::Editor,
+                    value: Some(value),
+                },
+                ..
+            })] if value == "code --wait"
+        ));
+    }
+
+    #[test]
+    fn session_input_is_redacted_and_blank_input_is_rejected() {
+        let mut app = config_app(false);
+        app.config_selection = 3;
+        app.update(Action::EditConfigField);
+        assert!(matches!(
+            app.config_dialog,
+            Some(ConfigDialog::Session { .. })
+        ));
+
+        assert!(app.update(Action::ConfigSubmit).is_empty());
+        assert!(matches!(
+            app.config_dialog,
+            Some(ConfigDialog::Session { error: Some(_), .. })
+        ));
+
+        for character in "sensitive-value".chars() {
+            app.update(Action::ConfigSecretInput(super::SecretCharacter(character)));
+        }
+        let debug = format!("{:?}", app.config_dialog);
+        assert!(!debug.contains("sensitive-value"));
+        let effects = app.update(Action::ConfigSubmit);
+        assert_eq!(effects.len(), 1);
+        assert!(!format!("{effects:?}").contains("sensitive-value"));
+        assert!(matches!(
+            &effects[0],
+            Effect::Background(BackgroundEffect::MutateConfig {
+                mutation: ConfigMutation::SetSession(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn session_removal_confirmation_defaults_to_cancel() {
+        let mut app = config_app(true);
+        app.config_selection = 3;
+        app.update(Action::RemoveConfigValue);
+        assert_eq!(
+            app.config_dialog,
+            Some(ConfigDialog::ConfirmRemoveSession { confirmed: false })
+        );
+        assert!(app.update(Action::ConfigSubmit).is_empty());
+
+        app.update(Action::RemoveConfigValue);
+        app.update(Action::ConfigToggleConfirmation);
+        assert!(matches!(
+            app.update(Action::ConfigSubmit).as_slice(),
+            [Effect::Background(BackgroundEffect::MutateConfig {
+                mutation: ConfigMutation::RemoveSession,
+                ..
+            })]
+        ));
+    }
+
+    #[test]
+    fn config_failures_clear_progress_and_open_a_message() {
+        let mut app = app();
+        app.update(Action::PreviousTab);
+
+        app.update(Action::ConfigLoaded {
+            result: Err("config read failed".to_owned()),
+        });
+
+        assert_eq!(app.config_operation, ConfigOperationState::Idle);
+        assert_eq!(
+            app.config_dialog,
+            Some(ConfigDialog::Message {
+                message: "config read failed".to_owned(),
+                scroll: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn quit_waits_for_a_confirmed_config_save() {
+        let mut app = config_app(false);
+        app.config_dialog = Some(ConfigDialog::Text {
+            field: NonSecretConfigField::Editor,
+            value: "vim".to_owned(),
+            error: None,
+        });
+        app.update(Action::ConfigSubmit);
+
+        app.update(Action::Quit);
+        assert!(!app.should_quit);
+        assert_eq!(
+            app.status.as_deref(),
+            Some("Wait for the configuration save to finish")
+        );
+
+        app.update(Action::ConfigSaved {
+            result: Ok(ConfigData {
+                year: "2026".to_owned(),
+                editor: Some("vim".to_owned()),
+                run_history_limit: "10".to_owned(),
+                session_configured: false,
+            }),
+        });
+        assert!(app.should_quit);
+        assert!(app.status.is_none());
+    }
+
+    #[test]
+    fn failed_config_save_cancels_deferred_quit() {
+        let mut app = config_app(false);
+        app.config_dialog = Some(ConfigDialog::Text {
+            field: NonSecretConfigField::Editor,
+            value: "vim".to_owned(),
+            error: None,
+        });
+        app.update(Action::ConfigSubmit);
+        app.update(Action::Quit);
+
+        app.update(Action::ConfigSaved {
+            result: Err("save failed".to_owned()),
+        });
+
+        assert!(!app.should_quit);
+        assert!(!app.quit_after_config_save);
+        assert_eq!(
+            app.config_dialog,
+            Some(ConfigDialog::Message {
+                message: "save failed".to_owned(),
+                scroll: 0,
+            })
         );
     }
 }

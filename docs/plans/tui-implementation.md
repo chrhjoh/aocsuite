@@ -24,9 +24,11 @@ Implemented in the first slice:
 - foreground browser and exercise-editor handoff;
 - in-session language selection, package and library management, template
   editing and reset, and destructive confirmations;
+- independently saved Config fields and credential-safe session set, replace,
+  status, and confirmed removal flows;
 - deterministic reducer and `ratatui::TestBackend` render tests.
 
-The Config tab workflow remains pending.
+Final presentation review and user documentation remain pending.
 
 ## Initial scope
 
@@ -153,7 +155,17 @@ Manage the configuration values exposed by the TUI:
 - run-history retention limit;
 - session credential.
 
-Validate values before saving. TUI year input is restricted to released years.
+Save each field independently. Validate values before saving, make routine
+success implicit in the refreshed field value, and show failures in a
+dismissible dialog. TUI year input is restricted to released years and affects
+future startup without navigating the current Calendar tab. When no year is
+persisted, display the latest released year; blank input removes the override.
+
+Preserve exact editor executable text after trimming its outer whitespace, and
+use blank input to return to the configured fallback. Run-history retention must
+remain a positive integer; blank input returns to its effective default.
+Use `x` to reset any selected non-secret field; on the session field, `x`
+initiates the confirmed removal flow.
 
 The session credential requires special handling:
 
@@ -161,6 +173,7 @@ The session credential requires special handling:
 - never place the existing credential in UI state;
 - never render, log, snapshot, or include it in errors;
 - use a masked field when setting or replacing it;
+- require nonempty trimmed input without contacting Advent of Code;
 - require confirmation before removing it.
 
 After a session change, future content effects must construct services using the
@@ -239,7 +252,8 @@ Build Ratatui views for:
 - configuration fields;
 - modal text entry and confirmation dialogs;
 - loading and error status;
-- contextual keyboard help.
+- a hidden, tab-specific keyboard reference opened with `?` instead of
+  persistent key lists in the footer.
 
 Reserve global footer status for errors, warnings, and rejected actions that do
 not require acknowledgment. Routine lifecycle progress and success
