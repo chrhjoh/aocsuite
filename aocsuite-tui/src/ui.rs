@@ -7,12 +7,16 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs, Wrap,
+        Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs,
+        Wrap,
     },
     Frame,
 };
 
-use crate::app::{App, DescriptionState, Tab};
+use crate::app::{
+    App, DescriptionState, LanguageConfirmation, LanguageDialog, LanguageFocus,
+    LanguageOperationState, LanguageTextInput, Tab,
+};
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
     let root = Layout::default()
@@ -26,15 +30,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     render_tabs(frame, root[0], app);
     match app.active_tab {
         Tab::Calendar => render_calendar_tab(frame, root[1], app),
-        Tab::Language => render_placeholder(
-            frame,
-            root[1],
-            "Language",
-            &format!(
-                "Language management is the next implementation slice.\nCurrent language: {}",
-                app.language
-            ),
-        ),
+        Tab::Language => render_language_tab(frame, root[1], app),
         Tab::Config => render_placeholder(
             frame,
             root[1],
@@ -43,6 +39,9 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
         ),
     }
     render_footer(frame, root[2], app);
+    if let Some(dialog) = &app.language_dialog {
+        render_language_dialog(frame, dialog);
+    }
 }
 
 fn render_tabs(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -203,6 +202,233 @@ fn render_description(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
 }
 
+fn render_language_tab(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(4)])
+        .split(area);
+    let rust_style = if app.language == aocsuite_utils::LanguageId::Rust {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    let python_style = if app.language == aocsuite_utils::LanguageId::Python {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Rust", rust_style),
+            Span::raw(" | "),
+            Span::styled("Python", python_style),
+            Span::styled(
+                "   s switches for this session",
+                Style::default().fg(Color::Gray),
+            ),
+        ]))
+        .block(Block::default().borders(Borders::ALL).title(" Language ")),
+        sections[0],
+    );
+
+    let direction = if area.width >= 80 {
+        Direction::Horizontal
+    } else {
+        Direction::Vertical
+    };
+    let panes = Layout::default()
+        .direction(direction)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(sections[1]);
+    let (package_activity, library_activity) = match &app.language_operation {
+        LanguageOperationState::Idle => (None, None),
+        LanguageOperationState::Running {
+            packages,
+            libraries,
+        } => (packages.as_deref(), libraries.as_deref()),
+    };
+    render_language_list(
+        frame,
+        panes[0],
+        "Packages",
+        &app.language_packages,
+        app.language_package_selection,
+        app.language_focus == LanguageFocus::Packages,
+        package_activity,
+    );
+    render_language_list(
+        frame,
+        panes[1],
+        "Libraries",
+        &app.language_libraries,
+        app.language_library_selection,
+        app.language_focus == LanguageFocus::Libraries,
+        library_activity,
+    );
+}
+
+fn render_language_list(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    items: &[String],
+    selected: usize,
+    focused: bool,
+    activity: Option<&str>,
+) {
+    let title_style = if focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    let lines = if items.is_empty() {
+        vec![Line::styled("None", Style::default().fg(Color::DarkGray))]
+    } else {
+        items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| {
+                let is_selected = index == selected;
+                let style = if focused && is_selected {
+                    Style::default()
+                        .bg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                Line::styled(
+                    format!("{} {item}", if is_selected { ">" } else { " " }),
+                    style,
+                )
+            })
+            .collect()
+    };
+    let visible_rows = usize::from(area.height.saturating_sub(2));
+    let offset = selected
+        .saturating_add(1)
+        .saturating_sub(visible_rows)
+        .min(u16::MAX as usize) as u16;
+    frame.render_widget(
+        Paragraph::new(lines).scroll((offset, 0)).block(
+            Block::default().borders(Borders::ALL).title(Span::styled(
+                activity.map_or_else(
+                    || format!(" {title} "),
+                    |activity| format!(" {title} - {activity} "),
+                ),
+                title_style,
+            )),
+        ),
+        area,
+    );
+}
+
+fn render_language_dialog(frame: &mut Frame<'_>, dialog: &LanguageDialog) {
+    let area = centered_dialog(frame.area());
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    match dialog {
+        LanguageDialog::Text { kind, value, error } => {
+            let (title, prompt) = match kind {
+                LanguageTextInput::AddPackage => (" Add package ", "Package name"),
+                LanguageTextInput::Library => (" New library ", "Library name"),
+            };
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(prompt),
+                    Line::styled(value, Style::default().fg(Color::Yellow)),
+                    Line::styled(
+                        error.as_deref().unwrap_or_default(),
+                        Style::default().fg(Color::Red),
+                    ),
+                    Line::styled(
+                        "Enter accept | Esc cancel",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ])
+                .block(Block::default().borders(Borders::ALL).title(title)),
+                area,
+            );
+        }
+        LanguageDialog::Confirm { action, confirmed } => {
+            let (title, question, destructive) = match action {
+                LanguageConfirmation::RemovePackage(package) => (
+                    " Remove package ",
+                    format!("Remove package {package}?"),
+                    "Remove",
+                ),
+                LanguageConfirmation::RemoveLibrary(library) => (
+                    " Delete library ",
+                    format!("Delete library {library}?"),
+                    "Delete",
+                ),
+                LanguageConfirmation::ResetTemplate => (
+                    " Reset template ",
+                    "Replace the current template?".to_owned(),
+                    "Reset",
+                ),
+            };
+            let cancel_style = if *confirmed {
+                Style::default()
+            } else {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            };
+            let confirm_style = if *confirmed {
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(question),
+                    Line::default(),
+                    Line::from(vec![
+                        Span::styled("[ Cancel ]", cancel_style),
+                        Span::raw("   "),
+                        Span::styled(format!("[ {destructive} ]"), confirm_style),
+                    ]),
+                    Line::styled(
+                        "Left/Right choose | Enter accept | Esc cancel",
+                        Style::default().fg(Color::Gray),
+                    ),
+                ])
+                .block(Block::default().borders(Borders::ALL).title(title)),
+                area,
+            );
+        }
+        LanguageDialog::Message(message) => {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(message.as_str()),
+                    Line::default(),
+                    Line::styled("Enter/Esc dismiss", Style::default().fg(Color::Gray)),
+                ])
+                .wrap(Wrap { trim: false })
+                .block(Block::default().borders(Borders::ALL).title(" Error ")),
+                area,
+            );
+        }
+    }
+}
+
+fn centered_dialog(area: Rect) -> Rect {
+    let width = area.width.saturating_sub(4).min(64);
+    let height = area.height.saturating_sub(2).min(7);
+    Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    )
+}
+
 fn render_placeholder(frame: &mut Frame<'_>, area: Rect, title: &str, text: &str) {
     frame.render_widget(
         Paragraph::new(text)
@@ -222,7 +448,11 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
             "q quit | Tab tabs | arrows select | PgUp/PgDn description",
             Some("Ctrl+arrows pan | d download | r refresh | b browser | o open"),
         ),
-        _ => ("q quit | Tab/Shift-Tab switch", None),
+        Tab::Language => (
+            "q quit | Tab tabs | s language | arrows select | r refresh",
+            Some("a add package | x remove | n new library | o/Enter open | t/T template"),
+        ),
+        Tab::Config => ("q quit | Tab/Shift-Tab switch", None),
     };
     let text = match &app.status {
         Some(status) => format!("{help}\n{status}"),
@@ -267,7 +497,7 @@ mod tests {
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
     use ratatui::{backend::TestBackend, style::Color, Terminal};
 
-    use crate::app::{Action, App, Tab};
+    use crate::app::{Action, App, LanguageData, Tab};
 
     use super::render;
 
@@ -430,12 +660,102 @@ mod tests {
         app.update(Action::NextTab);
         assert_eq!(app.active_tab, Tab::Language);
         terminal.draw(|frame| render(frame, &app)).unwrap();
-        assert!(buffer_text(terminal.backend().buffer()).contains("next implementation slice"));
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Packages"));
+        assert!(rendered.contains("Libraries"));
+        assert!(rendered.contains("t/T template"));
 
         app.update(Action::NextTab);
         assert_eq!(app.active_tab, Tab::Config);
         terminal.draw(|frame| render(frame, &app)).unwrap();
         assert!(buffer_text(terminal.backend().buffer()).contains("Configuration management"));
+    }
+
+    #[test]
+    fn language_tab_renders_lists_and_cancel_default_confirmation() {
+        let backend = TestBackend::new(100, 28);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::NextTab);
+        app.update(Action::LanguageDataFinished {
+            language: LanguageId::Rust,
+            result: Ok(LanguageData {
+                packages: vec!["anyhow".to_owned()],
+                libraries: vec!["grid".to_owned()],
+            }),
+        });
+        app.update(Action::RemoveLanguageItem);
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("anyhow"));
+        assert!(rendered.contains("grid"));
+        assert!(rendered.contains("Remove package anyhow?"));
+        assert!(rendered.contains("[ Cancel ]"));
+        assert!(rendered.contains("[ Remove ]"));
+    }
+
+    #[test]
+    fn language_activity_uses_pane_borders_and_errors_use_a_popup() {
+        let backend = TestBackend::new(100, 28);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::NextTab);
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Packages - loading..."));
+        assert!(rendered.contains("Libraries - loading..."));
+        assert!(!rendered.contains("Result"));
+
+        app.update(Action::LanguageDataFinished {
+            language: LanguageId::Rust,
+            result: Err("package query failed".to_owned()),
+        });
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Error"));
+        assert!(rendered.contains("package query failed"));
+        assert!(rendered.contains("Enter/Esc dismiss"));
+    }
+
+    #[test]
+    fn language_tab_renders_in_a_narrow_terminal() {
+        let backend = TestBackend::new(60, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::NextTab);
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Rust"));
+        assert!(rendered.contains("Packages"));
+        assert!(rendered.contains("Libraries"));
+        assert!(!rendered.contains("Result"));
+    }
+
+    #[test]
+    fn language_lists_keep_the_selected_item_visible() {
+        let backend = TestBackend::new(60, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::NextTab);
+        app.update(Action::LanguageDataFinished {
+            language: LanguageId::Rust,
+            result: Ok(LanguageData {
+                packages: (0..20).map(|index| format!("package-{index:02}")).collect(),
+                libraries: vec![],
+            }),
+        });
+        app.language_package_selection = 19;
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("package-19"));
+        assert!(!rendered.contains("package-00"));
     }
 
     #[test]

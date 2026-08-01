@@ -8,7 +8,7 @@ use std::{
 
 use aocsuite_client::{AocClient, AocClientOptions, AocPage};
 use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
-use aocsuite_lang::{Language, SolverFile};
+use aocsuite_lang::{ConfirmedLibraryRemoval, ConfirmedTemplateReset, Language, SolverFile};
 use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
 use aocsuite_parser::parse_calendar;
 use aocsuite_storage::{ContentStore, RuntimeLayout, Workspace};
@@ -17,7 +17,10 @@ use aocsuite_utils::{
 };
 
 use crate::{
-    app::{Action, BackgroundEffect, ForegroundEffect, PreparedExercise},
+    app::{
+        Action, BackgroundEffect, ForegroundEffect, LanguageData, LanguageFileKind,
+        LanguageMutation, PreparedExercise, PreparedLanguageFile,
+    },
     TuiError,
 };
 
@@ -35,8 +38,9 @@ impl EffectRunner {
         let shutdown = Arc::new(AtomicBool::new(false));
         let worker_shutdown = Arc::clone(&shutdown);
         let worker = thread::spawn(move || {
+            let executor = SystemCommandExecutor;
             worker_loop(effect_receiver, action_sender, worker_shutdown, |effect| {
-                run_background_effect(&layout, effect)
+                run_background_effect(&layout, effect, &executor)
             });
         });
         Self {
@@ -86,7 +90,11 @@ impl Drop for EffectRunner {
     }
 }
 
-fn run_background_effect(layout: &RuntimeLayout, effect: BackgroundEffect) -> Action {
+fn run_background_effect(
+    layout: &RuntimeLayout,
+    effect: BackgroundEffect,
+    executor: &dyn CommandExecutor,
+) -> Action {
     match effect {
         BackgroundEffect::LoadCalendar { year, refresh } => {
             let result = with_content_store(layout, |content| {
@@ -118,11 +126,38 @@ fn run_background_effect(layout: &RuntimeLayout, effect: BackgroundEffect) -> Ac
             .map_err(|error| format!("Could not download {puzzle}: {error}"));
             Action::DescriptionDownloaded { puzzle, result }
         }
-        BackgroundEffect::PrepareExercise(puzzle) => {
-            let executor = SystemCommandExecutor;
-            let result = prepare_exercise(layout, puzzle, &executor)
+        BackgroundEffect::PrepareExercise { puzzle, language } => {
+            let result = prepare_exercise(layout, puzzle, language, executor)
                 .map_err(|error| format!("Could not prepare {puzzle}: {error}"));
-            Action::ExercisePrepared { puzzle, result }
+            Action::ExercisePrepared {
+                puzzle,
+                language,
+                result,
+            }
+        }
+        BackgroundEffect::LoadLanguageData { language } => {
+            let result = load_language_data(layout, language, executor)
+                .map_err(|error| format!("Could not load {language} language data: {error}"));
+            Action::LanguageDataFinished { language, result }
+        }
+        BackgroundEffect::MutateLanguage { language, mutation } => {
+            let result = mutate_language(layout, language, &mutation, executor).map_err(|error| {
+                format!("Could not finish {}: {error}", mutation_action(&mutation))
+            });
+            Action::LanguageMutationFinished { language, result }
+        }
+        BackgroundEffect::PrepareLanguageFile {
+            language,
+            kind,
+            reset,
+        } => {
+            let context = match &kind {
+                LanguageFileKind::Library(name) => format!("library {name}"),
+                LanguageFileKind::Template => "the template".to_owned(),
+            };
+            let result = prepare_language_file(layout, language, kind, reset, executor)
+                .map_err(|error| format!("Could not prepare {context} editor: {error}"));
+            Action::LanguageFilePrepared { language, result }
         }
     }
 }
@@ -168,6 +203,9 @@ pub fn run_foreground_effect(
                 },
             )?;
         }
+        ForegroundEffect::OpenLanguageFile(prepared) => {
+            launcher.open_file(prepared.editor, &prepared.path, &prepared.working_directory)?;
+        }
     }
     Ok(())
 }
@@ -175,6 +213,7 @@ pub fn run_foreground_effect(
 fn prepare_exercise(
     layout: &RuntimeLayout,
     puzzle: PuzzleId,
+    language_id: LanguageId,
     executor: &dyn CommandExecutor,
 ) -> Result<PreparedExercise, TuiError> {
     valid_puzzle_release(puzzle.day, puzzle.year)?;
@@ -183,7 +222,6 @@ fn prepare_exercise(
     let client = AocClient::new(session.as_deref(), AocClientOptions::default())?;
     let content = ContentStore::open(layout.cache_dir(), &client)?;
     let workspace = Workspace::new(layout.workspace_dir());
-    let language_id = config.get::<LanguageId>(ConfigKey::Language)?;
     let language = Language::new(language_id, &workspace, executor);
     let editor = config.get::<String>(ConfigKey::Editor)?;
     Ok(PreparedExercise {
@@ -197,17 +235,92 @@ fn prepare_exercise(
     })
 }
 
+fn load_language_data(
+    layout: &RuntimeLayout,
+    language_id: LanguageId,
+    executor: &dyn CommandExecutor,
+) -> Result<LanguageData, TuiError> {
+    let workspace = Workspace::new(layout.workspace_dir());
+    let language = Language::new(language_id, &workspace, executor);
+    let mut packages = language.list_packages()?;
+    let mut libraries = language.list_lib_files()?;
+    packages.sort_unstable_by_key(|package| package.to_ascii_lowercase());
+    libraries.sort_unstable_by_key(|library| library.to_ascii_lowercase());
+    Ok(LanguageData {
+        packages,
+        libraries,
+    })
+}
+
+fn mutate_language(
+    layout: &RuntimeLayout,
+    language_id: LanguageId,
+    mutation: &LanguageMutation,
+    executor: &dyn CommandExecutor,
+) -> Result<LanguageData, TuiError> {
+    let workspace = Workspace::new(layout.workspace_dir());
+    let language = Language::new(language_id, &workspace, executor);
+    match mutation {
+        LanguageMutation::AddPackage(package) => language.add_package(package)?,
+        LanguageMutation::RemovePackage(package) => language.remove_package(package)?,
+        LanguageMutation::RemoveLibrary(library) => {
+            language.remove_lib_file(library, ConfirmedLibraryRemoval::Confirmed)?;
+        }
+    }
+    load_language_data(layout, language_id, executor)
+}
+
+fn mutation_action(mutation: &LanguageMutation) -> String {
+    match mutation {
+        LanguageMutation::AddPackage(package) => format!("adding package {package}"),
+        LanguageMutation::RemovePackage(package) => format!("removing package {package}"),
+        LanguageMutation::RemoveLibrary(library) => format!("removing library {library}"),
+    }
+}
+
+fn prepare_language_file(
+    layout: &RuntimeLayout,
+    language_id: LanguageId,
+    kind: LanguageFileKind,
+    reset: bool,
+    executor: &dyn CommandExecutor,
+) -> Result<PreparedLanguageFile, TuiError> {
+    let config = Configuration::load(layout.config_dir())?;
+    let editor = config.get::<String>(ConfigKey::Editor)?;
+    let workspace = Workspace::new(layout.workspace_dir());
+    let language = Language::new(language_id, &workspace, executor);
+    let path = match &kind {
+        LanguageFileKind::Library(name) => language.ensure_lib_path(name)?,
+        LanguageFileKind::Template if reset => {
+            language.reset_template(ConfirmedTemplateReset::Confirmed)?
+        }
+        LanguageFileKind::Template => language.ensure_solver_file(&SolverFile::SolutionTemplate)?,
+    };
+    Ok(PreparedLanguageFile {
+        language: language_id,
+        kind,
+        editor,
+        path,
+        working_directory: language.project_dir().to_path_buf(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use std::process::{ExitStatus, Output};
     use std::sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, Mutex,
     };
+    use std::{fs, io};
 
-    use aocsuite_utils::PuzzleYear;
+    use aocsuite_storage::RuntimeLayout;
+    use aocsuite_utils::{CommandExecutor, CommandRequest, LanguageId, ProcessMode, PuzzleYear};
 
-    use super::worker_loop;
-    use crate::app::{Action, BackgroundEffect};
+    use super::{run_background_effect, run_foreground_effect, worker_loop};
+    use crate::app::{
+        Action, BackgroundEffect, ForegroundEffect, LanguageFileKind, PreparedLanguageFile,
+    };
 
     #[test]
     fn shutdown_abandons_effects_queued_after_active_work() {
@@ -241,4 +354,101 @@ mod tests {
 
         assert_eq!(executions.load(Ordering::Relaxed), 1);
     }
+
+    #[test]
+    fn language_list_effect_does_not_initialize_an_absent_project() {
+        struct PanicExecutor;
+
+        impl CommandExecutor for PanicExecutor {
+            fn execute(&self, _: &CommandRequest) -> io::Result<Output> {
+                panic!("an absent project must not run a process");
+            }
+        }
+
+        let root = std::env::temp_dir().join(format!(
+            "aocsuite-tui-language-list-{}-{}",
+            std::process::id(),
+            TEST_ROOT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root).unwrap();
+        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
+
+        let action = run_background_effect(
+            &layout,
+            BackgroundEffect::LoadLanguageData {
+                language: LanguageId::Rust,
+            },
+            &PanicExecutor,
+        );
+
+        match action {
+            Action::LanguageDataFinished {
+                language,
+                result: Ok(data),
+                ..
+            } => {
+                assert_eq!(language, LanguageId::Rust);
+                assert!(data.packages.is_empty());
+                assert!(data.libraries.is_empty());
+            }
+            action => panic!("unexpected action: {action:?}"),
+        }
+        assert!(!layout.workspace_dir().exists());
+        fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn language_file_uses_foreground_editor_request() {
+        #[derive(Default)]
+        struct RecordingExecutor(Mutex<Vec<CommandRequest>>);
+
+        impl CommandExecutor for RecordingExecutor {
+            fn execute(&self, request: &CommandRequest) -> io::Result<Output> {
+                self.0.lock().unwrap().push(request.clone());
+                Ok(Output {
+                    status: successful_status(),
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                })
+            }
+        }
+
+        let executor = RecordingExecutor::default();
+        let editor = std::env::current_exe().unwrap();
+        let working_directory = std::env::temp_dir();
+        let path = working_directory.join("library.rs");
+
+        run_foreground_effect(
+            ForegroundEffect::OpenLanguageFile(PreparedLanguageFile {
+                language: LanguageId::Rust,
+                kind: LanguageFileKind::Library("library".to_owned()),
+                editor: editor.to_string_lossy().into_owned(),
+                path: path.clone(),
+                working_directory: working_directory.clone(),
+            }),
+            &executor,
+        )
+        .unwrap();
+
+        let requests = executor.0.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].program, editor.into_os_string());
+        assert_eq!(requests[0].args, vec![path.into_os_string()]);
+        assert_eq!(requests[0].current_dir.as_ref(), Some(&working_directory));
+        assert_eq!(requests[0].mode, ProcessMode::Foreground);
+    }
+
+    #[cfg(unix)]
+    fn successful_status() -> ExitStatus {
+        use std::os::unix::process::ExitStatusExt;
+        ExitStatusExt::from_raw(0)
+    }
+
+    #[cfg(windows)]
+    fn successful_status() -> ExitStatus {
+        use std::os::windows::process::ExitStatusExt;
+        ExitStatusExt::from_raw(0)
+    }
+
+    static TEST_ROOT: AtomicUsize = AtomicUsize::new(0);
 }

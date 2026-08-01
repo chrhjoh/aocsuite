@@ -46,6 +46,76 @@ pub enum DescriptionState {
     Error { puzzle: PuzzleId, message: String },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LanguageFocus {
+    Packages,
+    Libraries,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LanguageOperationState {
+    Idle,
+    Running {
+        packages: Option<String>,
+        libraries: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LanguageTextInput {
+    AddPackage,
+    Library,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LanguageConfirmation {
+    RemovePackage(String),
+    RemoveLibrary(String),
+    ResetTemplate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LanguageDialog {
+    Text {
+        kind: LanguageTextInput,
+        value: String,
+        error: Option<String>,
+    },
+    Confirm {
+        action: LanguageConfirmation,
+        confirmed: bool,
+    },
+    Message(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LanguageData {
+    pub packages: Vec<String>,
+    pub libraries: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LanguageMutation {
+    AddPackage(String),
+    RemovePackage(String),
+    RemoveLibrary(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LanguageFileKind {
+    Library(String),
+    Template,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedLanguageFile {
+    pub language: LanguageId,
+    pub kind: LanguageFileKind,
+    pub editor: String,
+    pub path: PathBuf,
+    pub working_directory: PathBuf,
+}
+
 pub struct App {
     pub active_tab: Tab,
     pub calendar: Option<Calendar>,
@@ -59,6 +129,15 @@ pub struct App {
     pub calendar_scroll: (u16, u16),
     pub exercise_preparing: bool,
     pub language: LanguageId,
+    pub language_packages: Vec<String>,
+    pub language_libraries: Vec<String>,
+    pub language_package_selection: usize,
+    pub language_library_selection: usize,
+    pub language_focus: LanguageFocus,
+    pub language_operation: LanguageOperationState,
+    pub language_dialog: Option<LanguageDialog>,
+    language_loaded: bool,
+    language_file_opening: Option<LanguageFileKind>,
     pub status: Option<String>,
     pub should_quit: bool,
 }
@@ -76,6 +155,23 @@ pub enum Action {
     RefreshCalendar,
     OpenBrowser,
     OpenExercise,
+    SwitchLanguage,
+    RefreshLanguage,
+    PreviousLanguagePane,
+    NextLanguagePane,
+    PreviousLanguageItem,
+    NextLanguageItem,
+    AddPackage,
+    RemoveLanguageItem,
+    NewLibrary,
+    OpenLanguageItem,
+    OpenTemplate,
+    ResetTemplate,
+    DialogInput(char),
+    DialogBackspace,
+    DialogToggleConfirmation,
+    DialogSubmit,
+    DialogCancel,
     ScrollDescriptionUp,
     ScrollDescriptionDown,
     ScrollCalendarUp,
@@ -97,24 +193,57 @@ pub enum Action {
     },
     ExercisePrepared {
         puzzle: PuzzleId,
+        language: LanguageId,
         result: Result<PreparedExercise, String>,
     },
+    LanguageDataFinished {
+        language: LanguageId,
+        result: Result<LanguageData, String>,
+    },
+    LanguageMutationFinished {
+        language: LanguageId,
+        result: Result<LanguageData, String>,
+    },
+    LanguageFilePrepared {
+        language: LanguageId,
+        result: Result<PreparedLanguageFile, String>,
+    },
+    LanguageEffectFailed(String),
     ForegroundFinished(Result<(), String>),
     EffectFailed(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackgroundEffect {
-    LoadCalendar { year: PuzzleYear, refresh: bool },
+    LoadCalendar {
+        year: PuzzleYear,
+        refresh: bool,
+    },
     LoadCachedDescription(PuzzleId),
     DownloadDescription(PuzzleId),
-    PrepareExercise(PuzzleId),
+    PrepareExercise {
+        puzzle: PuzzleId,
+        language: LanguageId,
+    },
+    LoadLanguageData {
+        language: LanguageId,
+    },
+    MutateLanguage {
+        language: LanguageId,
+        mutation: LanguageMutation,
+    },
+    PrepareLanguageFile {
+        language: LanguageId,
+        kind: LanguageFileKind,
+        reset: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ForegroundEffect {
     OpenBrowser(PuzzleId),
     OpenExercise(PreparedExercise),
+    OpenLanguageFile(PreparedLanguageFile),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,6 +285,15 @@ impl App {
             calendar_scroll: (0, 0),
             exercise_preparing: false,
             language,
+            language_packages: Vec::new(),
+            language_libraries: Vec::new(),
+            language_package_selection: 0,
+            language_library_selection: 0,
+            language_focus: LanguageFocus::Packages,
+            language_operation: LanguageOperationState::Idle,
+            language_dialog: None,
+            language_loaded: false,
+            language_file_opening: None,
             status: None,
             should_quit: false,
         }
@@ -172,8 +310,8 @@ impl App {
     pub fn update(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::Quit => self.should_quit = true,
-            Action::NextTab => self.active_tab = self.active_tab.next(),
-            Action::PreviousTab => self.active_tab = self.active_tab.previous(),
+            Action::NextTab => return self.select_tab(self.active_tab.next()),
+            Action::PreviousTab => return self.select_tab(self.active_tab.previous()),
             Action::PreviousYear if self.active_tab == Tab::Calendar => {
                 if self.selected_year.get() > PuzzleYear::MIN {
                     let year = PuzzleYear::new(self.selected_year.get() - 1)
@@ -226,14 +364,140 @@ impl App {
                     self.status = Some("An exercise is already being prepared".to_owned());
                     return Vec::new();
                 }
+                if self.language_busy() {
+                    self.status = Some("A language operation is already running".to_owned());
+                    return Vec::new();
+                }
                 let Some(puzzle) = self.selected_puzzle_or_status() else {
                     return Vec::new();
                 };
                 self.exercise_preparing = true;
                 self.status = None;
-                return vec![Effect::Background(BackgroundEffect::PrepareExercise(
+                return vec![Effect::Background(BackgroundEffect::PrepareExercise {
                     puzzle,
-                ))];
+                    language: self.language,
+                })];
+            }
+            Action::SwitchLanguage if self.active_tab == Tab::Language => {
+                if self.language_busy() {
+                    return Vec::new();
+                }
+                self.language = match self.language {
+                    LanguageId::Rust => LanguageId::Python,
+                    LanguageId::Python => LanguageId::Rust,
+                };
+                self.clear_language_data();
+                return self.load_language_data();
+            }
+            Action::RefreshLanguage if self.active_tab == Tab::Language => {
+                if !self.language_busy() {
+                    return self.load_language_data();
+                }
+            }
+            Action::PreviousLanguagePane | Action::NextLanguagePane
+                if self.active_tab == Tab::Language && self.language_dialog.is_none() =>
+            {
+                self.language_focus = match self.language_focus {
+                    LanguageFocus::Packages => LanguageFocus::Libraries,
+                    LanguageFocus::Libraries => LanguageFocus::Packages,
+                };
+            }
+            Action::PreviousLanguageItem
+                if self.active_tab == Tab::Language && self.language_dialog.is_none() =>
+            {
+                let selection = self.language_selection_mut();
+                *selection = selection.saturating_sub(1);
+            }
+            Action::NextLanguageItem
+                if self.active_tab == Tab::Language && self.language_dialog.is_none() =>
+            {
+                let maximum = self.language_items().len().saturating_sub(1);
+                let selection = self.language_selection_mut();
+                *selection = (*selection + 1).min(maximum);
+            }
+            Action::AddPackage if self.active_tab == Tab::Language => {
+                if !self.language_busy() {
+                    self.language_dialog = Some(LanguageDialog::Text {
+                        kind: LanguageTextInput::AddPackage,
+                        value: String::new(),
+                        error: None,
+                    });
+                }
+            }
+            Action::RemoveLanguageItem if self.active_tab == Tab::Language => {
+                if !self.language_busy() {
+                    let action = match self.language_focus {
+                        LanguageFocus::Packages => self
+                            .selected_package()
+                            .map(|package| LanguageConfirmation::RemovePackage(package.to_owned())),
+                        LanguageFocus::Libraries => self
+                            .selected_library()
+                            .map(|library| LanguageConfirmation::RemoveLibrary(library.to_owned())),
+                    };
+                    if let Some(action) = action {
+                        self.language_dialog = Some(LanguageDialog::Confirm {
+                            action,
+                            confirmed: false,
+                        });
+                    } else {
+                        self.language_dialog = Some(LanguageDialog::Message(
+                            "No language item is selected".to_owned(),
+                        ));
+                    }
+                }
+            }
+            Action::NewLibrary if self.active_tab == Tab::Language => {
+                if !self.language_busy() {
+                    self.language_dialog = Some(LanguageDialog::Text {
+                        kind: LanguageTextInput::Library,
+                        value: String::new(),
+                        error: None,
+                    });
+                }
+            }
+            Action::OpenLanguageItem if self.active_tab == Tab::Language => {
+                if !self.language_busy() && self.language_focus == LanguageFocus::Libraries {
+                    if let Some(library) = self.selected_library().map(str::to_owned) {
+                        return self
+                            .prepare_language_file(LanguageFileKind::Library(library), false);
+                    }
+                    self.language_dialog =
+                        Some(LanguageDialog::Message("No library is selected".to_owned()));
+                }
+            }
+            Action::OpenTemplate if self.active_tab == Tab::Language => {
+                if !self.language_busy() {
+                    return self.prepare_language_file(LanguageFileKind::Template, false);
+                }
+            }
+            Action::ResetTemplate if self.active_tab == Tab::Language => {
+                if !self.language_busy() {
+                    self.language_dialog = Some(LanguageDialog::Confirm {
+                        action: LanguageConfirmation::ResetTemplate,
+                        confirmed: false,
+                    });
+                }
+            }
+            Action::DialogInput(character) => {
+                if let Some(LanguageDialog::Text { value, error, .. }) = &mut self.language_dialog {
+                    value.push(character);
+                    *error = None;
+                }
+            }
+            Action::DialogBackspace => {
+                if let Some(LanguageDialog::Text { value, .. }) = &mut self.language_dialog {
+                    value.pop();
+                }
+            }
+            Action::DialogToggleConfirmation => {
+                if let Some(LanguageDialog::Confirm { confirmed, .. }) = &mut self.language_dialog {
+                    *confirmed = !*confirmed;
+                }
+            }
+            Action::DialogSubmit => return self.submit_language_dialog(),
+            Action::DialogCancel => {
+                self.language_dialog = None;
+                self.status = None;
             }
             Action::ScrollDescriptionUp if self.active_tab == Tab::Calendar => {
                 self.description_scroll = self.description_scroll.saturating_sub(1);
@@ -332,9 +596,13 @@ impl App {
                     }
                 }
             }
-            Action::ExercisePrepared { puzzle, result } => {
+            Action::ExercisePrepared {
+                puzzle,
+                language,
+                result,
+            } => {
                 self.exercise_preparing = false;
-                if Some(puzzle) != self.selected_puzzle() {
+                if Some(puzzle) != self.selected_puzzle() || language != self.language {
                     return Vec::new();
                 }
                 match result {
@@ -345,8 +613,83 @@ impl App {
                     Err(message) => self.status = Some(message),
                 }
             }
+            Action::LanguageDataFinished { language, result } => {
+                if language != self.language {
+                    return Vec::new();
+                }
+                match result {
+                    Ok(data) => {
+                        self.set_language_data(data);
+                        self.language_operation = LanguageOperationState::Idle;
+                    }
+                    Err(message) => self.show_language_error(message),
+                }
+            }
+            Action::LanguageMutationFinished { language, result } => {
+                if language != self.language {
+                    return Vec::new();
+                }
+                match result {
+                    Ok(data) => {
+                        self.set_language_data(data);
+                        self.language_operation = LanguageOperationState::Idle;
+                    }
+                    Err(message) => self.show_language_error(message),
+                }
+            }
+            Action::LanguageFilePrepared { language, result } => {
+                if language != self.language {
+                    return Vec::new();
+                }
+                match result {
+                    Ok(prepared) => {
+                        self.language_file_opening = Some(prepared.kind.clone());
+                        self.language_operation = match prepared.kind {
+                            LanguageFileKind::Library(_) => LanguageOperationState::Running {
+                                packages: None,
+                                libraries: Some("opening...".to_owned()),
+                            },
+                            LanguageFileKind::Template => LanguageOperationState::Running {
+                                packages: None,
+                                libraries: None,
+                            },
+                        };
+                        return vec![Effect::Foreground(ForegroundEffect::OpenLanguageFile(
+                            prepared,
+                        ))];
+                    }
+                    Err(message) => self.show_language_error(message),
+                }
+            }
+            Action::LanguageEffectFailed(message) => {
+                self.language_file_opening = None;
+                self.show_language_error(message);
+            }
             Action::ForegroundFinished(result) => {
-                self.status = result.err();
+                if let Some(kind) = self.language_file_opening.take() {
+                    match result {
+                        Ok(()) => match kind {
+                            LanguageFileKind::Library(_) => {
+                                return self.load_language_data_with_activity(
+                                    None,
+                                    Some("loading...".to_owned()),
+                                );
+                            }
+                            LanguageFileKind::Template => {
+                                self.language_operation = LanguageOperationState::Idle;
+                            }
+                        },
+                        Err(message) => self.show_language_error(message),
+                    }
+                } else {
+                    self.status = result.err();
+                    if self.status.is_none()
+                        && self.active_tab == Tab::Language
+                        && !self.language_loaded
+                    {
+                        return self.load_language_data();
+                    }
+                }
             }
             Action::EffectFailed(message) => self.status = Some(message),
             _ => {}
@@ -360,6 +703,191 @@ impl App {
 
     pub fn description_downloading(&self, puzzle: PuzzleId) -> bool {
         self.description_downloads.contains(&puzzle)
+    }
+
+    fn select_tab(&mut self, tab: Tab) -> Vec<Effect> {
+        self.active_tab = tab;
+        if tab == Tab::Language && !self.language_loaded && !self.language_busy() {
+            return self.load_language_data();
+        }
+        Vec::new()
+    }
+
+    fn language_busy(&self) -> bool {
+        matches!(
+            self.language_operation,
+            LanguageOperationState::Running { .. }
+        ) || self.language_file_opening.is_some()
+            || self.exercise_preparing
+    }
+
+    fn clear_language_data(&mut self) {
+        self.language_packages.clear();
+        self.language_libraries.clear();
+        self.language_package_selection = 0;
+        self.language_library_selection = 0;
+        self.language_loaded = false;
+    }
+
+    fn set_language_data(&mut self, data: LanguageData) {
+        self.language_packages = data.packages;
+        self.language_libraries = data.libraries;
+        self.language_package_selection = self
+            .language_package_selection
+            .min(self.language_packages.len().saturating_sub(1));
+        self.language_library_selection = self
+            .language_library_selection
+            .min(self.language_libraries.len().saturating_sub(1));
+        self.language_loaded = true;
+        self.status = None;
+    }
+
+    fn load_language_data(&mut self) -> Vec<Effect> {
+        self.load_language_data_with_activity(
+            Some("loading...".to_owned()),
+            Some("loading...".to_owned()),
+        )
+    }
+
+    fn load_language_data_with_activity(
+        &mut self,
+        packages: Option<String>,
+        libraries: Option<String>,
+    ) -> Vec<Effect> {
+        self.status = None;
+        self.language_operation = LanguageOperationState::Running {
+            packages,
+            libraries,
+        };
+        vec![Effect::Background(BackgroundEffect::LoadLanguageData {
+            language: self.language,
+        })]
+    }
+
+    fn mutate_language(&mut self, mutation: LanguageMutation) -> Vec<Effect> {
+        self.status = None;
+        self.language_operation = match &mutation {
+            LanguageMutation::AddPackage(_) => LanguageOperationState::Running {
+                packages: Some("adding...".to_owned()),
+                libraries: None,
+            },
+            LanguageMutation::RemovePackage(_) => LanguageOperationState::Running {
+                packages: Some("removing...".to_owned()),
+                libraries: None,
+            },
+            LanguageMutation::RemoveLibrary(_) => LanguageOperationState::Running {
+                packages: None,
+                libraries: Some("removing...".to_owned()),
+            },
+        };
+        vec![Effect::Background(BackgroundEffect::MutateLanguage {
+            language: self.language,
+            mutation,
+        })]
+    }
+
+    fn prepare_language_file(&mut self, kind: LanguageFileKind, reset: bool) -> Vec<Effect> {
+        self.status = None;
+        self.language_operation = match &kind {
+            LanguageFileKind::Library(_) => LanguageOperationState::Running {
+                packages: None,
+                libraries: Some("opening...".to_owned()),
+            },
+            LanguageFileKind::Template => LanguageOperationState::Running {
+                packages: None,
+                libraries: None,
+            },
+        };
+        vec![Effect::Background(BackgroundEffect::PrepareLanguageFile {
+            language: self.language,
+            kind,
+            reset,
+        })]
+    }
+
+    fn submit_language_dialog(&mut self) -> Vec<Effect> {
+        let Some(dialog) = self.language_dialog.take() else {
+            return Vec::new();
+        };
+        match dialog {
+            LanguageDialog::Text {
+                kind,
+                value,
+                error: _,
+            } => {
+                let value = value.trim().to_owned();
+                if value.is_empty() {
+                    let error = match kind {
+                        LanguageTextInput::AddPackage => "Package name cannot be empty",
+                        LanguageTextInput::Library => "Library name cannot be empty",
+                    };
+                    self.language_dialog = Some(LanguageDialog::Text {
+                        kind,
+                        value,
+                        error: Some(error.to_owned()),
+                    });
+                    return Vec::new();
+                }
+                match kind {
+                    LanguageTextInput::AddPackage => {
+                        self.mutate_language(LanguageMutation::AddPackage(value))
+                    }
+                    LanguageTextInput::Library => {
+                        self.prepare_language_file(LanguageFileKind::Library(value), false)
+                    }
+                }
+            }
+            LanguageDialog::Confirm { action, confirmed } => {
+                if !confirmed {
+                    self.status = None;
+                    return Vec::new();
+                }
+                match action {
+                    LanguageConfirmation::RemovePackage(package) => {
+                        self.mutate_language(LanguageMutation::RemovePackage(package))
+                    }
+                    LanguageConfirmation::RemoveLibrary(library) => {
+                        self.mutate_language(LanguageMutation::RemoveLibrary(library))
+                    }
+                    LanguageConfirmation::ResetTemplate => {
+                        self.prepare_language_file(LanguageFileKind::Template, true)
+                    }
+                }
+            }
+            LanguageDialog::Message(_) => Vec::new(),
+        }
+    }
+
+    fn show_language_error(&mut self, message: String) {
+        self.language_operation = LanguageOperationState::Idle;
+        self.status = None;
+        self.language_dialog = Some(LanguageDialog::Message(message));
+    }
+
+    fn language_items(&self) -> &[String] {
+        match self.language_focus {
+            LanguageFocus::Packages => &self.language_packages,
+            LanguageFocus::Libraries => &self.language_libraries,
+        }
+    }
+
+    fn language_selection_mut(&mut self) -> &mut usize {
+        match self.language_focus {
+            LanguageFocus::Packages => &mut self.language_package_selection,
+            LanguageFocus::Libraries => &mut self.language_library_selection,
+        }
+    }
+
+    fn selected_package(&self) -> Option<&str> {
+        self.language_packages
+            .get(self.language_package_selection)
+            .map(String::as_str)
+    }
+
+    fn selected_library(&self) -> Option<&str> {
+        self.language_libraries
+            .get(self.language_library_selection)
+            .map(String::as_str)
     }
 
     fn select_year(&mut self, year: PuzzleYear) -> Vec<Effect> {
@@ -443,7 +971,9 @@ mod tests {
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
 
     use super::{
-        Action, App, BackgroundEffect, DescriptionState, Effect, ForegroundEffect, PreparedExercise,
+        Action, App, BackgroundEffect, DescriptionState, Effect, ForegroundEffect, LanguageData,
+        LanguageDialog, LanguageFileKind, LanguageMutation, LanguageOperationState,
+        PreparedExercise,
     };
 
     fn puzzle(day: u32, year: i32) -> PuzzleId {
@@ -455,6 +985,19 @@ mod tests {
 
     fn app() -> App {
         App::new(None, puzzle(10, 2026), LanguageId::Rust)
+    }
+
+    fn language_app() -> App {
+        let mut app = app();
+        app.update(Action::NextTab);
+        app.update(Action::LanguageDataFinished {
+            language: LanguageId::Rust,
+            result: Ok(LanguageData {
+                packages: vec!["anyhow".to_owned()],
+                libraries: vec!["grid".to_owned()],
+            }),
+        });
+        app
     }
 
     fn calendar(rows: Vec<Vec<Option<PuzzleId>>>) -> Calendar {
@@ -905,9 +1448,10 @@ mod tests {
 
         assert_eq!(
             app.update(Action::OpenExercise),
-            vec![Effect::Background(BackgroundEffect::PrepareExercise(
-                puzzle
-            ))]
+            vec![Effect::Background(BackgroundEffect::PrepareExercise {
+                puzzle,
+                language: LanguageId::Rust,
+            })]
         );
         assert!(app.exercise_preparing);
         assert!(app.status.is_none());
@@ -925,6 +1469,7 @@ mod tests {
         assert_eq!(
             app.update(Action::ExercisePrepared {
                 puzzle,
+                language: LanguageId::Rust,
                 result: Ok(prepared.clone()),
             }),
             vec![Effect::Foreground(ForegroundEffect::OpenExercise(prepared))]
@@ -943,10 +1488,229 @@ mod tests {
         assert!(app
             .update(Action::ExercisePrepared {
                 puzzle: stale,
+                language: LanguageId::Rust,
                 result: Err("stale preparation".to_owned()),
             })
             .is_empty());
         assert!(!app.exercise_preparing);
         assert_eq!(app.update(Action::OpenExercise).len(), 1);
+    }
+
+    #[test]
+    fn pending_exercise_preparation_blocks_other_language_jobs() {
+        let mut app = selected_app();
+        let puzzle = app.selected_puzzle().unwrap();
+        app.update(Action::OpenExercise);
+        app.update(Action::NextTab);
+
+        assert!(app.update(Action::SwitchLanguage).is_empty());
+        assert!(app.update(Action::RefreshLanguage).is_empty());
+        app.update(Action::AddPackage);
+        assert_eq!(app.language, LanguageId::Rust);
+        assert!(app.language_dialog.is_none());
+
+        app.update(Action::ExercisePrepared {
+            puzzle,
+            language: LanguageId::Rust,
+            result: Err("preparation failed".to_owned()),
+        });
+        assert!(!app.exercise_preparing);
+    }
+
+    #[test]
+    fn active_language_job_blocks_calendar_exercise_preparation() {
+        let mut app = language_app();
+        app.update(Action::RemoveLanguageItem);
+        app.update(Action::DialogToggleConfirmation);
+        app.update(Action::DialogSubmit);
+        app.update(Action::NextTab);
+        app.update(Action::NextTab);
+        load_calendar(
+            &mut app,
+            calendar(vec![vec![Some(puzzle(10, 2026))]]),
+            false,
+        );
+
+        assert!(app.update(Action::OpenExercise).is_empty());
+        assert_eq!(
+            app.status.as_deref(),
+            Some("A language operation is already running")
+        );
+    }
+
+    #[test]
+    fn entering_language_loads_read_only_lists_once() {
+        let mut app = app();
+
+        assert_eq!(
+            app.update(Action::NextTab),
+            vec![Effect::Background(BackgroundEffect::LoadLanguageData {
+                language: LanguageId::Rust,
+            })]
+        );
+        assert_eq!(app.active_tab, super::Tab::Language);
+        assert_eq!(
+            app.language_operation,
+            LanguageOperationState::Running {
+                packages: Some("loading...".to_owned()),
+                libraries: Some("loading...".to_owned()),
+            }
+        );
+
+        app.update(Action::LanguageDataFinished {
+            language: LanguageId::Rust,
+            result: Ok(LanguageData {
+                packages: vec![],
+                libraries: vec![],
+            }),
+        });
+        app.update(Action::NextTab);
+        assert!(app.update(Action::PreviousTab).is_empty());
+    }
+
+    #[test]
+    fn session_language_controls_calendar_exercise_preparation() {
+        let mut app = language_app();
+        app.update(Action::SwitchLanguage);
+        app.update(Action::LanguageDataFinished {
+            language: LanguageId::Python,
+            result: Ok(LanguageData {
+                packages: vec![],
+                libraries: vec![],
+            }),
+        });
+        app.update(Action::NextTab);
+        app.update(Action::NextTab);
+        load_calendar(
+            &mut app,
+            calendar(vec![vec![Some(puzzle(10, 2026))]]),
+            false,
+        );
+
+        assert_eq!(
+            app.update(Action::OpenExercise),
+            vec![Effect::Background(BackgroundEffect::PrepareExercise {
+                puzzle: puzzle(10, 2026),
+                language: LanguageId::Python,
+            })]
+        );
+    }
+
+    #[test]
+    fn destructive_language_dialogs_cancel_by_default() {
+        let mut app = language_app();
+
+        app.update(Action::RemoveLanguageItem);
+        assert!(matches!(
+            app.language_dialog,
+            Some(LanguageDialog::Confirm {
+                confirmed: false,
+                ..
+            })
+        ));
+
+        assert!(app.update(Action::DialogSubmit).is_empty());
+        assert!(app.language_dialog.is_none());
+        assert_eq!(app.language_packages, vec!["anyhow"]);
+    }
+
+    #[test]
+    fn confirmed_package_removal_dispatches_one_serialized_job() {
+        let mut app = language_app();
+        app.update(Action::RemoveLanguageItem);
+        app.update(Action::DialogToggleConfirmation);
+
+        assert_eq!(
+            app.update(Action::DialogSubmit),
+            vec![Effect::Background(BackgroundEffect::MutateLanguage {
+                language: LanguageId::Rust,
+                mutation: LanguageMutation::RemovePackage("anyhow".to_owned()),
+            })]
+        );
+        assert!(app.update(Action::RefreshLanguage).is_empty());
+    }
+
+    #[test]
+    fn library_name_dialog_prepares_the_editor_without_creating_a_file_in_the_reducer() {
+        let mut app = language_app();
+        app.update(Action::NewLibrary);
+        app.update(Action::DialogInput('m'));
+        app.update(Action::DialogInput('a'));
+        app.update(Action::DialogInput('t'));
+        app.update(Action::DialogInput('h'));
+
+        assert_eq!(
+            app.update(Action::DialogSubmit),
+            vec![Effect::Background(BackgroundEffect::PrepareLanguageFile {
+                language: LanguageId::Rust,
+                kind: LanguageFileKind::Library("math".to_owned()),
+                reset: false,
+            })]
+        );
+    }
+
+    #[test]
+    fn stale_language_results_do_not_replace_the_current_selection() {
+        let mut app = language_app();
+        app.update(Action::SwitchLanguage);
+
+        app.update(Action::LanguageDataFinished {
+            language: LanguageId::Rust,
+            result: Ok(LanguageData {
+                packages: vec!["stale".to_owned()],
+                libraries: vec![],
+            }),
+        });
+
+        assert_eq!(app.language, LanguageId::Python);
+        assert!(app.language_packages.is_empty());
+        assert!(matches!(
+            app.language_operation,
+            LanguageOperationState::Running { .. }
+        ));
+    }
+
+    #[test]
+    fn language_errors_are_dismissible_messages() {
+        let mut app = app();
+        app.update(Action::NextTab);
+
+        app.update(Action::LanguageDataFinished {
+            language: LanguageId::Rust,
+            result: Err("package query failed".to_owned()),
+        });
+
+        assert_eq!(
+            app.language_dialog,
+            Some(LanguageDialog::Message("package query failed".to_owned()))
+        );
+        assert_eq!(app.language_operation, LanguageOperationState::Idle);
+        assert!(app.status.is_none());
+        app.update(Action::DialogCancel);
+        assert!(app.language_dialog.is_none());
+    }
+
+    #[test]
+    fn library_editor_refresh_marks_only_the_library_pane() {
+        let mut app = language_app();
+        app.language_file_opening = Some(LanguageFileKind::Library("grid".to_owned()));
+        app.language_operation = LanguageOperationState::Running {
+            packages: None,
+            libraries: Some("opening...".to_owned()),
+        };
+
+        assert_eq!(
+            app.update(Action::ForegroundFinished(Ok(()))),
+            vec![Effect::Background(BackgroundEffect::LoadLanguageData {
+                language: LanguageId::Rust,
+            })]
+        );
+        assert_eq!(
+            app.language_operation,
+            LanguageOperationState::Running {
+                packages: None,
+                libraries: Some("loading...".to_owned()),
+            }
+        );
     }
 }

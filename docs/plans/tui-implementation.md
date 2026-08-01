@@ -9,7 +9,7 @@ crate boundaries in `../design/architecture.md` or persistence policy in
 
 ## Status
 
-Last reviewed: 2026-07-31.
+Last reviewed: 2026-08-01.
 
 Overall status: **in progress**.
 
@@ -22,9 +22,11 @@ Implemented in the first slice:
 - released-year and visual calendar-puzzle navigation;
 - calendar completion rendering, cached Markdown preview, and explicit redownload;
 - foreground browser and exercise-editor handoff;
+- in-session language selection, package and library management, template
+  editing and reset, and destructive confirmations;
 - deterministic reducer and `ratatui::TestBackend` render tests.
 
-The Language and Config tab workflows remain pending.
+The Config tab workflow remains pending.
 
 ## Initial scope
 
@@ -124,8 +126,9 @@ phase. Completion is derived from the currently loaded semantic calendar.
 
 - Maintain an in-session Rust or Python selection initialized from the
   configured default language.
-- Do not persist a language selection from this tab. Persisted defaults are
-  changed only from Config.
+- Use that selection for all TUI language operations, including Calendar-tab
+  exercise materialization.
+- Do not expose or persist default-language configuration in the TUI.
 - Display and refresh package and library lists without introducing
   initialization side effects for query operations.
 - Provide package add and remove dialogs.
@@ -133,7 +136,9 @@ phase. Completion is derived from the currently loaded semantic calendar.
 - Require confirmation before deleting a library.
 - Provide template open/edit and reset actions.
 - Require confirmation before resetting a template.
-- Show running, success, and typed-error states for blocking operations.
+- Show continuing package and library operations in the affected pane border.
+  Keep template preparation silent, make routine success implicit in refreshed
+  content or editor handoff, and show typed errors in a dismissible dialog.
 - Suspend and restore the terminal around foreground editor processes.
 
 Language jobs must be serialized for the runtime-root workspace as required by
@@ -141,10 +146,9 @@ the architecture and storage design.
 
 ## Config tab
 
-Manage all existing configuration values:
+Manage the configuration values exposed by the TUI:
 
 - default year;
-- default language;
 - editor executable;
 - run-history retention limit;
 - session credential.
@@ -237,10 +241,11 @@ Build Ratatui views for:
 - loading and error status;
 - contextual keyboard help.
 
-Reserve global footer status for errors, warnings, rejected actions, and
-meaningful operation results such as answers, solver timings, and submission
-outcomes. Routine lifecycle progress and success acknowledgments remain implicit
-or use local pane indicators instead of footer status.
+Reserve global footer status for errors, warnings, and rejected actions that do
+not require acknowledgment. Routine lifecycle progress and success
+acknowledgments remain implicit or use local pane indicators instead of footer
+status. Meaningful future results such as answers, solver timings, and
+submission outcomes use dismissible dialogs rather than transient footer text.
 
 The layout must remain usable in both wide and narrow terminals.
 

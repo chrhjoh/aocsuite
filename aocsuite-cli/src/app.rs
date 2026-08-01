@@ -10,7 +10,10 @@ use crate::{
 };
 use aocsuite_client::{AocClient, AocPage};
 use aocsuite_config::{ConfigKey, Configuration};
-use aocsuite_lang::{ConfirmedTemplateReset, Language, LanguageRunOutput, PartResult, SolverFile};
+use aocsuite_lang::{
+    ConfirmedLibraryRemoval, ConfirmedTemplateReset, Language, LanguageRunOutput, PartResult,
+    SolverFile,
+};
 use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
 use aocsuite_storage::{CacheCleanScope, ContentStore, GitMode, Workspace};
@@ -202,7 +205,7 @@ pub fn run_aocsuite(
                             force,
                         )? {
                             for lib in files.iter() {
-                                language.remove_lib_file(lib)?
+                                language.remove_lib_file(lib, ConfirmedLibraryRemoval::Confirmed)?
                             }
                         }
                     } else {
@@ -218,7 +221,7 @@ pub fn run_aocsuite(
                             ),
                             force,
                         )? {
-                            language.remove_lib_file(&lib)?;
+                            language.remove_lib_file(&lib, ConfirmedLibraryRemoval::Confirmed)?;
                             println!("Removed library: {} for {}", lib, language_name);
                         }
                     }
