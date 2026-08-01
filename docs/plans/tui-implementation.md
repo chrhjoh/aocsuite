@@ -71,8 +71,14 @@ release.
 After the calendar establishes its initial selection, calendar navigation
 automatically loads valid cached puzzle Markdown without triggering
 puzzle-description HTTP requests. Changing the highlighted puzzle clears the
-detail panel while that cache lookup runs so that a previously loaded
-description cannot be mistaken for the new selection.
+detail panel body while that cache lookup runs, retaining only the selected day
+in the panel title, so that a previously loaded description cannot be mistaken
+for the new selection. Do not show loading text or the download prompt until the
+cache lookup confirms that Markdown is absent.
+
+While the initial calendar load is pending, keep both the calendar body and the
+puzzle-detail body blank. Continue to show confirmed calendar failures and their
+retry instruction.
 
 ### Puzzle descriptions
 
@@ -88,6 +94,9 @@ description cannot be mistaken for the new selection.
 - Downloads continue after navigation and update their requested puzzle's
   cache, but stale results do not update the selected puzzle's UI.
 - Display the resulting Markdown in the detail panel.
+- Scroll loaded Markdown by wrapped visual line with PageUp and PageDown. Show a
+  trackless Unicode thumb on the right edge when the wrapped content exceeds
+  the visible detail pane.
 - Do not provide a separate puzzle-description refresh action; `d` always
   downloads and therefore also refreshes an existing preview.
 
@@ -177,7 +186,7 @@ Use a pure state reducer for:
 - language selection and lists;
 - config form values;
 - modal text input and confirmations;
-- loading, success, and error notifications;
+- local loading state and non-routine result, warning, and error notifications;
 - user intents that request effects.
 
 Rendering and state reduction must not perform filesystem, network, subprocess,
@@ -227,6 +236,11 @@ Build Ratatui views for:
 - modal text entry and confirmation dialogs;
 - loading and error status;
 - contextual keyboard help.
+
+Reserve global footer status for errors, warnings, rejected actions, and
+meaningful operation results such as answers, solver timings, and submission
+outcomes. Routine lifecycle progress and success acknowledgments remain implicit
+or use local pane indicators instead of footer status.
 
 The layout must remain usable in both wide and narrow terminals.
 
