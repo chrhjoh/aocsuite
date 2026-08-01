@@ -136,18 +136,28 @@ fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
 fn render_description(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let puzzle = app.selected_puzzle();
+    let downloading = app.description_downloading(puzzle);
     let (title, text) = match &app.description {
+        DescriptionState::Empty if downloading => (
+            format!(" Day {} - downloading... ", puzzle.day),
+            "Downloading puzzle description...".to_owned(),
+        ),
         DescriptionState::Empty => (
             format!(" Day {} ", puzzle.day),
-            "Press d to load this puzzle description.".to_owned(),
-        ),
-        DescriptionState::Loading(_) => (
-            format!(" Day {} - loading... ", puzzle.day),
-            "Loading puzzle description...".to_owned(),
+            "Press d to download this puzzle description.".to_owned(),
         ),
         DescriptionState::Loaded { markdown, .. } => {
-            (format!(" Day {} ", puzzle.day), markdown.clone())
+            let title = if downloading {
+                format!(" Day {} - downloading... ", puzzle.day)
+            } else {
+                format!(" Day {} ", puzzle.day)
+            };
+            (title, markdown.clone())
         }
+        DescriptionState::Error { .. } if downloading => (
+            format!(" Day {} - downloading... ", puzzle.day),
+            "Downloading puzzle description...".to_owned(),
+        ),
         DescriptionState::Error { message, .. } => {
             (format!(" Day {} - error ", puzzle.day), message.clone())
         }
@@ -177,7 +187,7 @@ fn render_placeholder(frame: &mut Frame<'_>, area: Rect, title: &str, text: &str
 fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let help = match app.active_tab {
         Tab::Calendar => {
-            "q quit | Tab switch | arrows select | Ctrl+arrows scroll calendar | d describe | r refresh | b browser | o open"
+            "q quit | Tab switch | arrows select | Ctrl+arrows scroll calendar | d download | r refresh | b browser | o open"
         }
         _ => "q quit | Tab/Shift-Tab switch",
     };
@@ -243,7 +253,27 @@ mod tests {
 
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains("Calendar"));
-        assert!(rendered.contains("Press d to load"));
+        assert!(rendered.contains("Press d to download"));
+    }
+
+    #[test]
+    fn redownload_keeps_the_existing_preview_visible() {
+        let backend = TestBackend::new(100, 28);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        let puzzle = app.selected_puzzle();
+        app.update(Action::CachedDescriptionFinished {
+            puzzle,
+            result: Ok(Some("existing preview".to_owned())),
+        });
+        app.update(Action::DownloadDescription);
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("existing preview"));
+        assert!(rendered.contains("downloading..."));
+        assert!(rendered.contains("d download"));
     }
 
     #[test]

@@ -72,17 +72,7 @@ impl<'client> ContentStore<'client> {
     pub fn refresh_calendar(&self, year: PuzzleYear) -> ContentResult<String> {
         let key = CacheKey::Calendar(year);
         let path = self.cache_path(key);
-        let indexed_at_path = self
-            .database
-            .cache_entry(key)
-            .map_err(ContentError::from_database)?
-            .is_some_and(|entry| entry.relative_path == self.cache_relative_path(key));
-        match fs::symlink_metadata(&path) {
-            Ok(_) if !indexed_at_path => return Err(ContentError::UnmanagedCacheFile { path }),
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
+        self.ensure_replaceable(key)?;
 
         let body = self.client.download(&AocPage::Calendar(year))?;
         let entry = self.cache_entry(key, body.len());
@@ -113,6 +103,38 @@ impl<'client> ContentStore<'client> {
 
     pub fn load_puzzle_markdown(&self, puzzle: PuzzleId) -> ContentResult<String> {
         Ok(fs::read_to_string(self.ensure_puzzle_markdown(puzzle)?)?)
+    }
+
+    pub fn load_cached_puzzle_markdown(&self, puzzle: PuzzleId) -> ContentResult<Option<String>> {
+        let key = CacheKey::PuzzleMarkdown(puzzle);
+        if !self.is_cached(key)? {
+            return Ok(None);
+        }
+        Ok(Some(fs::read_to_string(self.cache_path(key))?))
+    }
+
+    pub fn download_puzzle_markdown(&self, puzzle: PuzzleId) -> ContentResult<String> {
+        let html_key = CacheKey::PuzzleHtml(puzzle);
+        let markdown_key = CacheKey::PuzzleMarkdown(puzzle);
+        self.ensure_replaceable(html_key)?;
+        self.ensure_replaceable(markdown_key)?;
+
+        let html = self.client.download(&AocPage::Puzzle(puzzle))?;
+        let markdown = parse_puzzle_markdown(&html)?;
+        let html_path = self.cache_path(html_key);
+        let markdown_path = self.cache_path(markdown_key);
+        let entries = [
+            self.cache_entry(html_key, html.len()),
+            self.cache_entry(markdown_key, markdown.len()),
+        ];
+        replace_with_rollback(&html_path, html.as_bytes(), || {
+            replace_with_rollback(&markdown_path, markdown.as_bytes(), || {
+                self.database
+                    .upsert_cache_entries(&entries)
+                    .map_err(ContentError::from_database)
+            })
+        })?;
+        Ok(markdown)
     }
 
     pub fn record_submission(
@@ -225,6 +247,21 @@ impl<'client> ContentStore<'client> {
                     && entry.relative_path == self.cache_relative_path(key)
                     && self.cache_path(key).is_file()
             }))
+    }
+
+    fn ensure_replaceable(&self, key: CacheKey) -> ContentResult<()> {
+        let path = self.cache_path(key);
+        let indexed_at_path = self
+            .database
+            .cache_entry(key)
+            .map_err(ContentError::from_database)?
+            .is_some_and(|entry| entry.relative_path == self.cache_relative_path(key));
+        match fs::symlink_metadata(&path) {
+            Ok(_) if !indexed_at_path => Err(ContentError::UnmanagedCacheFile { path }),
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     fn save(&self, key: CacheKey, contents: &[u8]) -> ContentResult<PathBuf> {
@@ -346,9 +383,7 @@ pub enum ContentError {
     InvalidRuntime,
     #[error("refusing to replace unmanaged cache file {path}")]
     UnmanagedCacheFile { path: PathBuf },
-    #[error(
-        "calendar refresh persistence failed ({persistence}) and restoring {path} also failed"
-    )]
+    #[error("content refresh persistence failed ({persistence}) and restoring {path} also failed")]
     RefreshRollback {
         path: PathBuf,
         persistence: String,
@@ -388,7 +423,7 @@ mod tests {
     };
 
     use aocsuite_client::{AocClient, AocClientOptions, AocPage};
-    use aocsuite_parser::AocSubmissionResult;
+    use aocsuite_parser::{AocSubmissionResult, ParserError};
     use aocsuite_utils::{PuzzleDay, PuzzlePart, PuzzleYear};
     use tempfile::tempdir;
 
@@ -457,6 +492,165 @@ mod tests {
         assert_eq!(second, first);
         assert!(first.contains("Test Puzzle"));
         assert_eq!(requests.recv().expect("receive requests").len(), 1);
+    }
+
+    #[test]
+    fn cached_puzzle_markdown_lookup_uses_only_valid_markdown() {
+        let temp = tempdir().expect("create temporary cache root");
+        let client = client();
+        let store =
+            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
+        let puzzle = puzzle(1, 2024);
+
+        store
+            .save(CacheKey::PuzzleHtml(puzzle), b"cached html")
+            .expect("save cached html");
+        assert_eq!(store.load_cached_puzzle_markdown(puzzle).unwrap(), None);
+
+        store
+            .save(CacheKey::PuzzleMarkdown(puzzle), b"cached markdown")
+            .expect("save cached markdown");
+        assert_eq!(
+            store.load_cached_puzzle_markdown(puzzle).unwrap(),
+            Some("cached markdown".to_owned())
+        );
+    }
+
+    #[test]
+    fn puzzle_markdown_download_replaces_an_existing_preview() {
+        let temp = tempdir().expect("create temporary cache root");
+        let (client, requests) = serve_responses(vec![
+            (
+                200,
+                "<main><article><h2>Original Puzzle</h2><p>Part one.</p></article></main>",
+            ),
+            (
+                200,
+                "<main><article><h2>Updated Puzzle</h2><p>Part one.</p></article><article><h2>Part Two</h2><p>New content.</p></article></main>",
+            ),
+        ]);
+        let store =
+            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
+        let puzzle = puzzle(1, 2024);
+
+        let original = store
+            .load_puzzle_markdown(puzzle)
+            .expect("load original markdown");
+        let updated = store
+            .download_puzzle_markdown(puzzle)
+            .expect("download updated markdown");
+
+        assert!(original.contains("Original Puzzle"));
+        assert!(updated.contains("Updated Puzzle"));
+        assert!(updated.contains("Part Two"));
+        assert_eq!(
+            store.load_cached_puzzle_markdown(puzzle).unwrap(),
+            Some(updated)
+        );
+        assert_eq!(requests.recv().expect("receive requests").len(), 2);
+    }
+
+    #[test]
+    fn failed_puzzle_markdown_download_preserves_the_existing_preview() {
+        let temp = tempdir().expect("create temporary cache root");
+        let (client, requests) = serve_responses(vec![
+            (
+                200,
+                "<main><article><h2>Original Puzzle</h2><p>Part one.</p></article></main>",
+            ),
+            (400, "rejected refresh"),
+        ]);
+        let store =
+            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
+        let puzzle = puzzle(1, 2024);
+        let original = store
+            .load_puzzle_markdown(puzzle)
+            .expect("load original markdown");
+        let html_path = store.cache_path(CacheKey::PuzzleHtml(puzzle));
+        let original_html = fs::read_to_string(&html_path).expect("read original html");
+
+        assert!(store.download_puzzle_markdown(puzzle).is_err());
+        assert_eq!(
+            store.load_cached_puzzle_markdown(puzzle).unwrap(),
+            Some(original)
+        );
+        assert_eq!(
+            fs::read_to_string(html_path).expect("read preserved html"),
+            original_html
+        );
+        assert_eq!(requests.recv().expect("receive requests").len(), 2);
+    }
+
+    #[test]
+    fn invalid_puzzle_download_preserves_existing_files_and_metadata() {
+        let temp = tempdir().expect("create temporary cache root");
+        let (client, requests) = serve_responses(vec![
+            (
+                200,
+                "<main><article><h2>Original Puzzle</h2><p>Part one.</p></article></main>",
+            ),
+            (200, "<main>missing puzzle article</main>"),
+        ]);
+        let store =
+            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
+        let puzzle = puzzle(1, 2024);
+        let original = store
+            .load_puzzle_markdown(puzzle)
+            .expect("load original markdown");
+        let html_key = CacheKey::PuzzleHtml(puzzle);
+        let markdown_key = CacheKey::PuzzleMarkdown(puzzle);
+        let original_html = fs::read_to_string(store.cache_path(html_key)).unwrap();
+        let original_entries = [html_key, markdown_key].map(|key| {
+            store
+                .database
+                .cache_entry(key)
+                .expect("read cache metadata")
+        });
+
+        assert!(matches!(
+            store.download_puzzle_markdown(puzzle),
+            Err(ContentError::Parser(ParserError::MissingPuzzleArticle))
+        ));
+        assert_eq!(
+            fs::read_to_string(store.cache_path(html_key)).unwrap(),
+            original_html
+        );
+        assert_eq!(
+            store.load_cached_puzzle_markdown(puzzle).unwrap(),
+            Some(original)
+        );
+        assert_eq!(
+            [html_key, markdown_key].map(|key| {
+                store
+                    .database
+                    .cache_entry(key)
+                    .expect("read cache metadata")
+            }),
+            original_entries
+        );
+        assert_eq!(requests.recv().expect("receive requests").len(), 2);
+    }
+
+    #[test]
+    fn puzzle_markdown_download_does_not_overwrite_an_unindexed_file() {
+        let temp = tempdir().expect("create temporary cache root");
+        let cache_dir = temp.path().join("cache");
+        let client = client();
+        let store = ContentStore::open(cache_dir.clone(), &client).expect("open content store");
+        let puzzle = puzzle(1, 2024);
+        let path = store.cache_path(CacheKey::PuzzleMarkdown(puzzle));
+        fs::create_dir_all(path.parent().expect("puzzle has parent"))
+            .expect("create puzzle directory");
+        fs::write(&path, "unmanaged markdown").expect("write unmanaged markdown");
+
+        assert!(matches!(
+            store.download_puzzle_markdown(puzzle),
+            Err(ContentError::UnmanagedCacheFile { path: error_path }) if error_path == path
+        ));
+        assert_eq!(
+            fs::read_to_string(path).expect("read unmanaged markdown"),
+            "unmanaged markdown"
+        );
     }
 
     #[test]

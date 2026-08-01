@@ -20,7 +20,7 @@ Implemented in the first slice:
 - serialized background calendar and puzzle-description effects;
 - cache-first puzzle descriptions and safe calendar refresh;
 - released-year and day navigation;
-- calendar completion rendering and explicit puzzle-description loading;
+- calendar completion rendering, cached Markdown preview, and explicit redownload;
 - foreground browser and exercise-editor handoff;
 - deterministic reducer and `ratatui::TestBackend` render tests.
 
@@ -56,16 +56,27 @@ release.
 - Use a split layout with the calendar and completion summary on the left and a
   puzzle-detail panel on the right.
 
-Calendar navigation must not trigger puzzle-description http requests, puzzle descriptions can be loaded automatically if they are cached. Changing the
-highlighted day clears the detail panel so that a previously loaded description
-cannot be mistaken for the new selection.
+Startup and calendar navigation automatically load valid cached puzzle Markdown
+without triggering puzzle-description HTTP requests. Changing the highlighted
+day clears the detail panel while that cache lookup runs so that a previously
+loaded description cannot be mistaken for the new selection.
 
 ### Puzzle descriptions
 
-- Load the highlighted puzzle description only through an explicit user action.
-- Use cached puzzle content when available and retrieve it otherwise.
+- When cached Markdown is absent, prompt the user to press `d` to download the
+  highlighted puzzle description.
+- The download action always retrieves the puzzle page and replaces its cached
+  HTML and Markdown, including when a preview is already loaded. This allows an
+  updated description to be retrieved after completing part one.
+- Keep an existing preview visible while it is redownloaded. A failed download
+  preserves that preview and reports the error; without a preview, display the
+  error in the detail panel.
+- Ignore repeated download requests for the same puzzle while one is pending.
+- Downloads continue after navigation and update their requested puzzle's
+  cache, but stale results do not update the selected puzzle's UI.
 - Display the resulting Markdown in the detail panel.
-- Do not provide puzzle-description refresh in this phase.
+- Do not provide a separate puzzle-description refresh action; `d` always
+  downloads and therefore also refreshes an existing preview.
 
 ### Actions
 
@@ -180,8 +191,9 @@ Use a dedicated foreground-handoff path for launcher operations:
 
 Keep supporting changes small and domain-owned:
 
-- Add a content operation that returns puzzle Markdown for display while keeping
-  cache and parsing policy inside storage.
+- Add content operations that read an existing managed Markdown preview without
+  fallback and that explicitly redownload and safely replace puzzle HTML and
+  Markdown, while keeping cache and parsing policy inside storage.
 - Add an explicit calendar refresh operation that safely replaces cached
   calendar content only after successful retrieval.
 - Add a non-secret configuration query that reports whether a session is
@@ -223,8 +235,8 @@ The layout must remain usable in both wide and narrow terminals.
 
 Add focused tests for changed behavior:
 
-- storage tests for cache-first Markdown loading and safe calendar refresh
-  failure behavior;
+- storage tests for cached-only Markdown previews, safe puzzle redownload, and
+  safe calendar refresh failure behavior;
 - config tests for session-status queries that do not expose credentials;
 - reducer tests for tab navigation, released-year bounds, detail clearing,
   validation, confirmations, and effect dispatch;

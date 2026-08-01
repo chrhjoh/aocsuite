@@ -145,35 +145,15 @@ impl StateDatabase {
     }
 
     pub(crate) fn upsert_cache_entry(&self, entry: &CacheEntry) -> DatabaseResult<()> {
-        let relative_path = validated_relative_path(entry.relative_path.clone())?;
-        let byte_size = i64::try_from(entry.byte_size)
-            .map_err(|_| DatabaseError::InvalidCacheEntry("byte size exceeds SQLite range"))?;
-        let (content_type, year, day) = cache_key_parts(entry.key);
-        self.connection.execute(
-            "
-            INSERT INTO cache_entries (
-                content_type, year, day, relative_path, byte_size, fetched_at, etag, last_modified, is_valid
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-            ON CONFLICT (content_type, year, day) DO UPDATE SET
-                relative_path = excluded.relative_path,
-                byte_size = excluded.byte_size,
-                fetched_at = excluded.fetched_at,
-                etag = excluded.etag,
-                last_modified = excluded.last_modified,
-                is_valid = excluded.is_valid
-            ",
-            params![
-                content_type,
-                year,
-                day,
-                relative_path.to_string_lossy(),
-                byte_size,
-                entry.fetched_at,
-                entry.etag,
-                entry.last_modified,
-                i64::from(entry.is_valid),
-            ],
-        )?;
+        upsert_cache_entry(&self.connection, entry)
+    }
+
+    pub(crate) fn upsert_cache_entries(&self, entries: &[CacheEntry]) -> DatabaseResult<()> {
+        let transaction = self.connection.unchecked_transaction()?;
+        for entry in entries {
+            upsert_cache_entry(&transaction, entry)?;
+        }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -272,6 +252,39 @@ impl StateDatabase {
         transaction.commit()?;
         Ok(())
     }
+}
+
+fn upsert_cache_entry(connection: &Connection, entry: &CacheEntry) -> DatabaseResult<()> {
+    let relative_path = validated_relative_path(entry.relative_path.clone())?;
+    let byte_size = i64::try_from(entry.byte_size)
+        .map_err(|_| DatabaseError::InvalidCacheEntry("byte size exceeds SQLite range"))?;
+    let (content_type, year, day) = cache_key_parts(entry.key);
+    connection.execute(
+            "
+            INSERT INTO cache_entries (
+                content_type, year, day, relative_path, byte_size, fetched_at, etag, last_modified, is_valid
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            ON CONFLICT (content_type, year, day) DO UPDATE SET
+                relative_path = excluded.relative_path,
+                byte_size = excluded.byte_size,
+                fetched_at = excluded.fetched_at,
+                etag = excluded.etag,
+                last_modified = excluded.last_modified,
+                is_valid = excluded.is_valid
+            ",
+            params![
+                content_type,
+                year,
+                day,
+                relative_path.to_string_lossy(),
+                byte_size,
+                entry.fetched_at,
+                entry.etag,
+                entry.last_modified,
+                i64::from(entry.is_valid),
+            ],
+        )?;
+    Ok(())
 }
 
 fn cache_key_parts(key: CacheKey) -> (&'static str, i32, i64) {
@@ -449,10 +462,16 @@ pub(crate) type DatabaseResult<T> = Result<T, DatabaseError>;
 mod tests {
     use std::fs;
 
+    use aocsuite_utils::{PuzzleDay, PuzzleId, PuzzleYear};
     use rusqlite::Connection;
     use tempfile::tempdir;
 
-    use super::{DatabaseError, StateDatabase, SCHEMA_VERSION};
+    use super::{CacheEntry, DatabaseError, StateDatabase, SCHEMA_VERSION};
+    use crate::content::CacheKey;
+
+    fn puzzle() -> PuzzleId {
+        PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap())
+    }
 
     #[test]
     fn invalid_database_files_return_typed_corruption_errors() {
@@ -495,6 +514,40 @@ mod tests {
                 .expect("query schema object");
             assert!(exists, "missing schema object {name}");
         }
+    }
+
+    #[test]
+    fn cache_entry_batches_are_transactional() {
+        let temp = tempdir().expect("create temporary directory");
+        let database =
+            StateDatabase::open(&temp.path().join("state.sqlite")).expect("open state database");
+        let valid = CacheEntry {
+            key: CacheKey::PuzzleHtml(puzzle()),
+            relative_path: "puzzles/2024-1.html".into(),
+            byte_size: 10,
+            fetched_at: Some(1),
+            etag: None,
+            last_modified: None,
+            is_valid: true,
+        };
+        let invalid = CacheEntry {
+            key: CacheKey::PuzzleMarkdown(puzzle()),
+            relative_path: "../unmanaged.md".into(),
+            byte_size: 10,
+            fetched_at: Some(1),
+            etag: None,
+            last_modified: None,
+            is_valid: true,
+        };
+
+        assert!(matches!(
+            database.upsert_cache_entries(&[valid, invalid]),
+            Err(DatabaseError::InvalidCacheEntry(_))
+        ));
+        assert!(database
+            .cache_entry(CacheKey::PuzzleHtml(puzzle()))
+            .expect("read cache entry")
+            .is_none());
     }
 
     #[test]

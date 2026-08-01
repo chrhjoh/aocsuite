@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use aocsuite_parser::Calendar;
 use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
@@ -41,7 +41,6 @@ impl Tab {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DescriptionState {
     Empty,
-    Loading(PuzzleId),
     Loaded { puzzle: PuzzleId, markdown: String },
     Error { puzzle: PuzzleId, message: String },
 }
@@ -55,6 +54,7 @@ pub struct App {
     pub latest_puzzle: PuzzleId,
     pub description: DescriptionState,
     pub description_scroll: u16,
+    description_downloads: HashSet<PuzzleId>,
     pub calendar_scroll: (u16, u16),
     pub exercise_preparing: bool,
     pub language: LanguageId,
@@ -71,7 +71,7 @@ pub enum Action {
     NextYear,
     PreviousDay,
     NextDay,
-    LoadDescription,
+    DownloadDescription,
     RefreshCalendar,
     OpenBrowser,
     OpenExercise,
@@ -86,7 +86,11 @@ pub enum Action {
         refresh: bool,
         result: Result<Calendar, String>,
     },
-    DescriptionFinished {
+    CachedDescriptionFinished {
+        puzzle: PuzzleId,
+        result: Result<Option<String>, String>,
+    },
+    DescriptionDownloaded {
         puzzle: PuzzleId,
         result: Result<String, String>,
     },
@@ -101,7 +105,8 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackgroundEffect {
     LoadCalendar { year: PuzzleYear, refresh: bool },
-    LoadDescription(PuzzleId),
+    LoadCachedDescription(PuzzleId),
+    DownloadDescription(PuzzleId),
     PrepareExercise(PuzzleId),
 }
 
@@ -147,6 +152,7 @@ impl App {
             latest_puzzle,
             description: DescriptionState::Empty,
             description_scroll: 0,
+            description_downloads: HashSet::new(),
             calendar_scroll: (0, 0),
             exercise_preparing: false,
             language,
@@ -155,12 +161,15 @@ impl App {
         }
     }
 
-    pub fn initial_effect(&mut self) -> Effect {
+    pub fn initial_effects(&mut self) -> Vec<Effect> {
         self.calendar_loading = true;
-        Effect::Background(BackgroundEffect::LoadCalendar {
-            year: self.selected_year,
-            refresh: false,
-        })
+        vec![
+            self.load_cached_description(),
+            Effect::Background(BackgroundEffect::LoadCalendar {
+                year: self.selected_year,
+                refresh: false,
+            }),
+        ]
     }
 
     pub fn update(&mut self, action: Action) -> Vec<Effect> {
@@ -172,14 +181,14 @@ impl App {
                 if self.selected_year.get() > PuzzleYear::MIN {
                     let year = PuzzleYear::new(self.selected_year.get() - 1)
                         .expect("previous released year is valid");
-                    return vec![self.select_year(year)];
+                    return self.select_year(year);
                 }
             }
             Action::NextYear if self.active_tab == Tab::Calendar => {
                 if self.selected_year < self.latest_puzzle.year {
                     let year = PuzzleYear::new(self.selected_year.get() + 1)
                         .expect("next released year is valid");
-                    return vec![self.select_year(year)];
+                    return self.select_year(year);
                 }
             }
             Action::PreviousDay if self.active_tab == Tab::Calendar => {
@@ -187,6 +196,7 @@ impl App {
                     self.selected_day = PuzzleDay::new(u32::from(self.selected_day.get() - 1))
                         .expect("previous day is valid");
                     self.clear_description();
+                    return vec![self.load_cached_description()];
                 }
             }
             Action::NextDay if self.active_tab == Tab::Calendar => {
@@ -195,14 +205,16 @@ impl App {
                     self.selected_day = PuzzleDay::new(u32::from(self.selected_day.get() + 1))
                         .expect("next day is valid");
                     self.clear_description();
+                    return vec![self.load_cached_description()];
                 }
             }
-            Action::LoadDescription if self.active_tab == Tab::Calendar => {
+            Action::DownloadDescription if self.active_tab == Tab::Calendar => {
                 let puzzle = self.selected_puzzle();
-                self.description = DescriptionState::Loading(puzzle);
-                self.description_scroll = 0;
-                self.status = Some(format!("Loading {puzzle}"));
-                return vec![Effect::Background(BackgroundEffect::LoadDescription(
+                if !self.description_downloads.insert(puzzle) {
+                    return Vec::new();
+                }
+                self.status = Some(format!("Downloading {puzzle}"));
+                return vec![Effect::Background(BackgroundEffect::DownloadDescription(
                     puzzle,
                 ))];
             }
@@ -272,20 +284,41 @@ impl App {
                     Err(message) => self.status = Some(message),
                 }
             }
-            Action::DescriptionFinished { puzzle, result } => {
+            Action::CachedDescriptionFinished { puzzle, result } => {
                 if puzzle != self.selected_puzzle() {
                     return Vec::new();
                 }
-                self.description = match result {
+                match result {
+                    Ok(Some(markdown)) => {
+                        self.description = DescriptionState::Loaded { puzzle, markdown };
+                    }
+                    Ok(None) => {}
+                    Err(message) => {
+                        self.status = Some(message.clone());
+                        if !matches!(self.description, DescriptionState::Loaded { .. }) {
+                            self.description = DescriptionState::Error { puzzle, message };
+                        }
+                    }
+                }
+            }
+            Action::DescriptionDownloaded { puzzle, result } => {
+                self.description_downloads.remove(&puzzle);
+                if puzzle != self.selected_puzzle() {
+                    return Vec::new();
+                }
+                match result {
                     Ok(markdown) => {
-                        self.status = Some(format!("Loaded {puzzle}"));
-                        DescriptionState::Loaded { puzzle, markdown }
+                        self.description = DescriptionState::Loaded { puzzle, markdown };
+                        self.description_scroll = 0;
+                        self.status = Some(format!("Downloaded {puzzle}"));
                     }
                     Err(message) => {
                         self.status = Some(message.clone());
-                        DescriptionState::Error { puzzle, message }
+                        if !matches!(self.description, DescriptionState::Loaded { .. }) {
+                            self.description = DescriptionState::Error { puzzle, message };
+                        }
                     }
-                };
+                }
             }
             Action::ExercisePrepared { puzzle, result } => {
                 self.exercise_preparing = false;
@@ -316,7 +349,11 @@ impl App {
         PuzzleId::new(self.selected_day, self.selected_year)
     }
 
-    fn select_year(&mut self, year: PuzzleYear) -> Effect {
+    pub fn description_downloading(&self, puzzle: PuzzleId) -> bool {
+        self.description_downloads.contains(&puzzle)
+    }
+
+    fn select_year(&mut self, year: PuzzleYear) -> Vec<Effect> {
         self.selected_year = year;
         self.selected_day = final_released_day(year, self.latest_puzzle);
         self.calendar = None;
@@ -324,15 +361,25 @@ impl App {
         self.calendar_scroll = (0, 0);
         self.clear_description();
         self.status = Some(format!("Loading calendar {year}"));
-        Effect::Background(BackgroundEffect::LoadCalendar {
-            year,
-            refresh: false,
-        })
+        vec![
+            self.load_cached_description(),
+            Effect::Background(BackgroundEffect::LoadCalendar {
+                year,
+                refresh: false,
+            }),
+        ]
+    }
+
+    fn load_cached_description(&self) -> Effect {
+        Effect::Background(BackgroundEffect::LoadCachedDescription(
+            self.selected_puzzle(),
+        ))
     }
 
     fn clear_description(&mut self) {
         self.description = DescriptionState::Empty;
         self.description_scroll = 0;
+        self.status = None;
     }
 }
 
@@ -385,29 +432,142 @@ mod tests {
     fn changing_day_clears_the_loaded_description() {
         let mut app = app();
         let selected = app.selected_puzzle();
-        app.update(Action::DescriptionFinished {
+        app.update(Action::CachedDescriptionFinished {
             puzzle: selected,
-            result: Ok("description".to_owned()),
+            result: Ok(Some("description".to_owned())),
         });
 
-        app.update(Action::PreviousDay);
+        let effects = app.update(Action::PreviousDay);
 
         assert_eq!(app.description, DescriptionState::Empty);
+        assert_eq!(
+            effects,
+            vec![Effect::Background(BackgroundEffect::LoadCachedDescription(
+                puzzle(9, 2026)
+            ))]
+        );
     }
 
     #[test]
-    fn description_load_is_explicit() {
+    fn initial_effects_load_cached_markdown_before_the_calendar() {
         let mut app = app();
 
-        let effects = app.update(Action::LoadDescription);
+        assert_eq!(
+            app.initial_effects(),
+            vec![
+                Effect::Background(BackgroundEffect::LoadCachedDescription(puzzle(10, 2026))),
+                Effect::Background(BackgroundEffect::LoadCalendar {
+                    year: PuzzleYear::new(2026).unwrap(),
+                    refresh: false,
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn description_download_is_explicit_and_single_flight_per_puzzle() {
+        let mut app = app();
+
+        let effects = app.update(Action::DownloadDescription);
 
         assert_eq!(
             effects,
-            vec![Effect::Background(BackgroundEffect::LoadDescription(
+            vec![Effect::Background(BackgroundEffect::DownloadDescription(
                 puzzle(10, 2026)
             ))]
         );
-        assert_eq!(app.description, DescriptionState::Loading(puzzle(10, 2026)));
+        assert!(app.description_downloading(puzzle(10, 2026)));
+        assert!(app.update(Action::DownloadDescription).is_empty());
+    }
+
+    #[test]
+    fn failed_redownload_preserves_an_existing_preview() {
+        let mut app = app();
+        let puzzle = app.selected_puzzle();
+        app.update(Action::CachedDescriptionFinished {
+            puzzle,
+            result: Ok(Some("existing preview".to_owned())),
+        });
+        app.update(Action::DownloadDescription);
+
+        app.update(Action::DescriptionDownloaded {
+            puzzle,
+            result: Err("download failed".to_owned()),
+        });
+
+        assert_eq!(
+            app.description,
+            DescriptionState::Loaded {
+                puzzle,
+                markdown: "existing preview".to_owned()
+            }
+        );
+        assert_eq!(app.status.as_deref(), Some("download failed"));
+        assert!(!app.description_downloading(puzzle));
+    }
+
+    #[test]
+    fn failed_download_without_a_preview_shows_the_error() {
+        let mut app = app();
+        let puzzle = app.selected_puzzle();
+        app.update(Action::DownloadDescription);
+
+        app.update(Action::DescriptionDownloaded {
+            puzzle,
+            result: Err("download failed".to_owned()),
+        });
+
+        assert_eq!(
+            app.description,
+            DescriptionState::Error {
+                puzzle,
+                message: "download failed".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn stale_download_updates_no_visible_state_and_releases_its_guard() {
+        let mut app = app();
+        let stale = app.selected_puzzle();
+        app.update(Action::DownloadDescription);
+        app.update(Action::PreviousDay);
+
+        app.update(Action::DescriptionDownloaded {
+            puzzle: stale,
+            result: Ok("updated stale puzzle".to_owned()),
+        });
+
+        assert_eq!(app.description, DescriptionState::Empty);
+        assert!(!app.description_downloading(stale));
+        assert_eq!(app.selected_puzzle(), puzzle(9, 2026));
+        assert!(app.status.is_none());
+    }
+
+    #[test]
+    fn cache_misses_are_silent_but_cache_errors_are_visible() {
+        let mut app = app();
+        let puzzle = app.selected_puzzle();
+
+        app.update(Action::CachedDescriptionFinished {
+            puzzle,
+            result: Ok(None),
+        });
+        assert_eq!(app.description, DescriptionState::Empty);
+        assert!(app.status.is_none());
+
+        app.update(Action::CachedDescriptionFinished {
+            puzzle,
+            result: Err("cache read failed".to_owned()),
+        });
+        assert_eq!(
+            app.description,
+            DescriptionState::Error {
+                puzzle,
+                message: "cache read failed".to_owned()
+            }
+        );
+        assert_eq!(app.status.as_deref(), Some("cache read failed"));
     }
 
     #[test]
