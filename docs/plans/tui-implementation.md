@@ -11,7 +11,20 @@ crate boundaries in `../design/architecture.md` or persistence policy in
 
 Last reviewed: 2026-07-31.
 
-Overall status: **scoped; implementation not started**.
+Overall status: **in progress**.
+
+Implemented in the first slice:
+
+- `aocsuite-tui` crate and explicit terminal lifecycle;
+- pure tab and calendar state reduction;
+- serialized background calendar and puzzle-description effects;
+- cache-first puzzle descriptions and safe calendar refresh;
+- released-year and day navigation;
+- calendar completion rendering and explicit puzzle-description loading;
+- foreground browser and exercise-editor handoff;
+- deterministic reducer and `ratatui::TestBackend` render tests.
+
+The Language and Config tab workflows remain pending.
 
 ## Initial scope
 
@@ -43,7 +56,7 @@ release.
 - Use a split layout with the calendar and completion summary on the left and a
   puzzle-detail panel on the right.
 
-Calendar navigation must not trigger puzzle-description requests. Changing the
+Calendar navigation must not trigger puzzle-description http requests, puzzle descriptions can be loaded automatically if they are cached. Changing the
 highlighted day clears the detail panel so that a previously loaded description
 cannot be mistaken for the new selection.
 

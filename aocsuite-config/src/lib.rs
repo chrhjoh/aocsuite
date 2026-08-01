@@ -84,6 +84,14 @@ impl Configuration {
         Ok(fs::read_to_string(&self.session_path)?)
     }
 
+    pub fn session_configured(&self) -> AocConfigResult<bool> {
+        match fs::metadata(&self.session_path) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     fn set_session(&self, session: Option<&str>) -> AocConfigResult<()> {
         match session.map(str::trim).filter(|value| !value.is_empty()) {
             Some(session) => {
@@ -283,6 +291,23 @@ mod tests {
             config.get::<String>(ConfigKey::Session),
             Err(AocConfigError::SessionReadNotAllowed)
         ));
+    }
+
+    #[test]
+    fn session_configured_reports_present_and_absent_credentials_without_mutation() {
+        let temp = TempDir::new().unwrap();
+        let mut config = configuration(&temp);
+
+        assert!(!config.session_configured().expect("query absent session"));
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
+
+        fs::create_dir(temp.path().join("config")).unwrap();
+        config
+            .set(ConfigKey::Session, Some("configured-value"))
+            .unwrap();
+        assert!(config
+            .session_configured()
+            .expect("query configured session"));
     }
 
     #[cfg(unix)]

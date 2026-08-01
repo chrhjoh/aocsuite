@@ -285,7 +285,7 @@ The milestone is met only when:
 - required CI is configured for the supported baseline without live services or
   real external applications.
 
-## TUI phase — scoped, implementation not started
+## TUI phase — in progress
 
 The initial scope and implementation sequence are defined in
 `tui-implementation.md`. The phase retains these constraints:
