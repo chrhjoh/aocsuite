@@ -11,7 +11,8 @@ crate boundaries in `../design/architecture.md` or persistence policy in
 
 Last reviewed: 2026-08-02.
 
-Overall status: **initial implementation complete**.
+Overall status: **initial implementation complete; succeeded by
+`post-mvp-tui-workflow-parity.md`**.
 
 Implemented in the first slice:
 
