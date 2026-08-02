@@ -20,7 +20,7 @@ TUI workflow-parity slices. Existing CLI workflows remain supported.
    puzzle, part, and exact answer and uses a cancel-by-default confirmation.
    Both paths render semantic outcomes and refresh currently visible affected
    content after correct answers.
-3. **Git through lazygit - unimplemented.** Add frontend-owned terminal handoff
+3. **Git through lazygit - implemented.** Add frontend-owned terminal handoff
    to lazygit for the workspace without wrapping or parsing its output.
 4. **Releases - unimplemented.** Add TUI artifacts to the existing release
    process after workflow parity and cross-platform readiness are established.

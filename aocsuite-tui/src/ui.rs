@@ -849,6 +849,7 @@ fn render_help_dialog(frame: &mut Frame<'_>, app: &App) {
     }
     let mut lines = vec![
         key_line("q", "Quit", area.width),
+        key_line("g", "Open workspace in lazygit", area.width),
         key_line("Tab / Shift-Tab", "Next / previous tab", area.width),
         Line::default(),
     ];

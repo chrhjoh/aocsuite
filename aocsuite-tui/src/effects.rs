@@ -140,6 +140,17 @@ fn run_background_effect(
                 result,
             }
         }
+        BackgroundEffect::PrepareLazygit { language_active } => {
+            let workspace = Workspace::new(layout.workspace_dir());
+            let result = workspace
+                .ensure_git(executor)
+                .map(|()| workspace.root_dir().to_path_buf())
+                .map_err(|error| format!("Could not prepare workspace Git: {error}"));
+            Action::LazygitPrepared {
+                language_active,
+                result,
+            }
+        }
         BackgroundEffect::RunSolver(request) => {
             let result =
                 run_solver(layout, request, executor).map_err(|error| run_failure(request, error));
@@ -409,6 +420,23 @@ pub fn run_foreground_effect(
         }
         ForegroundEffect::OpenLanguageFile(prepared) => {
             launcher.open_file(prepared.editor, &prepared.path, &prepared.working_directory)?;
+        }
+        ForegroundEffect::OpenLazygit(workspace) => {
+            let request = aocsuite_utils::CommandRequest::new("lazygit")
+                .current_dir(workspace)
+                .foreground();
+            let output = executor.execute(&request).map_err(|error| {
+                TuiError::Io(std::io::Error::new(
+                    error.kind(),
+                    format!("Could not launch lazygit: {error}"),
+                ))
+            })?;
+            if !output.status.success() {
+                return Err(TuiError::Io(std::io::Error::other(format!(
+                    "lazygit exited with {}",
+                    output.status
+                ))));
+            }
         }
     }
     Ok(())
@@ -990,6 +1018,53 @@ mod tests {
         assert_eq!(requests[0].args, vec![path.into_os_string()]);
         assert_eq!(requests[0].current_dir.as_ref(), Some(&working_directory));
         assert_eq!(requests[0].mode, ProcessMode::Foreground);
+    }
+
+    #[test]
+    fn lazygit_preparation_and_foreground_requests_are_exact() {
+        #[derive(Default)]
+        struct RecordingExecutor(Mutex<Vec<CommandRequest>>);
+        impl CommandExecutor for RecordingExecutor {
+            fn execute(&self, request: &CommandRequest) -> io::Result<Output> {
+                self.0.lock().unwrap().push(request.clone());
+                Ok(Output {
+                    status: successful_status(),
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                })
+            }
+        }
+
+        let root = test_root("lazygit");
+        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
+        let executor = RecordingExecutor::default();
+        let action = run_background_effect(
+            &layout,
+            BackgroundEffect::PrepareLazygit {
+                language_active: true,
+            },
+            &executor,
+        );
+        let Action::LazygitPrepared {
+            result: Ok(path), ..
+        } = action
+        else {
+            panic!("unexpected action: {action:?}");
+        };
+        run_foreground_effect(ForegroundEffect::OpenLazygit(path.clone()), &executor).unwrap();
+
+        let requests = executor.0.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].program, "git");
+        assert_eq!(requests[0].args, ["init"]);
+        assert_eq!(requests[0].mode, ProcessMode::Captured);
+        assert_eq!(requests[1].program, "lazygit");
+        assert!(requests[1].args.is_empty());
+        assert_eq!(requests[1].current_dir.as_deref(), Some(path.as_path()));
+        assert!(requests[1].environment.is_empty());
+        assert!(requests[1].inherit_environment);
+        assert_eq!(requests[1].mode, ProcessMode::Foreground);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

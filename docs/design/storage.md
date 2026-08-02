@@ -47,8 +47,8 @@ environment state.
 │   ├── inputs/
 │   └── calendars/
 └── workspace/
-    ├── .git/
-    ├── .gitignore
+    ├── .git/             (created on first Git workflow)
+    ├── .gitignore        (created on first Git workflow)
     ├── .aocsuite-runs/
     ├── examples/
     ├── rust/
@@ -138,8 +138,7 @@ Bootstrap may create:
 - the runtime root;
 - the layout manifest;
 - required directories;
-- `workspace/`;
-- the workspace Git repository;
+- `workspace/`, without Git state;
 
 Bootstrap is idempotent and distinguishes:
 
@@ -300,9 +299,12 @@ Storage owns Git operations scoped to `workspace/`.
 Captured Git disables pagers and interactive prompts. Explicit pass-through may
 inherit terminal streams, but it is not a security sandbox.
 
-Workspace initialization creates `.gitignore` when it is absent. An existing
-`.gitignore` is user-managed and preserved. The initial generated file ignores
-only disposable state, including:
+`Workspace::ensure` creates only the workspace directory. The first Git workflow
+initializes the repository and creates `.gitignore` when it is absent. An
+existing `.gitignore` is user-managed and preserved. The exact supported clone
+workflow clones into the workspace instead of initializing it, then creates the
+generated `.gitignore` only when the clone did not supply one. The initial
+generated file ignores only disposable state, including:
 
 - Rust `target/`;
 - Python virtual environments;

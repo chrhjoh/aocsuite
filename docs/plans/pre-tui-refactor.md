@@ -128,8 +128,8 @@ Done:
 - Path and status getters are pure.
 - Typed persisted-cache cleanup and confirmed `RuntimeLayout` root uninstall
   are storage-owned.
-- Workspace initialization creates a missing `.gitignore` without overwriting
-  an existing user-managed file.
+- The first Git workflow lazily initializes workspace Git and creates a missing
+  `.gitignore` without overwriting an existing user-managed file.
 
 Acceptance:
 
