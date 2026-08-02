@@ -13,7 +13,7 @@ use aocsuite_lang::{
     SolverFile,
 };
 use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
-use aocsuite_parser::parse_calendar;
+use aocsuite_parser::{parse_calendar, parse_submission};
 use aocsuite_storage::{ContentStore, RuntimeLayout, Workspace, WorkspaceError};
 use aocsuite_utils::{
     valid_puzzle_release, CommandError, CommandExecutor, LanguageId, PartSelection, PuzzleId,
@@ -145,6 +145,11 @@ fn run_background_effect(
                 run_solver(layout, request, executor).map_err(|error| run_failure(request, error));
             Action::RunFinished { request, result }
         }
+        BackgroundEffect::SubmitAnswer(request) => {
+            let result = submit_answer(layout, &request)
+                .map_err(|error| format!("Could not submit the answer: {error}"));
+            Action::SubmissionFinished { request, result }
+        }
         BackgroundEffect::LoadLanguageData { language } => {
             let result = load_language_data(layout, language, executor)
                 .map_err(|error| format!("Could not load {language} language data: {error}"));
@@ -196,6 +201,29 @@ fn run_background_effect(
             Action::ConfigSaved { result }
         }
     }
+}
+
+fn submit_answer(
+    layout: &RuntimeLayout,
+    request: &crate::app::SubmissionRequest,
+) -> Result<aocsuite_parser::AocSubmissionResult, TuiError> {
+    submit_answer_with_options(layout, request, AocClientOptions::default())
+}
+
+fn submit_answer_with_options(
+    layout: &RuntimeLayout,
+    request: &crate::app::SubmissionRequest,
+    options: AocClientOptions,
+) -> Result<aocsuite_parser::AocSubmissionResult, TuiError> {
+    valid_puzzle_release(request.puzzle.day, request.puzzle.year)?;
+    let config = Configuration::load(layout.config_dir())?;
+    let session = config.session()?;
+    let client = AocClient::new(Some(&session), options)?;
+    let content = ContentStore::open(layout.cache_dir(), &client)?;
+    let result =
+        parse_submission(&client.submit(request.puzzle, request.part, request.answer())?)?;
+    content.record_submission(request.puzzle, request.part, &result)?;
+    Ok(result)
 }
 
 fn run_solver(
@@ -580,12 +608,14 @@ fn config_operation(mutation: &ConfigMutation) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
     use std::process::{ExitStatus, Output};
     use std::sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc, Mutex,
     };
-    use std::{fs, io, path::PathBuf};
+    use std::{fs, io, path::PathBuf, time::Duration};
 
     use aocsuite_config::{ConfigKey, Configuration};
     use aocsuite_lang::AocLanguageError;
@@ -597,13 +627,86 @@ mod tests {
 
     use super::{
         config_mutation_failure_message, record_run_timings, run_background_effect, run_failure,
-        run_foreground_effect, worker_loop, ConfigMutationFailure, RunSolverError,
+        run_foreground_effect, submit_answer_with_options, worker_loop, ConfigMutationFailure,
+        RunSolverError,
     };
     use crate::app::{
         Action, BackgroundEffect, ConfigMutation, ForegroundEffect, LanguageFileKind,
         NonSecretConfigField, PreparedLanguageFile, RunInput, RunPartReport, RunReport, RunRequest,
-        SecretString,
+        SecretString, SubmissionRequest,
     };
+
+    #[test]
+    fn submission_posts_once_parses_result_and_invalidates_managed_calendar() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let responses = [
+                "<html>old calendar</html>",
+                "<main><article>That's the right answer!</article></main>",
+                "<html>refreshed calendar</html>",
+            ];
+            let mut requests = Vec::new();
+            for body in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut bytes = [0; 4096];
+                let length = stream.read(&mut bytes).unwrap();
+                requests.push(String::from_utf8_lossy(&bytes[..length]).into_owned());
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            }
+            sender.send(requests).unwrap();
+        });
+
+        let root = test_root("submission-effect");
+        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
+        layout.bootstrap().unwrap();
+        let mut config = Configuration::load(layout.config_dir()).unwrap();
+        config
+            .set(ConfigKey::Session, Some("test-session"))
+            .unwrap();
+        let options = aocsuite_client::AocClientOptions {
+            base_url,
+            timeout: Duration::from_secs(2),
+            user_agent: "aocsuite-test/1".to_owned(),
+        };
+        let client =
+            aocsuite_client::AocClient::new(Some("test-session"), options.clone()).unwrap();
+        let content = aocsuite_storage::ContentStore::open(layout.cache_dir(), &client).unwrap();
+        let puzzle = PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap());
+        assert_eq!(
+            content.load_calendar(puzzle.year).unwrap(),
+            "<html>old calendar</html>"
+        );
+        let request = SubmissionRequest::new(puzzle, PuzzlePart::One, "manual answer".to_owned());
+
+        let result = submit_answer_with_options(&layout, &request, options).unwrap();
+
+        assert_eq!(result, aocsuite_parser::AocSubmissionResult::Correct);
+        assert_eq!(
+            content.load_calendar(puzzle.year).unwrap(),
+            "<html>refreshed calendar</html>"
+        );
+        let requests = receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        let posts = requests
+            .iter()
+            .filter(|request| request.starts_with("POST "))
+            .collect::<Vec<_>>();
+        assert_eq!(posts.len(), 1);
+        assert!(posts[0]
+            .to_ascii_lowercase()
+            .contains("cookie: session=test-session"));
+        assert!(posts[0].contains("level=1&answer=manual+answer"));
+        fs::remove_dir_all(root).unwrap();
+    }
 
     struct PanicExecutor;
 

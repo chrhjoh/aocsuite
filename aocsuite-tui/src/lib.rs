@@ -21,7 +21,8 @@ pub use app::{
     ConfigOperationState, Effect, ForegroundEffect, LanguageConfirmation, LanguageData,
     LanguageDialog, LanguageFileKind, LanguageFocus, LanguageMutation, LanguageOperationState,
     LanguageTextInput, NonSecretConfigField, PreparedExercise, PreparedLanguageFile, RunDialog,
-    RunFailure, RunInput, RunPartReport, RunReport, RunRequest, SecretCharacter, SecretString, Tab,
+    RunFailure, RunInput, RunPartReport, RunReport, RunRequest, SecretCharacter, SecretString,
+    SubmissionDialog, SubmissionRequest, Tab,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use effects::{run_foreground_effect, EffectRunner};
@@ -125,6 +126,10 @@ fn dispatch_effects(
                     BackgroundEffect::RunSolver(request) => Some(*request),
                     _ => None,
                 };
+                let submission_request = match &effect {
+                    BackgroundEffect::SubmitAnswer(request) => Some(request.clone()),
+                    _ => None,
+                };
                 let was_language = matches!(
                     &effect,
                     BackgroundEffect::LoadLanguageData { .. }
@@ -154,6 +159,8 @@ fn dispatch_effects(
                                 details: Some(message),
                             },
                         });
+                    } else if let Some(request) = submission_request {
+                        app.update(Action::SubmissionEffectFailed { request, message });
                     } else if was_exercise {
                         app.exercise_preparing = false;
                         app.update(Action::EffectFailed(message));
@@ -193,9 +200,50 @@ fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
     if app.active_run.is_some() {
         return matches!(key.code, KeyCode::Char('q')).then_some(Action::Quit);
     }
+    if app.active_submission.is_some() {
+        return None;
+    }
+    if let Some(dialog) = &app.submission_dialog {
+        return match dialog {
+            SubmissionDialog::Part { part, .. } => match key.code {
+                KeyCode::Esc => Some(Action::SubmissionCancel),
+                KeyCode::Enter => Some(Action::SubmissionSubmit),
+                KeyCode::Left if *part == aocsuite_utils::PuzzlePart::Two => {
+                    Some(Action::ToggleSubmissionChoice)
+                }
+                KeyCode::Right if *part == aocsuite_utils::PuzzlePart::One => {
+                    Some(Action::ToggleSubmissionChoice)
+                }
+                KeyCode::Tab | KeyCode::BackTab => Some(Action::ToggleSubmissionChoice),
+                _ => None,
+            },
+            SubmissionDialog::Answer { .. } => match key.code {
+                KeyCode::Esc => Some(Action::SubmissionCancel),
+                KeyCode::Enter => Some(Action::SubmissionSubmit),
+                KeyCode::Backspace => Some(Action::SubmissionBackspace),
+                KeyCode::Char(character) => Some(Action::SubmissionInput(character)),
+                _ => None,
+            },
+            SubmissionDialog::Confirm { submit, .. } => match key.code {
+                KeyCode::Esc => Some(Action::SubmissionCancel),
+                KeyCode::Enter => Some(Action::SubmissionSubmit),
+                KeyCode::Left if *submit => Some(Action::ToggleSubmissionChoice),
+                KeyCode::Right if !*submit => Some(Action::ToggleSubmissionChoice),
+                KeyCode::Tab | KeyCode::BackTab => Some(Action::ToggleSubmissionChoice),
+                _ => None,
+            },
+            SubmissionDialog::Outcome { .. } => match key.code {
+                KeyCode::Esc | KeyCode::Enter => Some(Action::SubmissionCancel),
+                KeyCode::Up | KeyCode::PageUp => Some(Action::ScrollSubmissionUp),
+                KeyCode::Down | KeyCode::PageDown => Some(Action::ScrollSubmissionDown),
+                _ => None,
+            },
+        };
+    }
     if let Some(dialog) = &app.run_dialog {
         return match dialog {
             RunDialog::Result { .. } => match key.code {
+                KeyCode::Char('s') => Some(Action::OpenSubmission),
                 KeyCode::Esc | KeyCode::Enter => Some(Action::CancelRunDialog),
                 KeyCode::Up | KeyCode::PageUp => Some(Action::ScrollRunUp),
                 KeyCode::Down | KeyCode::PageDown => Some(Action::ScrollRunDown),
@@ -325,6 +373,7 @@ fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
         (KeyCode::Up, _) => Some(Action::PreviousCalendarPuzzle),
         (KeyCode::Down, _) => Some(Action::NextCalendarPuzzle),
         (KeyCode::Char('d'), _) => Some(Action::DownloadDescription),
+        (KeyCode::Char('s'), _) => Some(Action::OpenSubmission),
         (KeyCode::Char('1'), _) => Some(Action::RunPart(aocsuite_utils::PuzzlePart::One)),
         (KeyCode::Char('2'), _) => Some(Action::RunPart(aocsuite_utils::PuzzlePart::Two)),
         (KeyCode::Char('i'), _) => Some(Action::ToggleRunInput),
@@ -345,6 +394,7 @@ mod tests {
 
     use super::{
         action_for_key, Action, App, ConfigData, LanguageData, LanguageDialog, SecretCharacter,
+        SubmissionDialog,
     };
 
     fn app() -> App {
@@ -444,6 +494,25 @@ mod tests {
         assert!(matches!(
             action_for_key(&app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
             Some(Action::DialogCancel)
+        ));
+    }
+
+    #[test]
+    fn submission_modal_takes_priority_over_global_shortcuts() {
+        let mut app = app();
+        app.submission_dialog = Some(SubmissionDialog::Outcome {
+            puzzle: app.latest_puzzle,
+            part: aocsuite_utils::PuzzlePart::One,
+            result: Ok(aocsuite_parser::AocSubmissionResult::Incorrect),
+            scroll: 0,
+        });
+
+        assert!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)).is_none()
+        );
+        assert!(matches!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            Some(Action::SubmissionCancel)
         ));
     }
 

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, path::PathBuf};
 
-use aocsuite_parser::Calendar;
+use aocsuite_parser::{AocSubmissionResult, Calendar};
 use aocsuite_utils::{LanguageId, PuzzleId, PuzzlePart, PuzzleYear, RunHistoryLimit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +53,103 @@ pub enum RunDialog {
         result: Result<RunReport, RunFailure>,
         scroll: u16,
     },
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SubmissionRequest {
+    pub puzzle: PuzzleId,
+    pub part: PuzzlePart,
+    answer: String,
+}
+
+impl SubmissionRequest {
+    pub(crate) fn new(puzzle: PuzzleId, part: PuzzlePart, answer: String) -> Self {
+        Self {
+            puzzle,
+            part,
+            answer,
+        }
+    }
+
+    pub(crate) fn answer(&self) -> &str {
+        &self.answer
+    }
+}
+
+impl std::fmt::Debug for SubmissionRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SubmissionRequest")
+            .field("puzzle", &self.puzzle)
+            .field("part", &self.part)
+            .field("answer", &"[REDACTED]")
+            .finish()
+    }
+}
+
+#[derive(PartialEq, Eq)]
+pub enum SubmissionDialog {
+    Part {
+        puzzle: PuzzleId,
+        part: PuzzlePart,
+    },
+    Answer {
+        puzzle: PuzzleId,
+        part: PuzzlePart,
+        answer: String,
+        error: Option<String>,
+    },
+    Confirm {
+        request: SubmissionRequest,
+        submit: bool,
+    },
+    Outcome {
+        puzzle: PuzzleId,
+        part: PuzzlePart,
+        result: Result<AocSubmissionResult, String>,
+        scroll: u16,
+    },
+}
+
+impl std::fmt::Debug for SubmissionDialog {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Part { puzzle, part } => formatter
+                .debug_struct("Part")
+                .field("puzzle", puzzle)
+                .field("part", part)
+                .finish(),
+            Self::Answer {
+                puzzle,
+                part,
+                error,
+                ..
+            } => formatter
+                .debug_struct("Answer")
+                .field("puzzle", puzzle)
+                .field("part", part)
+                .field("answer", &"[REDACTED]")
+                .field("error", error)
+                .finish(),
+            Self::Confirm { request, submit } => formatter
+                .debug_struct("Confirm")
+                .field("request", request)
+                .field("submit", submit)
+                .finish(),
+            Self::Outcome {
+                puzzle,
+                part,
+                result,
+                scroll,
+            } => formatter
+                .debug_struct("Outcome")
+                .field("puzzle", puzzle)
+                .field("part", part)
+                .field("result", result)
+                .field("scroll", scroll)
+                .finish(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -326,6 +423,8 @@ pub struct App {
     pub run_input: RunInput,
     pub run_spinner_frame: usize,
     pub run_dialog: Option<RunDialog>,
+    pub submission_dialog: Option<SubmissionDialog>,
+    pub active_submission: Option<SubmissionRequest>,
     pub language: LanguageId,
     pub language_packages: Vec<String>,
     pub language_libraries: Vec<String>,
@@ -366,6 +465,14 @@ pub enum Action {
     CancelRunDialog,
     ScrollRunUp,
     ScrollRunDown,
+    OpenSubmission,
+    ToggleSubmissionChoice,
+    SubmissionInput(char),
+    SubmissionBackspace,
+    SubmissionSubmit,
+    SubmissionCancel,
+    ScrollSubmissionUp,
+    ScrollSubmissionDown,
     SwitchLanguage,
     RefreshLanguage,
     PreviousLanguagePane,
@@ -432,6 +539,14 @@ pub enum Action {
         request: RunRequest,
         failure: RunFailure,
     },
+    SubmissionFinished {
+        request: SubmissionRequest,
+        result: Result<AocSubmissionResult, String>,
+    },
+    SubmissionEffectFailed {
+        request: SubmissionRequest,
+        message: String,
+    },
     LanguageDataFinished {
         language: LanguageId,
         result: Result<LanguageData, String>,
@@ -469,6 +584,7 @@ pub enum BackgroundEffect {
         language: LanguageId,
     },
     RunSolver(RunRequest),
+    SubmitAnswer(SubmissionRequest),
     LoadLanguageData {
         language: LanguageId,
     },
@@ -539,6 +655,8 @@ impl App {
             run_input: RunInput::Aoc,
             run_spinner_frame: 0,
             run_dialog: None,
+            submission_dialog: None,
+            active_submission: None,
             language,
             language_packages: Vec::new(),
             language_libraries: Vec::new(),
@@ -570,6 +688,19 @@ impl App {
     }
 
     pub fn update(&mut self, action: Action) -> Vec<Effect> {
+        if self.active_submission.is_some()
+            && !matches!(
+                action,
+                Action::Tick
+                    | Action::SubmissionFinished { .. }
+                    | Action::SubmissionEffectFailed { .. }
+                    | Action::CalendarFinished { .. }
+                    | Action::CachedDescriptionFinished { .. }
+                    | Action::DescriptionDownloaded { .. }
+            )
+        {
+            return Vec::new();
+        }
         if self.active_run.is_some()
             && !matches!(
                 action,
@@ -707,7 +838,7 @@ impl App {
                 };
                 self.status = None;
             }
-            Action::Tick if self.active_run.is_some() => {
+            Action::Tick if self.active_run.is_some() || self.active_submission.is_some() => {
                 self.run_spinner_frame = (self.run_spinner_frame + 1) % 4;
             }
             Action::CancelRunDialog => self.run_dialog = None,
@@ -718,6 +849,64 @@ impl App {
             }
             Action::ScrollRunDown => {
                 if let Some(RunDialog::Result { scroll, .. }) = &mut self.run_dialog {
+                    *scroll = scroll.saturating_add(1);
+                }
+            }
+            Action::OpenSubmission => {
+                if self.submission_dialog.is_some() || self.active_submission.is_some() {
+                    return Vec::new();
+                }
+                if let Some(request) = self.run_submission_request() {
+                    self.submission_dialog = Some(SubmissionDialog::Confirm {
+                        request,
+                        submit: false,
+                    });
+                } else if self.run_dialog.is_some() {
+                    self.status = Some("This run result cannot be submitted".to_owned());
+                } else if self.active_tab == Tab::Calendar {
+                    let Some(puzzle) = self.selected_puzzle_or_status() else {
+                        return Vec::new();
+                    };
+                    self.submission_dialog = Some(SubmissionDialog::Part {
+                        puzzle,
+                        part: PuzzlePart::One,
+                    });
+                }
+            }
+            Action::ToggleSubmissionChoice => match &mut self.submission_dialog {
+                Some(SubmissionDialog::Part { part, .. }) => {
+                    *part = match part {
+                        PuzzlePart::One => PuzzlePart::Two,
+                        PuzzlePart::Two => PuzzlePart::One,
+                    };
+                }
+                Some(SubmissionDialog::Confirm { submit, .. }) => *submit = !*submit,
+                _ => {}
+            },
+            Action::SubmissionInput(character) => {
+                if let Some(SubmissionDialog::Answer { answer, error, .. }) =
+                    &mut self.submission_dialog
+                {
+                    answer.push(character);
+                    *error = None;
+                }
+            }
+            Action::SubmissionBackspace => {
+                if let Some(SubmissionDialog::Answer { answer, .. }) = &mut self.submission_dialog {
+                    answer.pop();
+                }
+            }
+            Action::SubmissionSubmit => return self.submit_submission_dialog(),
+            Action::SubmissionCancel => self.submission_dialog = None,
+            Action::ScrollSubmissionUp => {
+                if let Some(SubmissionDialog::Outcome { scroll, .. }) = &mut self.submission_dialog
+                {
+                    *scroll = scroll.saturating_sub(1);
+                }
+            }
+            Action::ScrollSubmissionDown => {
+                if let Some(SubmissionDialog::Outcome { scroll, .. }) = &mut self.submission_dialog
+                {
                     *scroll = scroll.saturating_add(1);
                 }
             }
@@ -1066,6 +1255,28 @@ impl App {
                     scroll: 0,
                 });
             }
+            Action::SubmissionFinished { request, result } => {
+                self.active_submission = None;
+                let correct = matches!(result, Ok(AocSubmissionResult::Correct));
+                self.submission_dialog = Some(SubmissionDialog::Outcome {
+                    puzzle: request.puzzle,
+                    part: request.part,
+                    result,
+                    scroll: 0,
+                });
+                if correct {
+                    return self.submission_refreshes(request.puzzle, request.part);
+                }
+            }
+            Action::SubmissionEffectFailed { request, message } => {
+                self.active_submission = None;
+                self.submission_dialog = Some(SubmissionDialog::Outcome {
+                    puzzle: request.puzzle,
+                    part: request.part,
+                    result: Err(message),
+                    scroll: 0,
+                });
+            }
             Action::LanguageDataFinished { language, result } => {
                 if language != self.language {
                     return Vec::new();
@@ -1185,6 +1396,95 @@ impl App {
 
     pub fn description_downloading(&self, puzzle: PuzzleId) -> bool {
         self.description_downloads.contains(&puzzle)
+    }
+
+    fn run_submission_request(&self) -> Option<SubmissionRequest> {
+        let RunDialog::Result {
+            request,
+            result: Ok(report),
+            ..
+        } = self.run_dialog.as_ref()?
+        else {
+            return None;
+        };
+        let part = report.parts.as_slice();
+        if request.input != RunInput::Aoc || part.len() != 1 || part[0].answer.trim().is_empty() {
+            return None;
+        }
+        Some(SubmissionRequest::new(
+            request.puzzle,
+            part[0].part,
+            part[0].answer.clone(),
+        ))
+    }
+
+    fn submit_submission_dialog(&mut self) -> Vec<Effect> {
+        let Some(dialog) = self.submission_dialog.take() else {
+            return Vec::new();
+        };
+        match dialog {
+            SubmissionDialog::Part { puzzle, part } => {
+                self.submission_dialog = Some(SubmissionDialog::Answer {
+                    puzzle,
+                    part,
+                    answer: String::new(),
+                    error: None,
+                });
+                Vec::new()
+            }
+            SubmissionDialog::Answer {
+                puzzle,
+                part,
+                answer,
+                ..
+            } => {
+                let answer = answer.trim().to_owned();
+                if answer.is_empty() {
+                    self.submission_dialog = Some(SubmissionDialog::Answer {
+                        puzzle,
+                        part,
+                        answer,
+                        error: Some("Answer cannot be empty".to_owned()),
+                    });
+                    return Vec::new();
+                }
+                self.start_submission(SubmissionRequest::new(puzzle, part, answer))
+            }
+            SubmissionDialog::Confirm { request, submit } if submit => {
+                self.run_dialog = None;
+                self.start_submission(request)
+            }
+            SubmissionDialog::Confirm { .. } | SubmissionDialog::Outcome { .. } => Vec::new(),
+        }
+    }
+
+    fn start_submission(&mut self, request: SubmissionRequest) -> Vec<Effect> {
+        if self.active_submission.is_some() {
+            return Vec::new();
+        }
+        self.active_submission = Some(request.clone());
+        vec![Effect::Background(BackgroundEffect::SubmitAnswer(request))]
+    }
+
+    fn submission_refreshes(&mut self, puzzle: PuzzleId, part: PuzzlePart) -> Vec<Effect> {
+        if self.active_tab != Tab::Calendar {
+            return Vec::new();
+        }
+        let mut effects = Vec::new();
+        if puzzle.year == self.selected_year {
+            self.calendar_loading = true;
+            effects.push(Effect::Background(BackgroundEffect::LoadCalendar {
+                year: puzzle.year,
+                refresh: true,
+            }));
+        }
+        if part == PuzzlePart::One && self.selected_puzzle == Some(puzzle) {
+            self.description_downloads.insert(puzzle);
+            effects.push(Effect::Background(BackgroundEffect::DownloadDescription(
+                puzzle,
+            )));
+        }
+        effects
     }
 
     fn select_tab(&mut self, tab: Tab) -> Vec<Effect> {
@@ -1594,7 +1894,7 @@ fn calendar_puzzles(calendar: &Calendar) -> Vec<PuzzleId> {
 
 #[cfg(test)]
 mod tests {
-    use aocsuite_parser::{Calendar, CalendarCell, CalendarRow, Rgb};
+    use aocsuite_parser::{AocSubmissionResult, Calendar, CalendarCell, CalendarRow, Rgb};
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
 
     use super::{
@@ -1602,7 +1902,7 @@ mod tests {
         ConfigOperationState, DescriptionState, Effect, ForegroundEffect, LanguageData,
         LanguageDialog, LanguageFileKind, LanguageMutation, LanguageOperationState,
         NonSecretConfigField, PreparedExercise, RunDialog, RunFailure, RunInput, RunPartReport,
-        RunReport,
+        RunReport, SubmissionDialog, SubmissionRequest,
     };
 
     fn puzzle(day: u32, year: i32) -> PuzzleId {
@@ -1664,6 +1964,222 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn calendar_submission_defaults_part_one_validates_and_dispatches_directly() {
+        let mut app = app();
+        let selected = puzzle(10, 2026);
+        app.update(Action::CalendarFinished {
+            year: selected.year,
+            refresh: false,
+            result: Ok(calendar(vec![vec![Some(selected)]])),
+        });
+
+        assert!(app.update(Action::OpenSubmission).is_empty());
+        assert!(matches!(
+            app.submission_dialog,
+            Some(SubmissionDialog::Part {
+                part: PuzzlePart::One,
+                ..
+            })
+        ));
+        app.update(Action::SubmissionSubmit);
+        assert!(app.update(Action::SubmissionSubmit).is_empty());
+        assert!(matches!(
+            app.submission_dialog,
+            Some(SubmissionDialog::Answer {
+                ref error,
+                ..
+            }) if error.as_deref() == Some("Answer cannot be empty")
+        ));
+        for character in "  42  ".chars() {
+            app.update(Action::SubmissionInput(character));
+        }
+        let effects = app.update(Action::SubmissionSubmit);
+        assert_eq!(effects.len(), 1);
+        let Effect::Background(BackgroundEffect::SubmitAnswer(request)) = &effects[0] else {
+            panic!("unexpected effect: {:?}", effects[0]);
+        };
+        assert_eq!(request.puzzle, selected);
+        assert_eq!(request.part, PuzzlePart::One);
+        assert_eq!(request.answer(), "42");
+        assert!(app.submission_dialog.is_none());
+    }
+
+    #[test]
+    fn run_submission_uses_retained_aoc_result_and_defaults_to_cancel() {
+        let mut app = app();
+        let retained = puzzle(3, 2025);
+        let request = super::RunRequest {
+            puzzle: retained,
+            language: LanguageId::Python,
+            part: PuzzlePart::Two,
+            input: RunInput::Aoc,
+        };
+        app.run_dialog = Some(RunDialog::Result {
+            request,
+            result: Ok(RunReport {
+                request,
+                compile_stdout: String::new(),
+                compile_stderr: String::new(),
+                solver_stdout: String::new(),
+                solver_stderr: String::new(),
+                parts: vec![RunPartReport {
+                    part: PuzzlePart::Two,
+                    answer: "retained-answer".to_owned(),
+                    runtime_ms: 1,
+                }],
+                warning: None,
+            }),
+            scroll: 0,
+        });
+        let eligible = app.run_dialog.clone().unwrap();
+
+        app.update(Action::OpenSubmission);
+        assert!(matches!(
+            app.submission_dialog,
+            Some(SubmissionDialog::Confirm {
+                ref request,
+                submit: false,
+            }) if request.puzzle == retained
+                && request.part == PuzzlePart::Two
+                && request.answer() == "retained-answer"
+        ));
+        assert!(app.update(Action::SubmissionSubmit).is_empty());
+
+        app.submission_dialog = None;
+        let mut ineligible = Vec::new();
+        let mut example = eligible.clone();
+        let RunDialog::Result { request, .. } = &mut example;
+        request.input = RunInput::Example;
+        ineligible.push(example);
+        let RunDialog::Result { request, .. } = &eligible;
+        ineligible.push(RunDialog::Result {
+            request: *request,
+            result: Err(RunFailure {
+                request: *request,
+                summary: "failed".to_owned(),
+                details: None,
+            }),
+            scroll: 0,
+        });
+        for answers in [vec![], vec!["   "], vec!["one", "two"]] {
+            let mut dialog = eligible.clone();
+            let RunDialog::Result {
+                result: Ok(report), ..
+            } = &mut dialog
+            else {
+                unreachable!();
+            };
+            report.parts = answers
+                .into_iter()
+                .map(|answer| RunPartReport {
+                    part: PuzzlePart::Two,
+                    answer: answer.to_owned(),
+                    runtime_ms: 1,
+                })
+                .collect();
+            ineligible.push(dialog);
+        }
+        for dialog in ineligible {
+            app.run_dialog = Some(dialog);
+            assert!(app.run_submission_request().is_none());
+        }
+    }
+
+    #[test]
+    fn submission_debug_redacts_manual_answers_through_dialog_actions_and_effects() {
+        let sensitive = "sensitive-manual-answer";
+        let puzzle = puzzle(10, 2026);
+        let dialog = SubmissionDialog::Answer {
+            puzzle,
+            part: PuzzlePart::One,
+            answer: sensitive.to_owned(),
+            error: Some("validation context".to_owned()),
+        };
+        let request = SubmissionRequest {
+            puzzle,
+            part: PuzzlePart::One,
+            answer: sensitive.to_owned(),
+        };
+        let action = Action::SubmissionFinished {
+            request: request.clone(),
+            result: Ok(AocSubmissionResult::Incorrect),
+        };
+        let effect = BackgroundEffect::SubmitAnswer(request);
+
+        for debug in [
+            format!("{dialog:?}"),
+            format!("{action:?}"),
+            format!("{effect:?}"),
+        ] {
+            assert!(!debug.contains(sensitive));
+            assert!(debug.contains("[REDACTED]"));
+        }
+        assert!(format!("{dialog:?}").contains("validation context"));
+    }
+
+    #[test]
+    fn active_submission_blocks_duplicates_and_correct_refreshes_visible_content() {
+        let mut app = app();
+        let selected = puzzle(10, 2026);
+        app.selected_puzzle = Some(selected);
+        let request = SubmissionRequest {
+            puzzle: selected,
+            part: PuzzlePart::One,
+            answer: "answer".to_owned(),
+        };
+        app.active_submission = Some(request.clone());
+        assert!(app.update(Action::OpenSubmission).is_empty());
+        let effects = app.update(Action::SubmissionFinished {
+            request,
+            result: Ok(AocSubmissionResult::Correct),
+        });
+        assert_eq!(effects.len(), 2);
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            Effect::Background(BackgroundEffect::LoadCalendar { refresh: true, .. })
+        )));
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            Effect::Background(BackgroundEffect::DownloadDescription(puzzle)) if *puzzle == selected
+        )));
+        assert!(matches!(
+            app.submission_dialog,
+            Some(SubmissionDialog::Outcome {
+                result: Ok(AocSubmissionResult::Correct),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn correct_submission_does_not_refresh_calendar_content_from_another_tab() {
+        let mut app = app();
+        let selected = puzzle(10, 2026);
+        app.selected_puzzle = Some(selected);
+        app.active_tab = super::Tab::Language;
+        let request = SubmissionRequest {
+            puzzle: selected,
+            part: PuzzlePart::One,
+            answer: "answer".to_owned(),
+        };
+        app.active_submission = Some(request.clone());
+
+        let effects = app.update(Action::SubmissionFinished {
+            request,
+            result: Ok(AocSubmissionResult::Correct),
+        });
+
+        assert!(effects.is_empty());
+        assert!(matches!(
+            app.submission_dialog,
+            Some(SubmissionDialog::Outcome {
+                result: Ok(AocSubmissionResult::Correct),
+                ..
+            })
+        ));
     }
 
     fn load_calendar(app: &mut App, calendar: Calendar, refresh: bool) -> Vec<Effect> {
