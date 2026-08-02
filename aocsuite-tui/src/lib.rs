@@ -20,8 +20,8 @@ pub use app::{
     Action, App, BackgroundEffect, ConfigData, ConfigDialog, ConfigField, ConfigMutation,
     ConfigOperationState, Effect, ForegroundEffect, LanguageConfirmation, LanguageData,
     LanguageDialog, LanguageFileKind, LanguageFocus, LanguageMutation, LanguageOperationState,
-    LanguageTextInput, NonSecretConfigField, PreparedExercise, PreparedLanguageFile,
-    SecretCharacter, SecretString, Tab,
+    LanguageTextInput, NonSecretConfigField, PreparedExercise, PreparedLanguageFile, RunDialog,
+    RunFailure, RunInput, RunPartReport, RunReport, RunRequest, SecretCharacter, SecretString, Tab,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use effects::{run_foreground_effect, EffectRunner};
@@ -105,6 +105,7 @@ pub fn run() -> TuiResult<()> {
                 }
             }
         }
+        app.update(Action::Tick);
     }
     Ok(())
 }
@@ -120,6 +121,10 @@ fn dispatch_effects(
         match effect {
             Effect::Background(effect) => {
                 let was_exercise = matches!(&effect, BackgroundEffect::PrepareExercise { .. });
+                let run_request = match &effect {
+                    BackgroundEffect::RunSolver(request) => Some(*request),
+                    _ => None,
+                };
                 let was_language = matches!(
                     &effect,
                     BackgroundEffect::LoadLanguageData { .. }
@@ -140,10 +145,19 @@ fn dispatch_effects(
                 };
                 if let Err(error) = runner.submit(effect) {
                     let message = error.to_string();
-                    if was_exercise {
+                    if let Some(request) = run_request {
+                        app.update(Action::RunEffectFailed {
+                            request,
+                            failure: RunFailure {
+                                request,
+                                summary: "Could not queue solver run".to_owned(),
+                                details: Some(message),
+                            },
+                        });
+                    } else if was_exercise {
                         app.exercise_preparing = false;
-                    }
-                    if was_config {
+                        app.update(Action::EffectFailed(message));
+                    } else if was_config {
                         app.update(Action::ConfigEffectFailed(message));
                     } else if was_language {
                         app.update(Action::LanguageEffectFailed(message));
@@ -176,6 +190,19 @@ fn dispatch_effects(
 }
 
 fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
+    if app.active_run.is_some() {
+        return matches!(key.code, KeyCode::Char('q')).then_some(Action::Quit);
+    }
+    if let Some(dialog) = &app.run_dialog {
+        return match dialog {
+            RunDialog::Result { .. } => match key.code {
+                KeyCode::Esc | KeyCode::Enter => Some(Action::CancelRunDialog),
+                KeyCode::Up | KeyCode::PageUp => Some(Action::ScrollRunUp),
+                KeyCode::Down | KeyCode::PageDown => Some(Action::ScrollRunDown),
+                _ => None,
+            },
+        };
+    }
     if let Some(dialog) = &app.config_dialog {
         return match dialog {
             ConfigDialog::Text { .. } => match key.code {
@@ -298,7 +325,10 @@ fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
         (KeyCode::Up, _) => Some(Action::PreviousCalendarPuzzle),
         (KeyCode::Down, _) => Some(Action::NextCalendarPuzzle),
         (KeyCode::Char('d'), _) => Some(Action::DownloadDescription),
-        (KeyCode::Char('r'), _) => Some(Action::RefreshCalendar),
+        (KeyCode::Char('1'), _) => Some(Action::RunPart(aocsuite_utils::PuzzlePart::One)),
+        (KeyCode::Char('2'), _) => Some(Action::RunPart(aocsuite_utils::PuzzlePart::Two)),
+        (KeyCode::Char('i'), _) => Some(Action::ToggleRunInput),
+        (KeyCode::Char('u'), _) => Some(Action::RefreshCalendar),
         (KeyCode::Char('b'), _) => Some(Action::OpenBrowser),
         (KeyCode::Enter, _) => Some(Action::OpenExercise),
         (KeyCode::PageUp, _) => Some(Action::ScrollDescriptionUp),
@@ -334,6 +364,39 @@ mod tests {
             ),
             Some(Action::DownloadDescription)
         ));
+        assert!(action_for_key(
+            &app(),
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE)
+        )
+        .is_none());
+        assert!(matches!(
+            action_for_key(
+                &app(),
+                KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE)
+            ),
+            Some(Action::RunPart(aocsuite_utils::PuzzlePart::One))
+        ));
+        assert!(matches!(
+            action_for_key(
+                &app(),
+                KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE)
+            ),
+            Some(Action::RunPart(aocsuite_utils::PuzzlePart::Two))
+        ));
+        assert!(matches!(
+            action_for_key(
+                &app(),
+                KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE)
+            ),
+            Some(Action::ToggleRunInput)
+        ));
+        assert!(matches!(
+            action_for_key(
+                &app(),
+                KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE)
+            ),
+            Some(Action::RefreshCalendar)
+        ));
         assert!(matches!(
             action_for_key(&app(), KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
             Some(Action::PreviousTab)
@@ -342,6 +405,23 @@ mod tests {
             action_for_key(&app(), KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
             Some(Action::NextCalendarPuzzle)
         ));
+    }
+
+    #[test]
+    fn active_run_blocks_keys_except_the_blocked_quit_request() {
+        let mut app = app();
+        app.active_run = Some(crate::RunRequest {
+            puzzle: app.latest_puzzle,
+            language: LanguageId::Rust,
+            part: aocsuite_utils::PuzzlePart::One,
+            input: crate::RunInput::Aoc,
+        });
+
+        assert!(matches!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
+            Some(Action::Quit)
+        ));
+        assert!(action_for_key(&app, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).is_none());
     }
 
     #[test]

@@ -8,19 +8,23 @@ use std::{
 
 use aocsuite_client::{AocClient, AocClientOptions, AocPage};
 use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
-use aocsuite_lang::{ConfirmedLibraryRemoval, ConfirmedTemplateReset, Language, SolverFile};
+use aocsuite_lang::{
+    AocLanguageError, ConfirmedLibraryRemoval, ConfirmedTemplateReset, Language, LanguageRunOutput,
+    SolverFile,
+};
 use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
 use aocsuite_parser::parse_calendar;
-use aocsuite_storage::{ContentStore, RuntimeLayout, Workspace};
+use aocsuite_storage::{ContentStore, RuntimeLayout, Workspace, WorkspaceError};
 use aocsuite_utils::{
-    valid_puzzle_release, CommandExecutor, LanguageId, PuzzleId, SystemCommandExecutor,
+    valid_puzzle_release, CommandError, CommandExecutor, LanguageId, PartSelection, PuzzleId,
+    PuzzlePart, RunHistoryLimit, SystemCommandExecutor,
 };
 
 use crate::{
     app::{
         Action, BackgroundEffect, ConfigData, ConfigMutation, ForegroundEffect, LanguageData,
         LanguageFileKind, LanguageMutation, NonSecretConfigField, PreparedExercise,
-        PreparedLanguageFile,
+        PreparedLanguageFile, RunFailure, RunInput, RunPartReport, RunReport, RunRequest,
     },
     TuiError,
 };
@@ -136,6 +140,11 @@ fn run_background_effect(
                 result,
             }
         }
+        BackgroundEffect::RunSolver(request) => {
+            let result =
+                run_solver(layout, request, executor).map_err(|error| run_failure(request, error));
+            Action::RunFinished { request, result }
+        }
         BackgroundEffect::LoadLanguageData { language } => {
             let result = load_language_data(layout, language, executor)
                 .map_err(|error| format!("Could not load {language} language data: {error}"));
@@ -186,6 +195,146 @@ fn run_background_effect(
             });
             Action::ConfigSaved { result }
         }
+    }
+}
+
+fn run_solver(
+    layout: &RuntimeLayout,
+    request: RunRequest,
+    executor: &dyn CommandExecutor,
+) -> Result<RunReport, RunSolverError> {
+    valid_puzzle_release(request.puzzle.day, request.puzzle.year).map_err(TuiError::from)?;
+    let config = Configuration::load(layout.config_dir()).map_err(TuiError::from)?;
+    let retention = config
+        .get::<RunHistoryLimit>(ConfigKey::RunHistoryLimit)
+        .map_err(TuiError::from)?;
+    let session = load_optional_session(&config).map_err(TuiError::from)?;
+    let client =
+        AocClient::new(session.as_deref(), AocClientOptions::default()).map_err(TuiError::from)?;
+    let content = ContentStore::open(layout.cache_dir(), &client).map_err(TuiError::from)?;
+    let workspace = Workspace::new(layout.workspace_dir());
+    let input = match request.input {
+        RunInput::Aoc => content
+            .ensure_input(request.puzzle)
+            .map_err(TuiError::from)?,
+        RunInput::Example => {
+            let path = workspace
+                .root_dir()
+                .join("examples")
+                .join(format!("{}.txt", request.puzzle));
+            workspace
+                .ensure_example(request.puzzle)
+                .map_err(|source| RunSolverError::SharedExample { path, source })?
+        }
+    };
+    let language = Language::new(request.language, &workspace, executor);
+    let output = language
+        .execute(request.puzzle, PartSelection::from(request.part), &input)
+        .map_err(TuiError::from)?;
+    let mut report = report_from_output(request, &output);
+    record_run_timings(&mut report, |part, runtime_ms| {
+        content
+            .record_run_timing(
+                request.puzzle,
+                request.language,
+                part,
+                runtime_ms,
+                retention,
+            )
+            .map_err(|error| error.to_string())
+    });
+    Ok(report)
+}
+
+fn record_run_timings(
+    report: &mut RunReport,
+    mut record: impl FnMut(PuzzlePart, u128) -> Result<(), String>,
+) {
+    for part in &report.parts {
+        if let Err(error) = record(part.part, part.runtime_ms) {
+            report.warning = Some(format!("Timing could not be saved: {error}"));
+            break;
+        }
+    }
+}
+
+fn run_failure(request: RunRequest, error: RunSolverError) -> RunFailure {
+    match error {
+        RunSolverError::Tui(TuiError::Language(AocLanguageError::Command(
+            CommandError::Failed {
+                request: command,
+                output,
+            },
+        ))) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            let command_context = concise_command(&command);
+            let output_details = if !stderr.is_empty() {
+                Some(stderr)
+            } else if !stdout.is_empty() {
+                Some(stdout)
+            } else {
+                None
+            };
+            RunFailure {
+                request,
+                summary: format!("Solver command exited with {}", output.status),
+                details: Some(match output_details {
+                    Some(details) => format!("{details}\n\nCommand: {command_context}"),
+                    None => format!("Command: {command_context}"),
+                }),
+            }
+        }
+        RunSolverError::Tui(TuiError::Language(AocLanguageError::Command(CommandError::Io(
+            source,
+        )))) => RunFailure {
+            request,
+            summary: "Could not launch the solver command".to_owned(),
+            details: Some(source.to_string()),
+        },
+        error => RunFailure {
+            request,
+            summary: "Solver run could not be completed".to_owned(),
+            details: Some(error.to_string()),
+        },
+    }
+}
+
+fn concise_command(request: &aocsuite_utils::CommandRequest) -> String {
+    request.program.to_string_lossy().into_owned()
+}
+
+#[derive(Debug, thiserror::Error)]
+enum RunSolverError {
+    #[error(transparent)]
+    Tui(#[from] TuiError),
+    #[error("could not prepare shared example input at '{path}': {source}")]
+    SharedExample {
+        path: std::path::PathBuf,
+        source: WorkspaceError,
+    },
+}
+
+fn report_from_output(request: RunRequest, output: &LanguageRunOutput) -> RunReport {
+    let parts = output
+        .run
+        .result
+        .part(request.part)
+        .map(|result| RunPartReport {
+            part: request.part,
+            answer: result.answer().to_owned(),
+            runtime_ms: result.runtime_ms(),
+        })
+        .into_iter()
+        .collect();
+    RunReport {
+        request,
+        compile_stdout: output.compile.stdout.clone(),
+        compile_stderr: output.compile.stderr.clone(),
+        solver_stdout: output.run.stdout.clone(),
+        solver_stderr: output.run.stderr.clone(),
+        parts,
+        warning: None,
     }
 }
 
@@ -436,19 +585,24 @@ mod tests {
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc, Mutex,
     };
-    use std::{fs, io};
+    use std::{fs, io, path::PathBuf};
 
     use aocsuite_config::{ConfigKey, Configuration};
+    use aocsuite_lang::AocLanguageError;
     use aocsuite_storage::RuntimeLayout;
-    use aocsuite_utils::{CommandExecutor, CommandRequest, LanguageId, ProcessMode, PuzzleYear};
+    use aocsuite_utils::{
+        CommandError, CommandExecutor, CommandRequest, LanguageId, ProcessMode, PuzzleDay,
+        PuzzleId, PuzzlePart, PuzzleYear,
+    };
 
     use super::{
-        config_mutation_failure_message, run_background_effect, run_foreground_effect, worker_loop,
-        ConfigMutationFailure,
+        config_mutation_failure_message, record_run_timings, run_background_effect, run_failure,
+        run_foreground_effect, worker_loop, ConfigMutationFailure, RunSolverError,
     };
     use crate::app::{
         Action, BackgroundEffect, ConfigMutation, ForegroundEffect, LanguageFileKind,
-        NonSecretConfigField, PreparedLanguageFile, SecretString,
+        NonSecretConfigField, PreparedLanguageFile, RunInput, RunPartReport, RunReport, RunRequest,
+        SecretString,
     };
 
     struct PanicExecutor;
@@ -524,6 +678,174 @@ mod tests {
         }
         assert!(!layout.workspace_dir().exists());
         fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn shared_example_solver_effect_maps_parts_and_executes_solver_once() {
+        struct SolverExecutor {
+            solver_executions: AtomicUsize,
+            output_paths: Mutex<Vec<PathBuf>>,
+        }
+
+        impl CommandExecutor for SolverExecutor {
+            fn execute(&self, request: &CommandRequest) -> io::Result<Output> {
+                if request.args.last().is_some_and(|argument| argument == "1") {
+                    self.solver_executions.fetch_add(1, Ordering::Relaxed);
+                    let output_path = PathBuf::from(&request.args[1]);
+                    fs::write(
+                        &output_path,
+                        r#"{"part1":{"answer":"alpha","runtime_ms":3},"part2":null}"#,
+                    )?;
+                    self.output_paths.lock().unwrap().push(output_path);
+                }
+                Ok(Output {
+                    status: successful_status(),
+                    stdout: if request.args.last().is_some_and(|argument| argument == "1") {
+                        b"solver stdout".to_vec()
+                    } else {
+                        b"compile stdout".to_vec()
+                    },
+                    stderr: Vec::new(),
+                })
+            }
+        }
+
+        let root = test_root("solver-effect");
+        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
+        layout.bootstrap().unwrap();
+        let request = RunRequest {
+            puzzle: PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap()),
+            language: LanguageId::Rust,
+            part: PuzzlePart::One,
+            input: RunInput::Example,
+        };
+        let executor = SolverExecutor {
+            solver_executions: AtomicUsize::new(0),
+            output_paths: Mutex::new(Vec::new()),
+        };
+
+        let action =
+            run_background_effect(&layout, BackgroundEffect::RunSolver(request), &executor);
+
+        let Action::RunFinished {
+            request: returned_request,
+            result: Ok(report),
+        } = action
+        else {
+            panic!("unexpected action: {action:?}");
+        };
+        assert_eq!(returned_request, request);
+        assert_eq!(report.compile_stdout, "compile stdout");
+        assert_eq!(report.solver_stdout, "solver stdout");
+        assert_eq!(report.parts.len(), 1);
+        assert_eq!(report.parts[0].part, PuzzlePart::One);
+        assert_eq!(report.parts[0].answer, "alpha");
+        assert_eq!(report.parts[0].runtime_ms, 3);
+        assert!(report.warning.is_none());
+        assert_eq!(executor.solver_executions.load(Ordering::Relaxed), 1);
+        assert_eq!(executor.output_paths.lock().unwrap().len(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn shared_example_failure_identifies_the_example_path() {
+        let root = test_root("solver-example-error");
+        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
+        layout.bootstrap().unwrap();
+        fs::write(layout.workspace_dir().join("examples"), "not a directory").unwrap();
+        let puzzle = PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap());
+
+        let action = run_background_effect(
+            &layout,
+            BackgroundEffect::RunSolver(RunRequest {
+                puzzle,
+                language: LanguageId::Rust,
+                part: PuzzlePart::One,
+                input: RunInput::Example,
+            }),
+            &PanicExecutor,
+        );
+
+        let Action::RunFinished {
+            result: Err(failure),
+            ..
+        } = action
+        else {
+            panic!("unexpected action: {action:?}");
+        };
+        let expected_path = layout
+            .workspace_dir()
+            .join("examples")
+            .join(format!("{puzzle}.txt"));
+        let details = failure.details.unwrap();
+        assert!(details.contains(&expected_path.display().to_string()));
+        assert!(details.contains("could not prepare shared example input"));
+        assert!(details.contains("File exists") || details.contains("Not a directory"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn timing_failure_preserves_the_run_report_with_a_warning() {
+        let request = RunRequest {
+            puzzle: PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap()),
+            language: LanguageId::Rust,
+            part: PuzzlePart::One,
+            input: RunInput::Example,
+        };
+        let mut report = RunReport {
+            request,
+            compile_stdout: "compiled".to_owned(),
+            compile_stderr: String::new(),
+            solver_stdout: "ran once".to_owned(),
+            solver_stderr: String::new(),
+            parts: vec![RunPartReport {
+                part: PuzzlePart::One,
+                answer: "42".to_owned(),
+                runtime_ms: 3,
+            }],
+            warning: None,
+        };
+
+        record_run_timings(&mut report, |_, _| Err("database unavailable".to_owned()));
+
+        assert_eq!(report.solver_stdout, "ran once");
+        assert_eq!(report.parts[0].answer, "42");
+        assert!(report
+            .warning
+            .as_deref()
+            .is_some_and(|warning| warning.contains("database unavailable")));
+    }
+
+    #[test]
+    fn failed_command_is_presented_without_debug_request_or_output() {
+        let request = RunRequest {
+            puzzle: PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap()),
+            language: LanguageId::Rust,
+            part: PuzzlePart::One,
+            input: RunInput::Example,
+        };
+        let failure = run_failure(
+            request,
+            RunSolverError::Tui(crate::TuiError::Language(AocLanguageError::Command(
+                CommandError::Failed {
+                    request: Box::new(CommandRequest::new("cargo").arg("build")),
+                    output: Box::new(Output {
+                        status: failed_status(),
+                        stdout: b"less useful stdout".to_vec(),
+                        stderr: b"concise compiler error".to_vec(),
+                    }),
+                },
+            ))),
+        );
+
+        assert!(failure.summary.contains("exited with"));
+        let details = failure.details.unwrap();
+        assert!(details.starts_with("concise compiler error"));
+        assert!(details.contains("Command: cargo"));
+        assert!(!details.contains("cargo build"));
+        assert!(!details.contains("less useful stdout"));
+        assert!(!details.contains("CommandRequest"));
+        assert!(!details.contains("Output"));
     }
 
     #[test]
@@ -765,10 +1087,22 @@ mod tests {
         ExitStatusExt::from_raw(0)
     }
 
+    #[cfg(unix)]
+    fn failed_status() -> ExitStatus {
+        use std::os::unix::process::ExitStatusExt;
+        ExitStatusExt::from_raw(1 << 8)
+    }
+
     #[cfg(windows)]
     fn successful_status() -> ExitStatus {
         use std::os::windows::process::ExitStatusExt;
         ExitStatusExt::from_raw(0)
+    }
+
+    #[cfg(windows)]
+    fn failed_status() -> ExitStatus {
+        use std::os::windows::process::ExitStatusExt;
+        ExitStatusExt::from_raw(1)
     }
 
     static TEST_ROOT: AtomicUsize = AtomicUsize::new(0);

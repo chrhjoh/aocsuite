@@ -14,8 +14,9 @@ use ratatui::{
 };
 
 use crate::app::{
-    App, ConfigDialog, ConfigField, ConfigOperationState, DescriptionState, LanguageConfirmation,
-    LanguageDialog, LanguageFocus, LanguageOperationState, LanguageTextInput, Tab,
+    friendly_puzzle, App, ConfigDialog, ConfigField, ConfigOperationState, DescriptionState,
+    LanguageConfirmation, LanguageDialog, LanguageFocus, LanguageOperationState, LanguageTextInput,
+    RunDialog, RunInput, RunRequest, Tab,
 };
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
@@ -34,12 +35,139 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
         Tab::Config => render_config_tab(frame, root[1], app),
     }
     render_footer(frame, root[2], app);
-    if let Some(dialog) = &app.config_dialog {
+    if let Some(request) = app.active_run {
+        render_running(frame, request, app.run_spinner_frame);
+    } else if let Some(dialog) = &app.run_dialog {
+        render_run_dialog(frame, dialog);
+    } else if let Some(dialog) = &app.config_dialog {
         render_config_dialog(frame, dialog);
     } else if let Some(dialog) = &app.language_dialog {
         render_language_dialog(frame, dialog);
     } else if app.help_open {
         render_help_dialog(frame, app);
+    }
+}
+
+fn run_context(request: RunRequest, include_input: bool) -> String {
+    let mut context = format!(
+        "{}  |  {}  |  Part {}",
+        friendly_puzzle(request.puzzle),
+        request.language,
+        request.part
+    );
+    if include_input {
+        context.push_str(match request.input {
+            RunInput::Aoc => "  |  AoC input",
+            RunInput::Example => "  |  Shared example",
+        });
+    }
+    context
+}
+
+fn run_title(label: &str, request: RunRequest, width: u16) -> String {
+    let title = format!(" {label} | {} ", run_context(request, true));
+    let maximum = usize::from(width.saturating_sub(4));
+    if title.chars().count() <= maximum {
+        return title;
+    }
+    if maximum <= 3 {
+        return ".".repeat(maximum);
+    }
+    let mut truncated = title.chars().take(maximum - 3).collect::<String>();
+    truncated.push_str("...");
+    truncated
+}
+
+fn render_running(frame: &mut Frame<'_>, request: RunRequest, spinner_frame: usize) {
+    let full = frame.area();
+    let width = full.width.saturating_sub(4).min(84);
+    let height = full.height.saturating_sub(2).min(7);
+    let area = Rect::new(
+        full.x + full.width.saturating_sub(width) / 2,
+        full.y + full.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    let spinner = ["|", "/", "-", "\\"][spinner_frame % 4];
+    let title = run_title("Running", request, area.width);
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(Line::styled(
+            spinner,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .block(Block::default().borders(Borders::ALL).title(title)),
+        area,
+    );
+}
+
+fn render_run_dialog(frame: &mut Frame<'_>, dialog: &RunDialog) {
+    let full = frame.area();
+    let width = full.width.saturating_sub(4).min(84);
+    let height = full.height.saturating_sub(2).min(22);
+    let area = Rect::new(
+        full.x + full.width.saturating_sub(width) / 2,
+        full.y + full.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    match dialog {
+        RunDialog::Result {
+            request,
+            result,
+            scroll,
+        } => {
+            let mut text = String::new();
+            let label;
+            match result {
+                Err(failure) => {
+                    label = "Run failed";
+                    text.push_str(&format!("{}\n", failure.summary));
+                    if let Some(details) = &failure.details {
+                        text.push_str(&format!("\n{details}"));
+                    }
+                }
+                Ok(report) => {
+                    label = "Run result";
+                    if let Some(part) = report.parts.first() {
+                        text.push_str(&format!(
+                            "Answer\n{}\n\nRuntime\n{} ms\n",
+                            part.answer, part.runtime_ms
+                        ));
+                    }
+                    for (label, output) in [
+                        ("Compile stdout", &report.compile_stdout),
+                        ("Compile stderr", &report.compile_stderr),
+                        ("Solver stdout", &report.solver_stdout),
+                        ("Solver stderr", &report.solver_stderr),
+                    ] {
+                        if !output.is_empty() {
+                            text.push_str(&format!("\n{label}\n{output}"));
+                        }
+                    }
+                    if let Some(warning) = &report.warning {
+                        text.push_str(&format!("\nWarning\n{warning}"));
+                    }
+                }
+            }
+            let title = run_title(label, *request, area.width);
+            frame.render_widget(
+                Paragraph::new(text)
+                    .scroll((*scroll, 0))
+                    .wrap(Wrap { trim: false })
+                    .block(Block::default().borders(Borders::ALL).title(title)),
+                area,
+            );
+        }
     }
 }
 
@@ -73,7 +201,7 @@ fn render_calendar_tab(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Direction::Vertical
     };
     let constraints = if direction == Direction::Horizontal {
-        [Constraint::Percentage(46), Constraint::Percentage(54)]
+        [Constraint::Length(60), Constraint::Fill(1)]
     } else {
         [Constraint::Percentage(60), Constraint::Percentage(40)]
     };
@@ -126,7 +254,7 @@ fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
             lines
         }
         None if app.calendar_loading => Vec::new(),
-        None => vec![Line::from("Calendar unavailable. Press r to retry.")],
+        None => vec![Line::from("Calendar unavailable. Press u to retry.")],
     };
     frame.render_widget(
         Paragraph::new(body)
@@ -582,7 +710,9 @@ fn render_help_dialog(frame: &mut Frame<'_>, app: &App) {
             key_line("Ctrl + arrows", "Pan calendar", area.width),
             key_line("PageUp / PageDown", "Scroll puzzle description", area.width),
             key_line("d", "Download or refresh puzzle description", area.width),
-            key_line("r", "Refresh calendar", area.width),
+            key_line("1 / 2", "Run puzzle part one / two", area.width),
+            key_line("i", "Toggle AoC / shared-example input", area.width),
+            key_line("u", "Refresh calendar", area.width),
             key_line("b", "Open puzzle in browser", area.width),
             key_line("Enter", "Open exercise in editor", area.width),
         ]),
@@ -675,12 +805,15 @@ fn completion(calendar: &Calendar) -> (usize, usize, usize) {
 #[cfg(test)]
 mod tests {
     use aocsuite_parser::{Calendar, CalendarCell, CalendarRow, Rgb};
-    use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
+    use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
     use ratatui::{backend::TestBackend, style::Color, Terminal};
 
-    use crate::app::{Action, App, ConfigData, LanguageData, SecretCharacter, Tab};
+    use crate::app::{
+        Action, App, ConfigData, LanguageData, RunDialog, RunFailure, RunInput, RunPartReport,
+        RunReport, RunRequest, SecretCharacter, Tab,
+    };
 
-    use super::render;
+    use super::{render, run_title};
 
     fn app() -> App {
         let puzzle = PuzzleId::new(PuzzleDay::new(10).unwrap(), PuzzleYear::new(2026).unwrap());
@@ -724,6 +857,109 @@ mod tests {
         assert!(!rendered.contains(&selected.to_string()));
         assert!(rendered.contains("? help"));
         assert!(!rendered.contains("d download"));
+    }
+
+    #[test]
+    fn running_and_scrolled_result_render_friendly_context() {
+        let backend = TestBackend::new(100, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        let request = RunRequest {
+            puzzle: app.selected_puzzle().unwrap(),
+            language: LanguageId::Rust,
+            part: PuzzlePart::One,
+            input: RunInput::Aoc,
+        };
+        app.active_run = Some(request);
+        app.run_spinner_frame = 1;
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Running"));
+        assert!(rendered.contains("/"));
+        assert!(rendered.contains("2026 Day 10"));
+        assert!(rendered.contains("rust"));
+        assert!(rendered.contains("Part 1"));
+        assert!(rendered.contains("AoC input"));
+
+        app.active_run = None;
+        app.run_dialog = Some(RunDialog::Result {
+            request,
+            result: Ok(RunReport {
+                request,
+                compile_stdout: "compile marker".to_owned(),
+                compile_stderr: String::new(),
+                solver_stdout: "line\n".repeat(20) + "solver marker",
+                solver_stderr: String::new(),
+                parts: vec![RunPartReport {
+                    part: PuzzlePart::One,
+                    answer: "42".to_owned(),
+                    runtime_ms: 7,
+                }],
+                warning: Some("timing warning".to_owned()),
+            }),
+            scroll: 0,
+        });
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Run result"));
+        assert!(rendered.contains("2026 Day 10"));
+        assert!(rendered.contains("Answer"));
+        assert!(rendered.contains("42"));
+        assert!(rendered.contains("Runtime"));
+
+        let Some(RunDialog::Result { scroll, .. }) = &mut app.run_dialog else {
+            unreachable!();
+        };
+        *scroll = 22;
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("line"));
+        assert!(!rendered.contains("compile marker"));
+    }
+
+    #[test]
+    fn run_failure_renders_summary_details_and_friendly_context() {
+        let backend = TestBackend::new(100, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        let request = RunRequest {
+            puzzle: app.selected_puzzle().unwrap(),
+            language: LanguageId::Rust,
+            part: PuzzlePart::Two,
+            input: RunInput::Example,
+        };
+        app.run_dialog = Some(RunDialog::Result {
+            request,
+            result: Err(RunFailure {
+                request,
+                summary: "Solver command exited with status 1".to_owned(),
+                details: Some("compiler rejected the solution".to_owned()),
+            }),
+            scroll: 0,
+        });
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Run failed"));
+        assert!(rendered.contains("2026 Day 10"));
+        assert!(rendered.contains("Part 2"));
+        assert!(rendered.contains("Shared example"));
+        assert!(rendered.contains("compiler rejected the solution"));
+    }
+
+    #[test]
+    fn run_title_truncates_to_the_available_border_width() {
+        let request = RunRequest {
+            puzzle: PuzzleId::new(PuzzleDay::new(10).unwrap(), PuzzleYear::new(2026).unwrap()),
+            language: LanguageId::Rust,
+            part: PuzzlePart::Two,
+            input: RunInput::Example,
+        };
+
+        let title = run_title("Run failed", request, 24);
+
+        assert_eq!(title.chars().count(), 20);
+        assert!(title.ends_with("..."));
     }
 
     #[test]

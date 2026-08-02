@@ -1,7 +1,59 @@
 use std::{collections::HashSet, path::PathBuf};
 
 use aocsuite_parser::Calendar;
-use aocsuite_utils::{LanguageId, PuzzleId, PuzzleYear, RunHistoryLimit};
+use aocsuite_utils::{LanguageId, PuzzleId, PuzzlePart, PuzzleYear, RunHistoryLimit};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunInput {
+    Aoc,
+    Example,
+}
+
+pub(crate) fn friendly_puzzle(puzzle: PuzzleId) -> String {
+    format!("{} Day {}", puzzle.year, puzzle.day)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunRequest {
+    pub puzzle: PuzzleId,
+    pub language: LanguageId,
+    pub part: PuzzlePart,
+    pub input: RunInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunPartReport {
+    pub part: PuzzlePart,
+    pub answer: String,
+    pub runtime_ms: u128,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunReport {
+    pub request: RunRequest,
+    pub compile_stdout: String,
+    pub compile_stderr: String,
+    pub solver_stdout: String,
+    pub solver_stderr: String,
+    pub parts: Vec<RunPartReport>,
+    pub warning: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunFailure {
+    pub request: RunRequest,
+    pub summary: String,
+    pub details: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunDialog {
+    Result {
+        request: RunRequest,
+        result: Result<RunReport, RunFailure>,
+        scroll: u16,
+    },
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -270,6 +322,10 @@ pub struct App {
     description_downloads: HashSet<PuzzleId>,
     pub calendar_scroll: (u16, u16),
     pub exercise_preparing: bool,
+    pub active_run: Option<RunRequest>,
+    pub run_input: RunInput,
+    pub run_spinner_frame: usize,
+    pub run_dialog: Option<RunDialog>,
     pub language: LanguageId,
     pub language_packages: Vec<String>,
     pub language_libraries: Vec<String>,
@@ -304,6 +360,12 @@ pub enum Action {
     RefreshCalendar,
     OpenBrowser,
     OpenExercise,
+    RunPart(PuzzlePart),
+    ToggleRunInput,
+    Tick,
+    CancelRunDialog,
+    ScrollRunUp,
+    ScrollRunDown,
     SwitchLanguage,
     RefreshLanguage,
     PreviousLanguagePane,
@@ -362,6 +424,14 @@ pub enum Action {
         language: LanguageId,
         result: Result<PreparedExercise, String>,
     },
+    RunFinished {
+        request: RunRequest,
+        result: Result<RunReport, RunFailure>,
+    },
+    RunEffectFailed {
+        request: RunRequest,
+        failure: RunFailure,
+    },
     LanguageDataFinished {
         language: LanguageId,
         result: Result<LanguageData, String>,
@@ -398,6 +468,7 @@ pub enum BackgroundEffect {
         puzzle: PuzzleId,
         language: LanguageId,
     },
+    RunSolver(RunRequest),
     LoadLanguageData {
         language: LanguageId,
     },
@@ -464,6 +535,10 @@ impl App {
             description_downloads: HashSet::new(),
             calendar_scroll: (0, 0),
             exercise_preparing: false,
+            active_run: None,
+            run_input: RunInput::Aoc,
+            run_spinner_frame: 0,
+            run_dialog: None,
             language,
             language_packages: Vec::new(),
             language_libraries: Vec::new(),
@@ -495,6 +570,32 @@ impl App {
     }
 
     pub fn update(&mut self, action: Action) -> Vec<Effect> {
+        if self.active_run.is_some()
+            && !matches!(
+                action,
+                Action::Tick
+                    | Action::RunFinished { .. }
+                    | Action::RunEffectFailed { .. }
+                    | Action::CalendarFinished { .. }
+                    | Action::CachedDescriptionFinished { .. }
+                    | Action::DescriptionDownloaded { .. }
+                    | Action::ExercisePrepared { .. }
+                    | Action::LanguageDataFinished { .. }
+                    | Action::LanguageMutationFinished { .. }
+                    | Action::LanguageFilePrepared { .. }
+                    | Action::LanguageEffectFailed(_)
+                    | Action::ConfigLoaded { .. }
+                    | Action::ConfigSaved { .. }
+                    | Action::ConfigEffectFailed(_)
+                    | Action::ForegroundFinished(_)
+                    | Action::EffectFailed(_)
+            )
+        {
+            if matches!(action, Action::Quit) {
+                self.status = Some("Wait for the solver run to finish".to_owned());
+            }
+            return Vec::new();
+        }
         match action {
             Action::Quit if self.config_saving() => {
                 self.quit_after_config_save = true;
@@ -578,6 +679,47 @@ impl App {
                     puzzle,
                     language: self.language,
                 })];
+            }
+            Action::RunPart(part) if self.active_tab == Tab::Calendar => {
+                if self.language_busy() {
+                    self.status = Some("A language operation is already running".to_owned());
+                    return Vec::new();
+                }
+                let Some(puzzle) = self.selected_puzzle_or_status() else {
+                    return Vec::new();
+                };
+                let request = RunRequest {
+                    puzzle,
+                    language: self.language,
+                    part,
+                    input: self.run_input,
+                };
+                self.active_run = Some(request);
+                self.run_spinner_frame = 0;
+                self.run_dialog = None;
+                self.status = None;
+                return vec![Effect::Background(BackgroundEffect::RunSolver(request))];
+            }
+            Action::ToggleRunInput if self.active_tab == Tab::Calendar => {
+                self.run_input = match self.run_input {
+                    RunInput::Aoc => RunInput::Example,
+                    RunInput::Example => RunInput::Aoc,
+                };
+                self.status = None;
+            }
+            Action::Tick if self.active_run.is_some() => {
+                self.run_spinner_frame = (self.run_spinner_frame + 1) % 4;
+            }
+            Action::CancelRunDialog => self.run_dialog = None,
+            Action::ScrollRunUp => {
+                if let Some(RunDialog::Result { scroll, .. }) = &mut self.run_dialog {
+                    *scroll = scroll.saturating_sub(1);
+                }
+            }
+            Action::ScrollRunDown => {
+                if let Some(RunDialog::Result { scroll, .. }) = &mut self.run_dialog {
+                    *scroll = scroll.saturating_add(1);
+                }
             }
             Action::SwitchLanguage if self.active_tab == Tab::Language => {
                 if self.language_busy() {
@@ -906,6 +1048,24 @@ impl App {
                     Err(message) => self.status = Some(message),
                 }
             }
+            Action::RunFinished { request, result } => {
+                self.active_run = None;
+                self.status = None;
+                self.run_dialog = Some(RunDialog::Result {
+                    request,
+                    result,
+                    scroll: 0,
+                });
+            }
+            Action::RunEffectFailed { request, failure } => {
+                self.active_run = None;
+                self.status = None;
+                self.run_dialog = Some(RunDialog::Result {
+                    request,
+                    result: Err(failure),
+                    scroll: 0,
+                });
+            }
             Action::LanguageDataFinished { language, result } => {
                 if language != self.language {
                     return Vec::new();
@@ -1185,6 +1345,7 @@ impl App {
             LanguageOperationState::Running { .. }
         ) || self.language_file_opening.is_some()
             || self.exercise_preparing
+            || self.active_run.is_some()
     }
 
     fn clear_language_data(&mut self) {
@@ -1434,13 +1595,14 @@ fn calendar_puzzles(calendar: &Calendar) -> Vec<PuzzleId> {
 #[cfg(test)]
 mod tests {
     use aocsuite_parser::{Calendar, CalendarCell, CalendarRow, Rgb};
-    use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
+    use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
 
     use super::{
         Action, App, BackgroundEffect, ConfigData, ConfigDialog, ConfigField, ConfigMutation,
         ConfigOperationState, DescriptionState, Effect, ForegroundEffect, LanguageData,
         LanguageDialog, LanguageFileKind, LanguageMutation, LanguageOperationState,
-        NonSecretConfigField, PreparedExercise,
+        NonSecretConfigField, PreparedExercise, RunDialog, RunFailure, RunInput, RunPartReport,
+        RunReport,
     };
 
     fn puzzle(day: u32, year: i32) -> PuzzleId {
@@ -1920,6 +2082,105 @@ mod tests {
         );
         assert!(app.update(Action::OpenBrowser).is_empty());
         assert!(app.update(Action::OpenExercise).is_empty());
+    }
+
+    #[test]
+    fn solver_run_dispatches_once_and_blocks_language_work_and_quit() {
+        let mut app = selected_app();
+        let selected = app.selected_puzzle().unwrap();
+
+        let effects = app.update(Action::RunPart(PuzzlePart::One));
+        let request = super::RunRequest {
+            puzzle: selected,
+            language: LanguageId::Rust,
+            part: PuzzlePart::One,
+            input: RunInput::Aoc,
+        };
+        assert_eq!(
+            effects,
+            vec![Effect::Background(BackgroundEffect::RunSolver(request))]
+        );
+        assert_eq!(app.active_run, Some(request));
+        assert!(app.status.is_none());
+
+        assert!(app.update(Action::RunPart(PuzzlePart::Two)).is_empty());
+        assert!(app.update(Action::OpenExercise).is_empty());
+        app.update(Action::NextTab);
+        assert_eq!(app.active_tab, super::Tab::Calendar);
+        assert!(app.update(Action::SwitchLanguage).is_empty());
+        app.update(Action::Tick);
+        assert_eq!(app.run_spinner_frame, 1);
+        app.update(Action::Quit);
+        assert!(!app.should_quit);
+        assert_eq!(
+            app.status.as_deref(),
+            Some("Wait for the solver run to finish")
+        );
+    }
+
+    #[test]
+    fn completed_run_keeps_results_and_persistence_warning_tagged_to_request() {
+        let mut app = selected_app();
+        app.update(Action::ToggleRunInput);
+        assert_eq!(app.run_input, RunInput::Example);
+        assert!(app.status.is_none());
+        app.update(Action::RunPart(PuzzlePart::One));
+        let request = app.active_run.unwrap();
+        let report = RunReport {
+            request,
+            compile_stdout: String::new(),
+            compile_stderr: String::new(),
+            solver_stdout: "solver output".to_owned(),
+            solver_stderr: String::new(),
+            parts: vec![RunPartReport {
+                part: PuzzlePart::One,
+                answer: "42".to_owned(),
+                runtime_ms: 7,
+            }],
+            warning: Some("Run completed, but timing persistence failed".to_owned()),
+        };
+
+        app.update(Action::RunFinished {
+            request,
+            result: Ok(report.clone()),
+        });
+
+        assert!(app.active_run.is_none());
+        assert_eq!(
+            app.run_dialog,
+            Some(RunDialog::Result {
+                request,
+                result: Ok(report),
+                scroll: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn queue_failure_releases_active_run_and_keeps_request_context() {
+        let mut app = selected_app();
+        app.update(Action::RunPart(PuzzlePart::Two));
+        let request = app.active_run.unwrap();
+        let failure = RunFailure {
+            request,
+            summary: "Could not queue solver run".to_owned(),
+            details: Some("worker stopped".to_owned()),
+        };
+
+        app.update(Action::RunEffectFailed {
+            request,
+            failure: failure.clone(),
+        });
+
+        assert!(app.active_run.is_none());
+        assert_eq!(
+            app.run_dialog,
+            Some(RunDialog::Result {
+                request,
+                result: Err(failure),
+                scroll: 0,
+            })
+        );
     }
 
     #[test]
