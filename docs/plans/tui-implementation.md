@@ -9,9 +9,9 @@ crate boundaries in `../design/architecture.md` or persistence policy in
 
 ## Status
 
-Last reviewed: 2026-08-01.
+Last reviewed: 2026-08-02.
 
-Overall status: **in progress**.
+Overall status: **initial implementation complete**.
 
 Implemented in the first slice:
 
@@ -26,9 +26,12 @@ Implemented in the first slice:
   editing and reset, and destructive confirmations;
 - independently saved Config fields and credential-safe session set, replace,
   status, and confirmed removal flows;
-- deterministic reducer and `ratatui::TestBackend` render tests.
+- deterministic reducer and `ratatui::TestBackend` render tests;
+- final presentation review with best-effort narrow-terminal behavior and
+  tab-specific keyboard help;
+- TUI installation, startup, scope, and keyboard documentation in the README.
 
-Final presentation review and user documentation remain pending.
+No initial-scope implementation items remain pending.
 
 ## Initial scope
 
@@ -265,8 +268,8 @@ The layout must remain usable in both wide and narrow terminals.
 
 ## Implementation sequence
 
-1. Add the `aocsuite-tui` crate, terminal lifecycle abstraction, application
-   shell, and deterministic test terminal support.
+1. Add the `aocsuite-tui` crate, explicit terminal lifecycle, application shell,
+   and deterministic `ratatui::TestBackend` rendering support.
 2. Add the minimal content and configuration APIs required by the TUI.
 3. Implement application state, messages, reducer, and effect requests.
 4. Implement the serialized effect runner and foreground terminal handoff.
@@ -286,12 +289,9 @@ Add focused tests for changed behavior:
 - config tests for session-status queries that do not expose credentials;
 - reducer tests for tab navigation, released-year bounds, detail clearing,
   validation, confirmations, and effect dispatch;
-- effect tests using fake command executors, deterministic service inputs, and
-  fake terminal operations;
+- effect tests using fake command executors and deterministic service inputs;
 - `ratatui::TestBackend` rendering tests for all three tabs, loading and error
-  states, narrow layouts, and masked session input;
-- terminal lifecycle tests that verify restoration after normal exit and
-  foreground-operation failures.
+  states, narrow layouts, and masked session input.
 
 Normal tests must not contact Advent of Code or launch real external programs or
 terminals.

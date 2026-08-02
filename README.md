@@ -23,12 +23,13 @@ Generally language implementations are made with the fewest tools possible for s
 
 ### From Source
 
-Will be improved in the future. For now the cli can be installed via the cli
+For now the CLI and TUI can be installed from their workspace crates:
 
 ```bash
 git clone https://github.com/your-username/aocsuite.git
 cd aocsuite
 cargo install --path aocsuite-cli
+cargo install --path aocsuite-tui
 ```
 
 ## Quick Start CLI
@@ -60,7 +61,31 @@ cargo install --path aocsuite-cli
    aocsuite-cli submit <PART> <ANSWER>
    ```
 
-### Session Token Setup
+## Quick Start TUI
+
+Start the terminal interface with:
+
+```bash
+aocsuite-tui
+```
+
+The TUI provides three tabs:
+
+- **Calendar**: browse released years and puzzles, download or refresh puzzle
+  descriptions, and open a puzzle in the browser or editor.
+- **Language**: select Rust or Python for the current session and manage
+  packages, libraries, and templates.
+- **Config**: manage the default year, editor, run-history retention, and AoC
+  session credential.
+
+Press `Tab` or `Shift-Tab` to change tabs, `?` for the active tab's keymap, and
+`q` to quit. Use `Up`, `Down`, `PageUp`, or `PageDown` to scroll long help and
+`Esc` to close it. The layout adapts on narrow terminals on a best-effort basis.
+
+Solver execution, answer submission, Git, cleanup, uninstall, and leaderboards
+remain CLI workflows.
+
+## Session Token Setup
 
 To get your input and submit answers to Advent of Code website, you'll need your session token:
 
