@@ -144,7 +144,7 @@ pub fn run_aocsuite(
         }
         AocCommand::GitIgnore => {
             let editor_program = config.get::<String>(ConfigKey::Editor)?;
-            workspace.ensure()?;
+            workspace.ensure_git(executor)?;
             let path = workspace.gitignore_path();
             launcher.open_file(editor_program, &path, workspace.root_dir())?;
         }
@@ -589,10 +589,77 @@ mod tests {
         .expect("run git command");
 
         let requests = executor.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
+        assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].program, "git");
-        assert_eq!(requests[0].args[0], "status");
+        assert_eq!(requests[0].args[0], "init");
         assert_eq!(requests[0].mode, ProcessMode::Captured);
+        assert_eq!(requests[1].program, "git");
+        assert_eq!(requests[1].args[0], "status");
+        assert_eq!(requests[1].mode, ProcessMode::Captured);
+
+        drop(requests);
+        drop(content);
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[test]
+    fn gitignore_initializes_git_before_opening_the_editor() {
+        struct FakeExecutor(Mutex<Vec<CommandRequest>>);
+        impl CommandExecutor for FakeExecutor {
+            fn execute(&self, request: &CommandRequest) -> std::io::Result<process::Output> {
+                self.0.lock().unwrap().push(request.clone());
+                Ok(successful_output())
+            }
+        }
+
+        let root = test_root();
+        fs::create_dir_all(&root).expect("create test runtime");
+        let client = AocClient::new(None, AocClientOptions::default()).expect("create client");
+        let content = ContentStore::open(root.join("cache"), &client).expect("open content store");
+        let workspace = Workspace::new(root.join("workspace"));
+        fs::create_dir_all(root.join("config")).expect("create config directory");
+        let mut config = Configuration::load(root.join("config")).expect("load configuration");
+        let editor = std::env::current_exe().expect("resolve test executable");
+        config
+            .set(ConfigKey::Editor, Some(&editor.to_string_lossy()))
+            .expect("set editor");
+        let executor = FakeExecutor(Mutex::new(Vec::new()));
+
+        run_aocsuite(
+            AocCommand::GitIgnore,
+            PuzzleDay::new(1).expect("valid test day"),
+            PuzzleYear::new(2024).expect("valid test year"),
+            &client,
+            &content,
+            &workspace,
+            &mut config,
+            &executor,
+        )
+        .expect("open gitignore");
+
+        let requests = executor.0.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].program, "git");
+        assert_eq!(requests[0].args, ["init"]);
+        assert_eq!(
+            requests[0].current_dir.as_deref(),
+            Some(workspace.root_dir())
+        );
+        assert_eq!(requests[0].mode, ProcessMode::Captured);
+        assert_eq!(
+            requests[0].environment,
+            [
+                ("GIT_PAGER".into(), "cat".into()),
+                ("GIT_TERMINAL_PROMPT".into(), "0".into())
+            ]
+        );
+        assert_eq!(requests[1].program, editor.into_os_string());
+        assert_eq!(requests[1].args, [workspace.gitignore_path()]);
+        assert_eq!(
+            requests[1].current_dir.as_deref(),
+            Some(workspace.root_dir())
+        );
+        assert_eq!(requests[1].mode, ProcessMode::Foreground);
 
         drop(requests);
         drop(content);

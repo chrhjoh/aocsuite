@@ -85,7 +85,9 @@ Press `Tab` or `Shift-Tab` to change tabs, `?` for the active tab's keymap, and
 `q` to quit. Use `Up`, `Down`, `PageUp`, or `PageDown` to scroll long help and
 `Esc` to close it. The layout adapts on narrow terminals on a best-effort basis.
 
-Git, cleanup, uninstall, and leaderboards remain CLI workflows. TUI solver
+Cleanup, uninstall, raw Git commands, and leaderboards remain CLI workflows. Press
+`g` from any TUI tab to open the workspace in `lazygit` (available through
+`PATH`). TUI solver
 execution uses the current in-session language and runs part one or part two
 directly; custom input paths remain CLI-only.
 
@@ -142,7 +144,7 @@ The editor falls back to `EDITOR` when no editor is configured.
 
 ### Git tracking
 
-`aocsuite-cli git` - wraps around git to enable version control of the solution directory. A basic .gitignore is supplied to avoid tracking aocsuite specific files.
+`aocsuite-cli git` - wraps raw Git commands for version control of the solution directory. A basic `.gitignore` is supplied when the first Git workflow initializes the workspace.
 
 Files are stored at `$AOCSUITE_DATA_DIR`, `$XDG_DATA_HOME/aocsuite`, or `$HOME/.local/share/aocsuite`, in that order. Set `AOCSUITE_DATA_DIR` to override the complete runtime root.
 

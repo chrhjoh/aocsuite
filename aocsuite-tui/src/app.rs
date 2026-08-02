@@ -441,6 +441,9 @@ pub struct App {
     pub config_dialog: Option<ConfigDialog>,
     pub help_open: bool,
     pub help_scroll: u16,
+    lazygit_preparing: bool,
+    lazygit_opening: Option<bool>,
+    lazygit_error: Option<String>,
     quit_after_config_save: bool,
     pub status: Option<String>,
     pub should_quit: bool,
@@ -459,6 +462,7 @@ pub enum Action {
     RefreshCalendar,
     OpenBrowser,
     OpenExercise,
+    OpenLazygit,
     RunPart(PuzzlePart),
     ToggleRunInput,
     Tick,
@@ -560,6 +564,10 @@ pub enum Action {
         result: Result<PreparedLanguageFile, String>,
     },
     LanguageEffectFailed(String),
+    LazygitPrepared {
+        language_active: bool,
+        result: Result<PathBuf, String>,
+    },
     ConfigLoaded {
         result: Result<ConfigData, String>,
     },
@@ -582,6 +590,9 @@ pub enum BackgroundEffect {
     PrepareExercise {
         puzzle: PuzzleId,
         language: LanguageId,
+    },
+    PrepareLazygit {
+        language_active: bool,
     },
     RunSolver(RunRequest),
     SubmitAnswer(SubmissionRequest),
@@ -611,6 +622,7 @@ pub enum ForegroundEffect {
     OpenBrowser(PuzzleId),
     OpenExercise(PreparedExercise),
     OpenLanguageFile(PreparedLanguageFile),
+    OpenLazygit(PathBuf),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -673,6 +685,9 @@ impl App {
             config_dialog: None,
             help_open: false,
             help_scroll: 0,
+            lazygit_preparing: false,
+            lazygit_opening: None,
+            lazygit_error: None,
             quit_after_config_save: false,
             status: None,
             should_quit: false,
@@ -722,8 +737,15 @@ impl App {
                     | Action::EffectFailed(_)
             )
         {
-            if matches!(action, Action::Quit) {
-                self.status = Some("Wait for the solver run to finish".to_owned());
+            if matches!(action, Action::Quit | Action::OpenLazygit) {
+                self.status = Some(
+                    if matches!(action, Action::OpenLazygit) {
+                        "Wait for the solver run to finish before opening lazygit"
+                    } else {
+                        "Wait for the solver run to finish"
+                    }
+                    .to_owned(),
+                );
             }
             return Vec::new();
         }
@@ -736,6 +758,27 @@ impl App {
             Action::OpenHelp => {
                 self.help_open = true;
                 self.help_scroll = 0;
+            }
+            Action::OpenLazygit => {
+                if self.lazygit_preparing {
+                    self.status = Some("Workspace Git preparation is already running".to_owned());
+                } else if self.exercise_preparing {
+                    self.status = Some(
+                        "Wait for exercise preparation to finish before opening lazygit".to_owned(),
+                    );
+                } else if self.language_busy() {
+                    self.status = Some(
+                        "Wait for the language operation to finish before opening lazygit"
+                            .to_owned(),
+                    );
+                } else {
+                    let language_active = self.active_tab == Tab::Language;
+                    self.lazygit_preparing = true;
+                    self.status = Some("Preparing workspace Git...".to_owned());
+                    return vec![Effect::Background(BackgroundEffect::PrepareLazygit {
+                        language_active,
+                    })];
+                }
             }
             Action::CloseHelp => {
                 self.help_open = false;
@@ -1288,6 +1331,9 @@ impl App {
                     }
                     Err(message) => self.show_language_error(message),
                 }
+                if let Some(message) = self.lazygit_error.take() {
+                    self.status = Some(message);
+                }
             }
             Action::LanguageMutationFinished { language, result } => {
                 if language != self.language {
@@ -1329,6 +1375,20 @@ impl App {
                 self.language_file_opening = None;
                 self.show_language_error(message);
             }
+            Action::LazygitPrepared {
+                language_active,
+                result,
+            } => {
+                self.lazygit_preparing = false;
+                match result {
+                    Ok(path) => {
+                        self.lazygit_opening = Some(language_active);
+                        self.status = None;
+                        return vec![Effect::Foreground(ForegroundEffect::OpenLazygit(path))];
+                    }
+                    Err(message) => self.status = Some(message),
+                }
+            }
             Action::ConfigLoaded { result } => match result {
                 Ok(config) => {
                     self.config = Some(config);
@@ -1359,7 +1419,13 @@ impl App {
                 self.show_config_error(message);
             }
             Action::ForegroundFinished(result) => {
-                if let Some(kind) = self.language_file_opening.take() {
+                if let Some(language_active) = self.lazygit_opening.take() {
+                    self.lazygit_error = result.err();
+                    if language_active {
+                        return self.load_language_data();
+                    }
+                    self.status = self.lazygit_error.take();
+                } else if let Some(kind) = self.language_file_opening.take() {
                     match result {
                         Ok(()) => match kind {
                             LanguageFileKind::Library(_) => {
@@ -1644,6 +1710,7 @@ impl App {
             self.language_operation,
             LanguageOperationState::Running { .. }
         ) || self.language_file_opening.is_some()
+            || self.lazygit_preparing
             || self.exercise_preparing
             || self.active_run.is_some()
     }
@@ -1910,6 +1977,79 @@ mod tests {
             PuzzleDay::new(day).expect("valid test day"),
             PuzzleYear::new(year).expect("valid test year"),
         )
+    }
+
+    #[test]
+    fn lazygit_prepares_globally_blocks_language_work_and_reloads_active_language() {
+        let mut app = App::new(None, puzzle(1, 2026), LanguageId::Rust);
+        let effects = app.update(Action::OpenLazygit);
+        assert_eq!(
+            effects,
+            vec![Effect::Background(BackgroundEffect::PrepareLazygit {
+                language_active: false
+            })]
+        );
+        assert!(app.update(Action::OpenLazygit).is_empty());
+        assert!(app.status.as_deref().unwrap().contains("already running"));
+        app.active_tab = super::Tab::Language;
+        assert!(app.update(Action::SwitchLanguage).is_empty());
+        assert_eq!(app.language, LanguageId::Rust);
+        app.active_tab = super::Tab::Calendar;
+
+        app.update(Action::LazygitPrepared {
+            language_active: false,
+            result: Err("Could not queue workspace Git preparation".to_owned()),
+        });
+        assert_eq!(
+            app.status.as_deref(),
+            Some("Could not queue workspace Git preparation")
+        );
+        assert!(matches!(
+            app.update(Action::OpenLazygit).as_slice(),
+            [Effect::Background(BackgroundEffect::PrepareLazygit { .. })]
+        ));
+        app.update(Action::LazygitPrepared {
+            language_active: false,
+            result: Err("released".to_owned()),
+        });
+
+        app.active_tab = super::Tab::Language;
+        app.language_operation = LanguageOperationState::Running {
+            packages: Some("busy".to_owned()),
+            libraries: None,
+        };
+        assert!(app.update(Action::OpenLazygit).is_empty());
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap()
+            .contains("language operation"));
+
+        app.language_operation = LanguageOperationState::Idle;
+        let path = std::path::PathBuf::from("workspace");
+        let effects = app.update(Action::LazygitPrepared {
+            language_active: true,
+            result: Ok(path.clone()),
+        });
+        assert_eq!(
+            effects,
+            vec![Effect::Foreground(ForegroundEffect::OpenLazygit(path))]
+        );
+        let effects = app.update(Action::ForegroundFinished(Err("lazygit failed".to_owned())));
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::Background(BackgroundEffect::LoadLanguageData {
+                language: LanguageId::Rust
+            })]
+        ));
+        app.update(Action::LanguageDataFinished {
+            language: LanguageId::Rust,
+            result: Ok(LanguageData {
+                packages: vec![],
+                libraries: vec![],
+            }),
+        });
+        assert_eq!(app.status.as_deref(), Some("lazygit failed"));
     }
 
     fn app() -> App {

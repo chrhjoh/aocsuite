@@ -122,6 +122,10 @@ fn dispatch_effects(
         match effect {
             Effect::Background(effect) => {
                 let was_exercise = matches!(&effect, BackgroundEffect::PrepareExercise { .. });
+                let lazygit_language_active = match &effect {
+                    BackgroundEffect::PrepareLazygit { language_active } => Some(*language_active),
+                    _ => None,
+                };
                 let run_request = match &effect {
                     BackgroundEffect::RunSolver(request) => Some(*request),
                     _ => None,
@@ -164,6 +168,13 @@ fn dispatch_effects(
                     } else if was_exercise {
                         app.exercise_preparing = false;
                         app.update(Action::EffectFailed(message));
+                    } else if let Some(language_active) = lazygit_language_active {
+                        app.update(Action::LazygitPrepared {
+                            language_active,
+                            result: Err(format!(
+                                "Could not queue workspace Git preparation: {message}"
+                            )),
+                        });
                     } else if was_config {
                         app.update(Action::ConfigEffectFailed(message));
                     } else if was_language {
@@ -198,7 +209,11 @@ fn dispatch_effects(
 
 fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
     if app.active_run.is_some() {
-        return matches!(key.code, KeyCode::Char('q')).then_some(Action::Quit);
+        return match key.code {
+            KeyCode::Char('q') => Some(Action::Quit),
+            KeyCode::Char('g') => Some(Action::OpenLazygit),
+            _ => None,
+        };
     }
     if app.active_submission.is_some() {
         return None;
@@ -327,6 +342,7 @@ fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
     match (key.code, key.modifiers) {
         (KeyCode::Char('?'), _) => return Some(Action::OpenHelp),
         (KeyCode::Char('q'), _) => return Some(Action::Quit),
+        (KeyCode::Char('g'), _) => return Some(Action::OpenLazygit),
         (KeyCode::Tab, KeyModifiers::SHIFT) | (KeyCode::BackTab, _) => {
             return Some(Action::PreviousTab);
         }
@@ -414,6 +430,13 @@ mod tests {
             ),
             Some(Action::DownloadDescription)
         ));
+        assert!(matches!(
+            action_for_key(
+                &app(),
+                KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE)
+            ),
+            Some(Action::OpenLazygit)
+        ));
         assert!(action_for_key(
             &app(),
             KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE)
@@ -490,6 +513,10 @@ mod tests {
         assert!(matches!(
             action_for_key(&app, KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
             Some(Action::DialogInput('q'))
+        ));
+        assert!(matches!(
+            action_for_key(&app, KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE)),
+            Some(Action::DialogInput('g'))
         ));
         assert!(matches!(
             action_for_key(&app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
