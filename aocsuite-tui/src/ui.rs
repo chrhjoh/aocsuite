@@ -24,7 +24,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
         .constraints([
             Constraint::Length(3),
             Constraint::Min(4),
-            Constraint::Length(2),
+            Constraint::Length(1),
         ])
         .split(frame.area());
     render_tabs(frame, root[0], app);
