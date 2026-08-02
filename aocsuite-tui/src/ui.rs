@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use aocsuite_parser::{Calendar, CalendarStars};
+use aocsuite_parser::{AocSubmissionResult, Calendar, CalendarStars};
 use aocsuite_utils::PuzzleId;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Margin, Rect},
@@ -16,7 +16,7 @@ use ratatui::{
 use crate::app::{
     friendly_puzzle, App, ConfigDialog, ConfigField, ConfigOperationState, DescriptionState,
     LanguageConfirmation, LanguageDialog, LanguageFocus, LanguageOperationState, LanguageTextInput,
-    RunDialog, RunInput, RunRequest, Tab,
+    RunDialog, RunInput, RunRequest, SubmissionDialog, Tab,
 };
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
@@ -35,7 +35,11 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
         Tab::Config => render_config_tab(frame, root[1], app),
     }
     render_footer(frame, root[2], app);
-    if let Some(request) = app.active_run {
+    if app.active_submission.is_some() {
+        render_submitting(frame, app.run_spinner_frame);
+    } else if let Some(dialog) = &app.submission_dialog {
+        render_submission_dialog(frame, dialog);
+    } else if let Some(request) = app.active_run {
         render_running(frame, request, app.run_spinner_frame);
     } else if let Some(dialog) = &app.run_dialog {
         render_run_dialog(frame, dialog);
@@ -46,6 +50,151 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     } else if app.help_open {
         render_help_dialog(frame, app);
     }
+}
+
+fn render_submitting(frame: &mut Frame<'_>, spinner_frame: usize) {
+    let area = centered_dialog(frame.area());
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    let spinner = ["|", "/", "-", "\\"][spinner_frame % 4];
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(format!("{spinner} Submitting answer..."))
+            .block(Block::default().borders(Borders::ALL).title(" Submission ")),
+        area,
+    );
+}
+
+fn submission_prose(result: &AocSubmissionResult) -> String {
+    match result {
+        AocSubmissionResult::Correct => "Correct. That's the right answer!".to_owned(),
+        AocSubmissionResult::AlreadyCompleted => {
+            "This puzzle part was already completed.".to_owned()
+        }
+        AocSubmissionResult::IncorrectTooHigh => "Incorrect. The answer is too high.".to_owned(),
+        AocSubmissionResult::IncorrectTooLow => "Incorrect. The answer is too low.".to_owned(),
+        AocSubmissionResult::Incorrect => "Incorrect. That's not the right answer.".to_owned(),
+        AocSubmissionResult::RateLimited(seconds) => {
+            format!("Rate limited. Wait {seconds} seconds before submitting another answer.")
+        }
+        AocSubmissionResult::Locked => "This puzzle part is not unlocked yet.".to_owned(),
+        AocSubmissionResult::EmptySubmission => {
+            "Advent of Code received an empty answer.".to_owned()
+        }
+        AocSubmissionResult::InvalidFormat => {
+            "Advent of Code rejected the answer format.".to_owned()
+        }
+        AocSubmissionResult::Unknown(markdown) => {
+            format!("Advent of Code returned an unknown response:\n\n{markdown}")
+        }
+    }
+}
+
+fn render_submission_dialog(frame: &mut Frame<'_>, dialog: &SubmissionDialog) {
+    let area = centered_dialog(frame.area());
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    match dialog {
+        SubmissionDialog::Part { puzzle, part } => frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(format!("{} Day {}", puzzle.year, puzzle.day)),
+                Line::default(),
+                choice_line("Part 1", "Part 2", *part == aocsuite_utils::PuzzlePart::Two),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Submit answer "),
+            ),
+            area,
+        ),
+        SubmissionDialog::Answer {
+            puzzle,
+            part,
+            answer,
+            error,
+        } => frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(format!("{} Day {} | Part {part}", puzzle.year, puzzle.day)),
+                input_line(answer),
+                Line::styled(
+                    error.as_deref().unwrap_or_default(),
+                    Style::default().fg(Color::Red),
+                ),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Enter answer "),
+            ),
+            area,
+        ),
+        SubmissionDialog::Confirm { request, submit } => frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(format!(
+                    "{} Day {} | Part {}",
+                    request.puzzle.year, request.puzzle.day, request.part
+                )),
+                Line::from(format!("Answer: {}", request.answer())),
+                choice_line("Cancel", "Submit", *submit),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Confirm submission "),
+            ),
+            area,
+        ),
+        SubmissionDialog::Outcome {
+            puzzle,
+            part,
+            result,
+            scroll,
+        } => {
+            let text = match result {
+                Ok(result) => submission_prose(result),
+                Err(message) => message.clone(),
+            };
+            frame.render_widget(
+                Paragraph::new(text)
+                    .scroll((*scroll, 0))
+                    .wrap(Wrap { trim: false })
+                    .block(Block::default().borders(Borders::ALL).title(format!(
+                        " Submission | {} Day {} | Part {} ",
+                        puzzle.year, puzzle.day, part
+                    ))),
+                area,
+            );
+        }
+    }
+}
+
+fn choice_line<'a>(left: &'a str, right: &'a str, right_selected: bool) -> Line<'a> {
+    let selected = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+    Line::from(vec![
+        Span::styled(
+            format!("[ {left} ]"),
+            if right_selected {
+                Style::default()
+            } else {
+                selected
+            },
+        ),
+        Span::raw("   "),
+        Span::styled(
+            format!("[ {right} ]"),
+            if right_selected {
+                selected
+            } else {
+                Style::default()
+            },
+        ),
+    ])
 }
 
 fn run_context(request: RunRequest, include_input: bool) -> String {
@@ -710,6 +859,7 @@ fn render_help_dialog(frame: &mut Frame<'_>, app: &App) {
             key_line("Ctrl + arrows", "Pan calendar", area.width),
             key_line("PageUp / PageDown", "Scroll puzzle description", area.width),
             key_line("d", "Download or refresh puzzle description", area.width),
+            key_line("s", "Submit an answer", area.width),
             key_line("1 / 2", "Run puzzle part one / two", area.width),
             key_line("i", "Toggle AoC / shared-example input", area.width),
             key_line("u", "Refresh calendar", area.width),
@@ -813,7 +963,7 @@ mod tests {
         RunReport, RunRequest, SecretCharacter, Tab,
     };
 
-    use super::{render, run_title};
+    use super::{render, run_title, submission_prose};
 
     fn app() -> App {
         let puzzle = PuzzleId::new(PuzzleDay::new(10).unwrap(), PuzzleYear::new(2026).unwrap());
@@ -857,6 +1007,28 @@ mod tests {
         assert!(!rendered.contains(&selected.to_string()));
         assert!(rendered.contains("? help"));
         assert!(!rendered.contains("d download"));
+    }
+
+    #[test]
+    fn submission_outcomes_use_tui_semantic_prose() {
+        assert!(
+            submission_prose(&aocsuite_parser::AocSubmissionResult::Correct)
+                .contains("right answer")
+        );
+        assert!(
+            submission_prose(&aocsuite_parser::AocSubmissionResult::IncorrectTooLow)
+                .contains("too low")
+        );
+        assert!(
+            submission_prose(&aocsuite_parser::AocSubmissionResult::RateLimited(17))
+                .contains("17 seconds")
+        );
+        assert!(
+            submission_prose(&aocsuite_parser::AocSubmissionResult::Unknown(
+                "response markdown".to_owned()
+            ))
+            .contains("response markdown")
+        );
     }
 
     #[test]

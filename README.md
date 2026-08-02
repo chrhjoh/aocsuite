@@ -9,7 +9,7 @@ A a command-line tool and tui for Advent of Code (AOC) that helps you manage sol
 - Templating system for premade exercise layouts
 - Library file support
 - Open files in your editor of choice
-- Submit solutions directly from the command line
+- Submit solutions from the CLI or TUI
 - interacts with git for managing solutions
 
 ### Language support
@@ -73,9 +73,9 @@ The TUI provides three tabs:
 
 - **Calendar**: browse released years and puzzles, download or refresh puzzle
   descriptions, open a puzzle in the browser or editor, and run its solver with
-  AoC input or the shared example. Press `1` or `2` to run that part, `i` to
-  toggle AoC/shared-example input, and `u` to refresh the selected year's
-  calendar.
+  AoC input or the shared example. Submit answers with `s`. Press `1` or `2` to
+  run that part, `i` to toggle AoC/shared-example input, and `u` to refresh the
+  selected year's calendar.
 - **Language**: select Rust or Python for the current session and manage
   packages, libraries, and templates.
 - **Config**: manage the default year, editor, run-history retention, and AoC
@@ -85,9 +85,9 @@ Press `Tab` or `Shift-Tab` to change tabs, `?` for the active tab's keymap, and
 `q` to quit. Use `Up`, `Down`, `PageUp`, or `PageDown` to scroll long help and
 `Esc` to close it. The layout adapts on narrow terminals on a best-effort basis.
 
-Answer submission, Git, cleanup, uninstall, and leaderboards remain CLI
-workflows. TUI solver execution uses the current in-session language and runs
-part one or part two directly; custom input paths remain CLI-only.
+Git, cleanup, uninstall, and leaderboards remain CLI workflows. TUI solver
+execution uses the current in-session language and runs part one or part two
+directly; custom input paths remain CLI-only.
 
 ## Session Token Setup
 

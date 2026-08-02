@@ -14,10 +14,12 @@ TUI workflow-parity slices. Existing CLI workflows remain supported.
 1. **Solver execution - implemented.** Run the selected Calendar puzzle with the
    current in-session language, a selected part, and AoC or shared-example input;
    display structured output and persist timings in the serialized worker.
-2. **Answer submission - unimplemented.** Provide two confirmed paths: Calendar
-   asks for part and answer before confirmation; a run result uses that single
-   result's puzzle, part, and answer without another part choice or answer entry.
-   Both render semantic submission outcomes and refresh affected content.
+2. **Answer submission - implemented.** Calendar asks for part and answer, with
+   that explicit entry serving as confirmation before immediate submission. An
+   eligible successful single-part AoC-input run result instead retains its
+   puzzle, part, and exact answer and uses a cancel-by-default confirmation.
+   Both paths render semantic outcomes and refresh currently visible affected
+   content after correct answers.
 3. **Git through lazygit - unimplemented.** Add frontend-owned terminal handoff
    to lazygit for the workspace without wrapping or parsing its output.
 4. **Releases - unimplemented.** Add TUI artifacts to the existing release
