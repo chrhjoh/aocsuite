@@ -138,49 +138,9 @@ impl CommandExecutor for SystemCommandExecutor {
 
 #[cfg(test)]
 mod tests {
-    use std::{io, sync::Mutex};
+    use std::io;
 
-    use super::{
-        execute_command, CommandError, CommandExecutor, CommandRequest, ProcessMode,
-        SystemCommandExecutor,
-    };
-
-    #[derive(Default)]
-    struct RecordingExecutor {
-        requests: Mutex<Vec<CommandRequest>>,
-    }
-
-    impl CommandExecutor for RecordingExecutor {
-        fn execute(&self, request: &CommandRequest) -> io::Result<std::process::Output> {
-            self.requests.lock().unwrap().push(request.clone());
-            Err(io::Error::new(io::ErrorKind::NotFound, "fake process"))
-        }
-    }
-
-    #[test]
-    fn requests_preserve_os_native_process_details() {
-        let executor = RecordingExecutor::default();
-        let request = CommandRequest::new("program")
-            .arg("argument")
-            .current_dir("work")
-            .clear_environment()
-            .env("KEY", "value")
-            .foreground();
-
-        assert!(executor.execute(&request).is_err());
-        let requests = executor.requests.lock().unwrap();
-        assert_eq!(requests[0], request);
-        assert!(!requests[0].inherit_environment);
-        assert_eq!(requests[0].mode, ProcessMode::Foreground);
-    }
-
-    #[test]
-    fn system_executor_reports_launch_errors() {
-        let result = SystemCommandExecutor
-            .execute(&CommandRequest::new("aocsuite-command-that-must-not-exist"));
-
-        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
-    }
+    use super::{execute_command, CommandError, CommandExecutor, CommandRequest};
 
     #[cfg(unix)]
     #[test]

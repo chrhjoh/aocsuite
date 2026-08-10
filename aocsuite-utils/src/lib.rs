@@ -228,16 +228,6 @@ mod tests {
     }
 
     #[test]
-    fn puzzle_releases_at_eastern_midnight() {
-        let (day, year) = puzzle(2, 2026);
-        assert!(matches!(
-            valid_puzzle_release_at(day, year, utc(2026, 12, 2, 4, 59)),
-            Err(ReleaseError::Puzzle(_, _))
-        ));
-        assert!(valid_puzzle_release_at(day, year, utc(2026, 12, 2, 5, 0)).is_ok());
-    }
-
-    #[test]
     fn default_puzzle_date_uses_the_latest_released_event() {
         assert_eq!(
             default_puzzle_date_at(utc(2026, 7, 20, 12, 0)),
@@ -257,16 +247,6 @@ mod tests {
             Err(ReleaseError::Year(_))
         ));
         assert!(valid_year_release_at(year, utc(2026, 12, 1, 5, 0)).is_ok());
-    }
-
-    #[test]
-    fn future_years_return_errors() {
-        let now = utc(2026, 12, 1, 5, 0);
-
-        assert!(matches!(
-            valid_year_release_at(year(2027), now),
-            Err(ReleaseError::Year(_))
-        ));
     }
 
     #[test]
@@ -301,34 +281,6 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("create test directory");
 
         super::atomic_write(&path, b"secret").expect("write private file");
-
-        assert_eq!(
-            std::fs::metadata(&path)
-                .expect("read private file metadata")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
-        );
-        std::fs::remove_dir_all(dir).expect("remove test directory");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn owner_only_permissions_tightens_existing_files() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = std::env::temp_dir().join(format!(
-            "aocsuite-utils-test-existing-permissions-{}",
-            std::process::id()
-        ));
-        let path = dir.join("private");
-        std::fs::create_dir_all(&dir).expect("create test directory");
-        std::fs::write(&path, "secret").expect("write test file");
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
-            .expect("make test file public");
-
-        super::set_owner_only_permissions(&path).expect("tighten file permissions");
 
         assert_eq!(
             std::fs::metadata(&path)

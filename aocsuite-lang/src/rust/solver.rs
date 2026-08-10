@@ -100,24 +100,6 @@ fn release_binary_path(root_dir: &std::path::Path) -> std::path::PathBuf {
     ))
 }
 
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use super::release_binary_path;
-
-    #[test]
-    fn release_binary_uses_the_platform_executable_suffix() {
-        assert_eq!(
-            release_binary_path(Path::new("runtime")),
-            Path::new("runtime").join("target").join("release").join(format!(
-                "aocsuite-solution-rust{}",
-                std::env::consts::EXE_SUFFIX
-            ))
-        );
-    }
-}
-
 #[derive(Serialize, Deserialize)]
 struct PartResult {
     answer: String,
@@ -222,25 +204,4 @@ fn release_binary_path(root_dir: &std::path::Path) -> std::path::PathBuf {
         "aocsuite-solution-rust{}",
         std::env::consts::EXE_SUFFIX
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use super::release_binary_path;
-
-    #[test]
-    fn release_binary_uses_the_platform_executable_suffix() {
-        assert_eq!(
-            release_binary_path(Path::new("runtime")),
-            Path::new("runtime")
-                .join("target")
-                .join("release")
-                .join(format!(
-                    "aocsuite-solution-rust{}",
-                    std::env::consts::EXE_SUFFIX
-                ))
-        );
-    }
 }

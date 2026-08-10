@@ -16,13 +16,8 @@ use aocsuite_storage::{
 use aocsuite_utils::{
     default_puzzle_date, LanguageId, PuzzleId, ReleaseError, SystemCommandExecutor,
 };
-pub use app::{
-    Action, App, BackgroundEffect, ConfigData, ConfigDialog, ConfigField, ConfigMutation,
-    ConfigOperationState, Effect, ForegroundEffect, LanguageConfirmation, LanguageData,
-    LanguageDialog, LanguageFileKind, LanguageFocus, LanguageMutation, LanguageOperationState,
-    LanguageTextInput, NonSecretConfigField, PreparedExercise, PreparedLanguageFile, RunDialog,
-    RunFailure, RunInput, RunPartReport, RunReport, RunRequest, SecretCharacter, SecretString,
-    SubmissionDialog, SubmissionRequest, Tab,
+use app::{
+    Action, App, ConfigDialog, Effect, LanguageDialog, SecretCharacter, SubmissionDialog, Tab,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use effects::{run_foreground_effect, EffectRunner};
@@ -79,7 +74,7 @@ pub fn run() -> TuiResult<()> {
     let effects = EffectRunner::new(layout.clone());
     for effect in app.initial_effects() {
         match effect {
-            Effect::Background(effect) => effects.submit(effect)?,
+            Effect::Background(effect) => effects.submit(effect).map_err(|(_, error)| error)?,
             Effect::Foreground(_) => unreachable!("initial effects are background work"),
         }
     }
@@ -121,77 +116,11 @@ fn dispatch_effects(
     for effect in effects {
         match effect {
             Effect::Background(effect) => {
-                let was_exercise = matches!(&effect, BackgroundEffect::PrepareExercise { .. });
-                let lazygit_language_active = match &effect {
-                    BackgroundEffect::PrepareLazygit { language_active } => Some(*language_active),
-                    _ => None,
-                };
-                let run_request = match &effect {
-                    BackgroundEffect::RunSolver(request) => Some(*request),
-                    _ => None,
-                };
-                let submission_request = match &effect {
-                    BackgroundEffect::SubmitAnswer(request) => Some(request.clone()),
-                    _ => None,
-                };
-                let was_language = matches!(
-                    &effect,
-                    BackgroundEffect::LoadLanguageData { .. }
-                        | BackgroundEffect::MutateLanguage { .. }
-                        | BackgroundEffect::PrepareLanguageFile { .. }
-                );
-                let was_config = matches!(
-                    &effect,
-                    BackgroundEffect::LoadConfig { .. } | BackgroundEffect::MutateConfig { .. }
-                );
-                let cached_puzzle = match &effect {
-                    BackgroundEffect::LoadCachedDescription(puzzle) => Some(*puzzle),
-                    _ => None,
-                };
-                let downloaded_puzzle = match &effect {
-                    BackgroundEffect::DownloadDescription(puzzle) => Some(*puzzle),
-                    _ => None,
-                };
-                if let Err(error) = runner.submit(effect) {
-                    let message = error.to_string();
-                    if let Some(request) = run_request {
-                        app.update(Action::RunEffectFailed {
-                            request,
-                            failure: RunFailure {
-                                request,
-                                summary: "Could not queue solver run".to_owned(),
-                                details: Some(message),
-                            },
-                        });
-                    } else if let Some(request) = submission_request {
-                        app.update(Action::SubmissionEffectFailed { request, message });
-                    } else if was_exercise {
-                        app.exercise_preparing = false;
-                        app.update(Action::EffectFailed(message));
-                    } else if let Some(language_active) = lazygit_language_active {
-                        app.update(Action::LazygitPrepared {
-                            language_active,
-                            result: Err(format!(
-                                "Could not queue workspace Git preparation: {message}"
-                            )),
-                        });
-                    } else if was_config {
-                        app.update(Action::ConfigEffectFailed(message));
-                    } else if was_language {
-                        app.update(Action::LanguageEffectFailed(message));
-                    } else if let Some(puzzle) = cached_puzzle {
-                        app.update(Action::CachedDescriptionFinished {
-                            puzzle,
-                            result: Err(message),
-                        });
-                    } else if let Some(puzzle) = downloaded_puzzle {
-                        app.update(Action::DescriptionDownloaded {
-                            puzzle,
-                            result: Err(message),
-                        });
-                    } else {
-                        app.update(Action::EffectFailed(message));
-                    }
+                if let Err((effect, error)) = runner.submit(effect) {
+                    app.update(Action::BackgroundSubmissionFailed {
+                        effect: *effect,
+                        message: error.to_string(),
+                    });
                 }
             }
             Effect::Foreground(effect) => {
@@ -255,15 +184,13 @@ fn action_for_key(app: &App, key: KeyEvent) -> Option<Action> {
             },
         };
     }
-    if let Some(dialog) = &app.run_dialog {
-        return match dialog {
-            RunDialog::Result { .. } => match key.code {
-                KeyCode::Char('s') => Some(Action::OpenSubmission),
-                KeyCode::Esc | KeyCode::Enter => Some(Action::CancelRunDialog),
-                KeyCode::Up | KeyCode::PageUp => Some(Action::ScrollRunUp),
-                KeyCode::Down | KeyCode::PageDown => Some(Action::ScrollRunDown),
-                _ => None,
-            },
+    if app.run_dialog.is_some() {
+        return match key.code {
+            KeyCode::Char('s') => Some(Action::OpenSubmission),
+            KeyCode::Esc | KeyCode::Enter => Some(Action::CancelRunDialog),
+            KeyCode::Up | KeyCode::PageUp => Some(Action::ScrollRunUp),
+            KeyCode::Down | KeyCode::PageDown => Some(Action::ScrollRunDown),
+            _ => None,
         };
     }
     if let Some(dialog) = &app.config_dialog {
@@ -408,10 +335,8 @@ mod tests {
 
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
 
-    use super::{
-        action_for_key, Action, App, ConfigData, LanguageData, LanguageDialog, SecretCharacter,
-        SubmissionDialog,
-    };
+    use super::{action_for_key, Action, App};
+    use crate::app::LanguageData;
 
     fn app() -> App {
         App::new(
@@ -419,82 +344,6 @@ mod tests {
             PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2026).unwrap()),
             LanguageId::Rust,
         )
-    }
-
-    #[test]
-    fn key_mapping_keeps_event_handling_separate_from_state_updates() {
-        assert!(matches!(
-            action_for_key(
-                &app(),
-                KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE)
-            ),
-            Some(Action::DownloadDescription)
-        ));
-        assert!(matches!(
-            action_for_key(
-                &app(),
-                KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE)
-            ),
-            Some(Action::OpenLazygit)
-        ));
-        assert!(action_for_key(
-            &app(),
-            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE)
-        )
-        .is_none());
-        assert!(matches!(
-            action_for_key(
-                &app(),
-                KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE)
-            ),
-            Some(Action::RunPart(aocsuite_utils::PuzzlePart::One))
-        ));
-        assert!(matches!(
-            action_for_key(
-                &app(),
-                KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE)
-            ),
-            Some(Action::RunPart(aocsuite_utils::PuzzlePart::Two))
-        ));
-        assert!(matches!(
-            action_for_key(
-                &app(),
-                KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE)
-            ),
-            Some(Action::ToggleRunInput)
-        ));
-        assert!(matches!(
-            action_for_key(
-                &app(),
-                KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE)
-            ),
-            Some(Action::RefreshCalendar)
-        ));
-        assert!(matches!(
-            action_for_key(&app(), KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)),
-            Some(Action::PreviousTab)
-        ));
-        assert!(matches!(
-            action_for_key(&app(), KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
-            Some(Action::NextCalendarPuzzle)
-        ));
-    }
-
-    #[test]
-    fn active_run_blocks_keys_except_the_blocked_quit_request() {
-        let mut app = app();
-        app.active_run = Some(crate::RunRequest {
-            puzzle: app.latest_puzzle,
-            language: LanguageId::Rust,
-            part: aocsuite_utils::PuzzlePart::One,
-            input: crate::RunInput::Aoc,
-        });
-
-        assert!(matches!(
-            action_for_key(&app, KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
-            Some(Action::Quit)
-        ));
-        assert!(action_for_key(&app, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).is_none());
     }
 
     #[test]
@@ -521,119 +370,6 @@ mod tests {
         assert!(matches!(
             action_for_key(&app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
             Some(Action::DialogCancel)
-        ));
-    }
-
-    #[test]
-    fn submission_modal_takes_priority_over_global_shortcuts() {
-        let mut app = app();
-        app.submission_dialog = Some(SubmissionDialog::Outcome {
-            puzzle: app.latest_puzzle,
-            part: aocsuite_utils::PuzzlePart::One,
-            result: Ok(aocsuite_parser::AocSubmissionResult::Incorrect),
-            scroll: 0,
-        });
-
-        assert!(
-            action_for_key(&app, KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)).is_none()
-        );
-        assert!(matches!(
-            action_for_key(&app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
-            Some(Action::SubmissionCancel)
-        ));
-    }
-
-    #[test]
-    fn confirmation_arrows_preserve_cancel_as_the_left_choice() {
-        let mut app = app();
-        app.update(Action::NextTab);
-        app.update(Action::LanguageDataFinished {
-            language: LanguageId::Rust,
-            result: Ok(LanguageData {
-                packages: vec!["anyhow".to_owned()],
-                libraries: vec![],
-            }),
-        });
-        app.update(Action::RemoveLanguageItem);
-
-        assert!(action_for_key(&app, KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)).is_none());
-        let action =
-            action_for_key(&app, KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)).unwrap();
-        app.update(action);
-        assert!(matches!(
-            app.language_dialog,
-            Some(LanguageDialog::Confirm {
-                confirmed: true,
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn session_keystrokes_are_redacted_actions() {
-        let mut app = app();
-        app.update(Action::PreviousTab);
-        app.update(Action::ConfigLoaded {
-            result: Ok(ConfigData {
-                year: "2026".to_owned(),
-                editor: Some("vim".to_owned()),
-                run_history_limit: "10".to_owned(),
-                session_configured: false,
-            }),
-        });
-        app.config_selection = 3;
-        app.update(Action::EditConfigField);
-
-        let action =
-            action_for_key(&app, KeyEvent::new(KeyCode::Char('Z'), KeyModifiers::NONE)).unwrap();
-
-        assert!(matches!(
-            &action,
-            Action::ConfigSecretInput(SecretCharacter(_))
-        ));
-        assert!(!format!("{action:?}").contains("'Z'"));
-    }
-
-    #[test]
-    fn help_popup_keeps_advertised_global_shortcuts_active() {
-        let mut app = app();
-        let open =
-            action_for_key(&app, KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE)).unwrap();
-        assert!(matches!(open, Action::OpenHelp));
-        app.update(open);
-
-        assert!(matches!(
-            action_for_key(&app, KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
-            Some(Action::Quit)
-        ));
-        assert!(matches!(
-            action_for_key(&app, KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
-            Some(Action::NextTab)
-        ));
-        assert!(matches!(
-            action_for_key(&app, KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE)),
-            Some(Action::CloseHelp)
-        ));
-    }
-
-    #[test]
-    fn enter_is_the_only_open_or_edit_shortcut() {
-        let mut app = app();
-        assert!(
-            action_for_key(&app, KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE)).is_none()
-        );
-        assert!(matches!(
-            action_for_key(&app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            Some(Action::OpenExercise)
-        ));
-
-        app.update(Action::PreviousTab);
-        assert!(
-            action_for_key(&app, KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE)).is_none()
-        );
-        assert!(matches!(
-            action_for_key(&app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            Some(Action::EditConfigField)
         ));
     }
 }

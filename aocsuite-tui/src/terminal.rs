@@ -7,15 +7,15 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-pub type TuiTerminal = Terminal<CrosstermBackend<Stdout>>;
+pub(crate) type TuiTerminal = Terminal<CrosstermBackend<Stdout>>;
 
-pub struct TerminalSession {
+pub(crate) struct TerminalSession {
     terminal: TuiTerminal,
     active: bool,
 }
 
 impl TerminalSession {
-    pub fn enter() -> io::Result<Self> {
+    pub(crate) fn enter() -> io::Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         if let Err(error) = execute!(stdout, EnterAlternateScreen) {
@@ -36,11 +36,11 @@ impl TerminalSession {
         })
     }
 
-    pub fn terminal_mut(&mut self) -> &mut TuiTerminal {
+    pub(crate) fn terminal_mut(&mut self) -> &mut TuiTerminal {
         &mut self.terminal
     }
 
-    pub fn suspend(&mut self) -> io::Result<()> {
+    pub(crate) fn suspend(&mut self) -> io::Result<()> {
         if !self.active {
             return Ok(());
         }
@@ -51,7 +51,7 @@ impl TerminalSession {
         Ok(())
     }
 
-    pub fn resume(&mut self) -> io::Result<()> {
+    pub(crate) fn resume(&mut self) -> io::Result<()> {
         if self.active {
             return Ok(());
         }

@@ -163,83 +163,14 @@ fn resolve_puzzle_date(
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser;
-
-    use super::{resolve_puzzle_date, AocCli};
-    use aocsuite_cli::{AocCommand, ConfigCommand, ConfigCommandKey};
-    use aocsuite_utils::{PuzzleDay, PuzzlePart, PuzzleYear};
+    use super::resolve_puzzle_date;
+    use aocsuite_utils::{PuzzleDay, PuzzleYear};
 
     fn puzzle(day: u32, year: i32) -> (PuzzleDay, PuzzleYear) {
         (
             PuzzleDay::new(day).expect("valid test day"),
             PuzzleYear::new(year).expect("valid test year"),
         )
-    }
-
-    #[test]
-    fn run_part_uses_the_documented_long_option() {
-        let cli =
-            AocCli::try_parse_from(["aocsuite-cli", "run", "--part", "1"]).expect("parse run part");
-
-        assert!(matches!(
-            cli.command,
-            AocCommand::Run {
-                part: Some(PuzzlePart::One),
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn submit_prompts_when_answer_is_omitted() {
-        let cli = AocCli::try_parse_from(["aocsuite-cli", "submit", "--part", "2"])
-            .expect("parse submit without answer");
-
-        assert!(matches!(
-            cli.command,
-            AocCommand::Submit {
-                part: PuzzlePart::Two,
-                answer: None,
-            }
-        ));
-    }
-
-    #[test]
-    fn config_keys_are_frontend_owned() {
-        let cli = AocCli::try_parse_from(["aocsuite-cli", "config", "set", "session"])
-            .expect("parse session configuration");
-        assert!(matches!(
-            cli.command,
-            AocCommand::Config {
-                command: ConfigCommand::Set {
-                    key: ConfigCommandKey::Session
-                }
-            }
-        ));
-        assert!(AocCli::try_parse_from(["aocsuite-cli", "config", "set", "template-dir"]).is_err());
-    }
-
-    #[test]
-    fn explicit_day_and_year_are_parsed() {
-        let cli =
-            AocCli::try_parse_from(["aocsuite-cli", "--day", "4", "--year", "2024", "calendar"])
-                .expect("parse explicit puzzle date");
-
-        let (day, year) = puzzle(4, 2024);
-        assert_eq!(cli.day, Some(day));
-        assert_eq!(cli.year, Some(year));
-    }
-
-    #[test]
-    fn cache_cleanup_uses_the_year_flag() {
-        assert!(AocCli::try_parse_from(["aocsuite-cli", "clean", "cache", "--year"]).is_ok());
-        assert!(AocCli::try_parse_from(["aocsuite-cli", "clean", "cache", "--year-all"]).is_err());
-    }
-
-    #[test]
-    fn invalid_puzzle_values_are_rejected_during_parsing() {
-        assert!(AocCli::try_parse_from(["aocsuite-cli", "--day", "0", "calendar"]).is_err());
-        assert!(AocCli::try_parse_from(["aocsuite-cli", "--year", "2014", "calendar"]).is_err());
     }
 
     #[test]

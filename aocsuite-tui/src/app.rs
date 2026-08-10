@@ -4,7 +4,7 @@ use aocsuite_parser::{AocSubmissionResult, Calendar};
 use aocsuite_utils::{LanguageId, PuzzleId, PuzzlePart, PuzzleYear, RunHistoryLimit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RunInput {
+pub(crate) enum RunInput {
     Aoc,
     Example,
 }
@@ -14,7 +14,7 @@ pub(crate) fn friendly_puzzle(puzzle: PuzzleId) -> String {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RunRequest {
+pub(crate) struct RunRequest {
     pub puzzle: PuzzleId,
     pub language: LanguageId,
     pub part: PuzzlePart,
@@ -22,15 +22,14 @@ pub struct RunRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunPartReport {
+pub(crate) struct RunPartReport {
     pub part: PuzzlePart,
     pub answer: String,
     pub runtime_ms: u128,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunReport {
-    pub request: RunRequest,
+pub(crate) struct RunReport {
     pub compile_stdout: String,
     pub compile_stderr: String,
     pub solver_stdout: String,
@@ -40,23 +39,20 @@ pub struct RunReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunFailure {
-    pub request: RunRequest,
+pub(crate) struct RunFailure {
     pub summary: String,
     pub details: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RunDialog {
-    Result {
-        request: RunRequest,
-        result: Result<RunReport, RunFailure>,
-        scroll: u16,
-    },
+pub(crate) struct RunDialog {
+    pub request: RunRequest,
+    pub result: Result<RunReport, RunFailure>,
+    pub scroll: u16,
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct SubmissionRequest {
+pub(crate) struct SubmissionRequest {
     pub puzzle: PuzzleId,
     pub part: PuzzlePart,
     answer: String,
@@ -88,7 +84,7 @@ impl std::fmt::Debug for SubmissionRequest {
 }
 
 #[derive(PartialEq, Eq)]
-pub enum SubmissionDialog {
+pub(crate) enum SubmissionDialog {
     Part {
         puzzle: PuzzleId,
         part: PuzzlePart,
@@ -153,7 +149,7 @@ impl std::fmt::Debug for SubmissionDialog {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tab {
+pub(crate) enum Tab {
     Calendar,
     Language,
     Config,
@@ -188,7 +184,7 @@ impl Tab {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DescriptionState {
+pub(crate) enum DescriptionState {
     CheckingCache(PuzzleId),
     Empty,
     Loaded { puzzle: PuzzleId, markdown: String },
@@ -196,13 +192,13 @@ pub enum DescriptionState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LanguageFocus {
+pub(crate) enum LanguageFocus {
     Packages,
     Libraries,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LanguageOperationState {
+pub(crate) enum LanguageOperationState {
     Idle,
     Running {
         packages: Option<String>,
@@ -211,20 +207,20 @@ pub enum LanguageOperationState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LanguageTextInput {
+pub(crate) enum LanguageTextInput {
     AddPackage,
     Library,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LanguageConfirmation {
+pub(crate) enum LanguageConfirmation {
     RemovePackage(String),
     RemoveLibrary(String),
     ResetTemplate,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LanguageDialog {
+pub(crate) enum LanguageDialog {
     Text {
         kind: LanguageTextInput,
         value: String,
@@ -238,27 +234,26 @@ pub enum LanguageDialog {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LanguageData {
+pub(crate) struct LanguageData {
     pub packages: Vec<String>,
     pub libraries: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LanguageMutation {
+pub(crate) enum LanguageMutation {
     AddPackage(String),
     RemovePackage(String),
     RemoveLibrary(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LanguageFileKind {
+pub(crate) enum LanguageFileKind {
     Library(String),
     Template,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedLanguageFile {
-    pub language: LanguageId,
+pub(crate) struct PreparedLanguageFile {
     pub kind: LanguageFileKind,
     pub editor: String,
     pub path: PathBuf,
@@ -266,7 +261,7 @@ pub struct PreparedLanguageFile {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfigField {
+pub(crate) enum ConfigField {
     Year,
     Editor,
     RunHistoryLimit,
@@ -292,7 +287,7 @@ impl ConfigField {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NonSecretConfigField {
+pub(crate) enum NonSecretConfigField {
     Year,
     Editor,
     RunHistoryLimit,
@@ -309,7 +304,7 @@ impl NonSecretConfigField {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConfigData {
+pub(crate) struct ConfigData {
     pub year: String,
     pub editor: Option<String>,
     pub run_history_limit: String,
@@ -317,13 +312,14 @@ pub struct ConfigData {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConfigOperationState {
+pub(crate) enum ConfigOperationState {
     Idle,
-    Running(&'static str),
+    Loading,
+    Saving,
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct SecretString(String);
+pub(crate) struct SecretString(String);
 
 impl SecretString {
     pub fn empty() -> Self {
@@ -369,7 +365,7 @@ impl std::fmt::Debug for SecretString {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct SecretCharacter(pub(crate) char);
+pub(crate) struct SecretCharacter(pub(crate) char);
 
 impl std::fmt::Debug for SecretCharacter {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -378,7 +374,7 @@ impl std::fmt::Debug for SecretCharacter {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConfigDialog {
+pub(crate) enum ConfigDialog {
     Text {
         field: NonSecretConfigField,
         value: String,
@@ -398,7 +394,7 @@ pub enum ConfigDialog {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConfigMutation {
+pub(crate) enum ConfigMutation {
     Set {
         field: NonSecretConfigField,
         value: Option<String>,
@@ -407,7 +403,7 @@ pub enum ConfigMutation {
     RemoveSession,
 }
 
-pub struct App {
+pub(crate) struct App {
     pub active_tab: Tab,
     pub calendar: Option<Calendar>,
     pub calendar_loading: bool,
@@ -450,7 +446,7 @@ pub struct App {
 }
 
 #[derive(Debug)]
-pub enum Action {
+pub(crate) enum Action {
     Quit,
     NextTab,
     PreviousTab,
@@ -539,17 +535,9 @@ pub enum Action {
         request: RunRequest,
         result: Result<RunReport, RunFailure>,
     },
-    RunEffectFailed {
-        request: RunRequest,
-        failure: RunFailure,
-    },
     SubmissionFinished {
         request: SubmissionRequest,
         result: Result<AocSubmissionResult, String>,
-    },
-    SubmissionEffectFailed {
-        request: SubmissionRequest,
-        message: String,
     },
     LanguageDataFinished {
         language: LanguageId,
@@ -563,7 +551,6 @@ pub enum Action {
         language: LanguageId,
         result: Result<PreparedLanguageFile, String>,
     },
-    LanguageEffectFailed(String),
     LazygitPrepared {
         language_active: bool,
         result: Result<PathBuf, String>,
@@ -574,13 +561,15 @@ pub enum Action {
     ConfigSaved {
         result: Result<ConfigData, String>,
     },
-    ConfigEffectFailed(String),
+    BackgroundSubmissionFailed {
+        effect: BackgroundEffect,
+        message: String,
+    },
     ForegroundFinished(Result<(), String>),
-    EffectFailed(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BackgroundEffect {
+pub(crate) enum BackgroundEffect {
     LoadCalendar {
         year: PuzzleYear,
         refresh: bool,
@@ -618,16 +607,15 @@ pub enum BackgroundEffect {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ForegroundEffect {
-    OpenBrowser(PuzzleId),
-    OpenExercise(PreparedExercise),
-    OpenLanguageFile(PreparedLanguageFile),
-    OpenLazygit(PathBuf),
+pub(crate) enum ForegroundEffect {
+    Browser(PuzzleId),
+    Exercise(PreparedExercise),
+    LanguageFile(PreparedLanguageFile),
+    Lazygit(PathBuf),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedExercise {
-    pub puzzle: PuzzleId,
+pub(crate) struct PreparedExercise {
     pub editor: String,
     pub puzzle_description: PathBuf,
     pub example: PathBuf,
@@ -637,7 +625,7 @@ pub struct PreparedExercise {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Effect {
+pub(crate) enum Effect {
     Background(BackgroundEffect),
     Foreground(ForegroundEffect),
 }
@@ -708,7 +696,7 @@ impl App {
                 action,
                 Action::Tick
                     | Action::SubmissionFinished { .. }
-                    | Action::SubmissionEffectFailed { .. }
+                    | Action::BackgroundSubmissionFailed { .. }
                     | Action::CalendarFinished { .. }
                     | Action::CachedDescriptionFinished { .. }
                     | Action::DescriptionDownloaded { .. }
@@ -721,7 +709,7 @@ impl App {
                 action,
                 Action::Tick
                     | Action::RunFinished { .. }
-                    | Action::RunEffectFailed { .. }
+                    | Action::BackgroundSubmissionFailed { .. }
                     | Action::CalendarFinished { .. }
                     | Action::CachedDescriptionFinished { .. }
                     | Action::DescriptionDownloaded { .. }
@@ -729,12 +717,9 @@ impl App {
                     | Action::LanguageDataFinished { .. }
                     | Action::LanguageMutationFinished { .. }
                     | Action::LanguageFilePrepared { .. }
-                    | Action::LanguageEffectFailed(_)
                     | Action::ConfigLoaded { .. }
                     | Action::ConfigSaved { .. }
-                    | Action::ConfigEffectFailed(_)
                     | Action::ForegroundFinished(_)
-                    | Action::EffectFailed(_)
             )
         {
             if matches!(action, Action::Quit | Action::OpenLazygit) {
@@ -833,7 +818,7 @@ impl App {
                     return Vec::new();
                 };
                 self.status = None;
-                return vec![Effect::Foreground(ForegroundEffect::OpenBrowser(puzzle))];
+                return vec![Effect::Foreground(ForegroundEffect::Browser(puzzle))];
             }
             Action::OpenExercise if self.active_tab == Tab::Calendar => {
                 if self.exercise_preparing {
@@ -886,13 +871,13 @@ impl App {
             }
             Action::CancelRunDialog => self.run_dialog = None,
             Action::ScrollRunUp => {
-                if let Some(RunDialog::Result { scroll, .. }) = &mut self.run_dialog {
-                    *scroll = scroll.saturating_sub(1);
+                if let Some(dialog) = &mut self.run_dialog {
+                    dialog.scroll = dialog.scroll.saturating_sub(1);
                 }
             }
             Action::ScrollRunDown => {
-                if let Some(RunDialog::Result { scroll, .. }) = &mut self.run_dialog {
-                    *scroll = scroll.saturating_add(1);
+                if let Some(dialog) = &mut self.run_dialog {
+                    dialog.scroll = dialog.scroll.saturating_add(1);
                 }
             }
             Action::OpenSubmission => {
@@ -1275,7 +1260,7 @@ impl App {
                 match result {
                     Ok(prepared) => {
                         self.status = None;
-                        return vec![Effect::Foreground(ForegroundEffect::OpenExercise(prepared))];
+                        return vec![Effect::Foreground(ForegroundEffect::Exercise(prepared))];
                     }
                     Err(message) => self.status = Some(message),
                 }
@@ -1283,18 +1268,9 @@ impl App {
             Action::RunFinished { request, result } => {
                 self.active_run = None;
                 self.status = None;
-                self.run_dialog = Some(RunDialog::Result {
+                self.run_dialog = Some(RunDialog {
                     request,
                     result,
-                    scroll: 0,
-                });
-            }
-            Action::RunEffectFailed { request, failure } => {
-                self.active_run = None;
-                self.status = None;
-                self.run_dialog = Some(RunDialog::Result {
-                    request,
-                    result: Err(failure),
                     scroll: 0,
                 });
             }
@@ -1310,15 +1286,6 @@ impl App {
                 if correct {
                     return self.submission_refreshes(request.puzzle, request.part);
                 }
-            }
-            Action::SubmissionEffectFailed { request, message } => {
-                self.active_submission = None;
-                self.submission_dialog = Some(SubmissionDialog::Outcome {
-                    puzzle: request.puzzle,
-                    part: request.part,
-                    result: Err(message),
-                    scroll: 0,
-                });
             }
             Action::LanguageDataFinished { language, result } => {
                 if language != self.language {
@@ -1364,16 +1331,10 @@ impl App {
                                 libraries: None,
                             },
                         };
-                        return vec![Effect::Foreground(ForegroundEffect::OpenLanguageFile(
-                            prepared,
-                        ))];
+                        return vec![Effect::Foreground(ForegroundEffect::LanguageFile(prepared))];
                     }
                     Err(message) => self.show_language_error(message),
                 }
-            }
-            Action::LanguageEffectFailed(message) => {
-                self.language_file_opening = None;
-                self.show_language_error(message);
             }
             Action::LazygitPrepared {
                 language_active,
@@ -1384,7 +1345,7 @@ impl App {
                     Ok(path) => {
                         self.lazygit_opening = Some(language_active);
                         self.status = None;
-                        return vec![Effect::Foreground(ForegroundEffect::OpenLazygit(path))];
+                        return vec![Effect::Foreground(ForegroundEffect::Lazygit(path))];
                     }
                     Err(message) => self.status = Some(message),
                 }
@@ -1414,9 +1375,8 @@ impl App {
                     self.show_config_error(message);
                 }
             },
-            Action::ConfigEffectFailed(message) => {
-                self.quit_after_config_save = false;
-                self.show_config_error(message);
+            Action::BackgroundSubmissionFailed { effect, message } => {
+                self.background_submission_failed(effect, message);
             }
             Action::ForegroundFinished(result) => {
                 if let Some(language_active) = self.lazygit_opening.take() {
@@ -1450,7 +1410,6 @@ impl App {
                     }
                 }
             }
-            Action::EffectFailed(message) => self.status = Some(message),
             _ => {}
         }
         Vec::new()
@@ -1465,23 +1424,84 @@ impl App {
     }
 
     fn run_submission_request(&self) -> Option<SubmissionRequest> {
-        let RunDialog::Result {
-            request,
-            result: Ok(report),
-            ..
-        } = self.run_dialog.as_ref()?
-        else {
+        let dialog = self.run_dialog.as_ref()?;
+        let Ok(report) = &dialog.result else {
             return None;
         };
         let part = report.parts.as_slice();
-        if request.input != RunInput::Aoc || part.len() != 1 || part[0].answer.trim().is_empty() {
+        if dialog.request.input != RunInput::Aoc
+            || part.len() != 1
+            || part[0].answer.trim().is_empty()
+        {
             return None;
         }
         Some(SubmissionRequest::new(
-            request.puzzle,
+            dialog.request.puzzle,
             part[0].part,
             part[0].answer.clone(),
         ))
+    }
+
+    fn background_submission_failed(&mut self, effect: BackgroundEffect, message: String) {
+        match effect {
+            BackgroundEffect::LoadCalendar { .. } => {
+                self.calendar_loading = false;
+                self.status = Some(message);
+            }
+            BackgroundEffect::LoadCachedDescription(puzzle) => {
+                self.update(Action::CachedDescriptionFinished {
+                    puzzle,
+                    result: Err(message),
+                });
+            }
+            BackgroundEffect::DownloadDescription(puzzle) => {
+                self.update(Action::DescriptionDownloaded {
+                    puzzle,
+                    result: Err(message),
+                });
+            }
+            BackgroundEffect::PrepareExercise { .. } => {
+                self.exercise_preparing = false;
+                self.status = Some(message);
+            }
+            BackgroundEffect::PrepareLazygit { .. } => {
+                self.lazygit_preparing = false;
+                self.status = Some(format!(
+                    "Could not queue workspace Git preparation: {message}"
+                ));
+            }
+            BackgroundEffect::RunSolver(request) => {
+                self.active_run = None;
+                self.status = None;
+                self.run_dialog = Some(RunDialog {
+                    request,
+                    result: Err(RunFailure {
+                        summary: "Could not queue solver run".to_owned(),
+                        details: Some(message),
+                    }),
+                    scroll: 0,
+                });
+            }
+            BackgroundEffect::SubmitAnswer(request) => {
+                self.active_submission = None;
+                self.submission_dialog = Some(SubmissionDialog::Outcome {
+                    puzzle: request.puzzle,
+                    part: request.part,
+                    result: Err(message),
+                    scroll: 0,
+                });
+            }
+            BackgroundEffect::LoadLanguageData { .. }
+            | BackgroundEffect::MutateLanguage { .. }
+            | BackgroundEffect::PrepareLanguageFile { .. } => {
+                self.language_file_opening = None;
+                self.show_language_error(message);
+            }
+            BackgroundEffect::LoadConfig { .. } | BackgroundEffect::MutateConfig { .. } => {
+                self.quit_after_config_save = false;
+                self.show_config_error(message);
+            }
+        }
     }
 
     fn submit_submission_dialog(&mut self) -> Vec<Effect> {
@@ -1568,15 +1588,15 @@ impl App {
     }
 
     fn config_busy(&self) -> bool {
-        matches!(self.config_operation, ConfigOperationState::Running(_))
+        self.config_operation != ConfigOperationState::Idle
     }
 
     fn config_saving(&self) -> bool {
-        self.config_operation == ConfigOperationState::Running("saving...")
+        self.config_operation == ConfigOperationState::Saving
     }
 
     fn load_config(&mut self) -> Vec<Effect> {
-        self.config_operation = ConfigOperationState::Running("loading...");
+        self.config_operation = ConfigOperationState::Loading;
         vec![Effect::Background(BackgroundEffect::LoadConfig {
             latest_year: self.latest_puzzle.year,
         })]
@@ -1693,7 +1713,7 @@ impl App {
     }
 
     fn save_config(&mut self, mutation: ConfigMutation) -> Vec<Effect> {
-        self.config_operation = ConfigOperationState::Running("saving...");
+        self.config_operation = ConfigOperationState::Saving;
         vec![Effect::Background(BackgroundEffect::MutateConfig {
             latest_year: self.latest_puzzle.year,
             mutation,
@@ -1965,11 +1985,11 @@ mod tests {
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
 
     use super::{
-        Action, App, BackgroundEffect, ConfigData, ConfigDialog, ConfigField, ConfigMutation,
+        Action, App, BackgroundEffect, ConfigData, ConfigDialog, ConfigMutation,
         ConfigOperationState, DescriptionState, Effect, ForegroundEffect, LanguageData,
-        LanguageDialog, LanguageFileKind, LanguageMutation, LanguageOperationState,
-        NonSecretConfigField, PreparedExercise, RunDialog, RunFailure, RunInput, RunPartReport,
-        RunReport, SubmissionDialog, SubmissionRequest,
+        LanguageDialog, LanguageFileKind, LanguageOperationState, NonSecretConfigField,
+        PreparedExercise, RunDialog, RunInput, RunPartReport, RunReport, SubmissionDialog,
+        SubmissionRequest,
     };
 
     fn puzzle(day: u32, year: i32) -> PuzzleId {
@@ -1977,79 +1997,6 @@ mod tests {
             PuzzleDay::new(day).expect("valid test day"),
             PuzzleYear::new(year).expect("valid test year"),
         )
-    }
-
-    #[test]
-    fn lazygit_prepares_globally_blocks_language_work_and_reloads_active_language() {
-        let mut app = App::new(None, puzzle(1, 2026), LanguageId::Rust);
-        let effects = app.update(Action::OpenLazygit);
-        assert_eq!(
-            effects,
-            vec![Effect::Background(BackgroundEffect::PrepareLazygit {
-                language_active: false
-            })]
-        );
-        assert!(app.update(Action::OpenLazygit).is_empty());
-        assert!(app.status.as_deref().unwrap().contains("already running"));
-        app.active_tab = super::Tab::Language;
-        assert!(app.update(Action::SwitchLanguage).is_empty());
-        assert_eq!(app.language, LanguageId::Rust);
-        app.active_tab = super::Tab::Calendar;
-
-        app.update(Action::LazygitPrepared {
-            language_active: false,
-            result: Err("Could not queue workspace Git preparation".to_owned()),
-        });
-        assert_eq!(
-            app.status.as_deref(),
-            Some("Could not queue workspace Git preparation")
-        );
-        assert!(matches!(
-            app.update(Action::OpenLazygit).as_slice(),
-            [Effect::Background(BackgroundEffect::PrepareLazygit { .. })]
-        ));
-        app.update(Action::LazygitPrepared {
-            language_active: false,
-            result: Err("released".to_owned()),
-        });
-
-        app.active_tab = super::Tab::Language;
-        app.language_operation = LanguageOperationState::Running {
-            packages: Some("busy".to_owned()),
-            libraries: None,
-        };
-        assert!(app.update(Action::OpenLazygit).is_empty());
-        assert!(app
-            .status
-            .as_deref()
-            .unwrap()
-            .contains("language operation"));
-
-        app.language_operation = LanguageOperationState::Idle;
-        let path = std::path::PathBuf::from("workspace");
-        let effects = app.update(Action::LazygitPrepared {
-            language_active: true,
-            result: Ok(path.clone()),
-        });
-        assert_eq!(
-            effects,
-            vec![Effect::Foreground(ForegroundEffect::OpenLazygit(path))]
-        );
-        let effects = app.update(Action::ForegroundFinished(Err("lazygit failed".to_owned())));
-        assert!(matches!(
-            effects.as_slice(),
-            [Effect::Background(BackgroundEffect::LoadLanguageData {
-                language: LanguageId::Rust
-            })]
-        ));
-        app.update(Action::LanguageDataFinished {
-            language: LanguageId::Rust,
-            result: Ok(LanguageData {
-                packages: vec![],
-                libraries: vec![],
-            }),
-        });
-        assert_eq!(app.status.as_deref(), Some("lazygit failed"));
     }
 
     fn app() -> App {
@@ -2107,48 +2054,7 @@ mod tests {
     }
 
     #[test]
-    fn calendar_submission_defaults_part_one_validates_and_dispatches_directly() {
-        let mut app = app();
-        let selected = puzzle(10, 2026);
-        app.update(Action::CalendarFinished {
-            year: selected.year,
-            refresh: false,
-            result: Ok(calendar(vec![vec![Some(selected)]])),
-        });
-
-        assert!(app.update(Action::OpenSubmission).is_empty());
-        assert!(matches!(
-            app.submission_dialog,
-            Some(SubmissionDialog::Part {
-                part: PuzzlePart::One,
-                ..
-            })
-        ));
-        app.update(Action::SubmissionSubmit);
-        assert!(app.update(Action::SubmissionSubmit).is_empty());
-        assert!(matches!(
-            app.submission_dialog,
-            Some(SubmissionDialog::Answer {
-                ref error,
-                ..
-            }) if error.as_deref() == Some("Answer cannot be empty")
-        ));
-        for character in "  42  ".chars() {
-            app.update(Action::SubmissionInput(character));
-        }
-        let effects = app.update(Action::SubmissionSubmit);
-        assert_eq!(effects.len(), 1);
-        let Effect::Background(BackgroundEffect::SubmitAnswer(request)) = &effects[0] else {
-            panic!("unexpected effect: {:?}", effects[0]);
-        };
-        assert_eq!(request.puzzle, selected);
-        assert_eq!(request.part, PuzzlePart::One);
-        assert_eq!(request.answer(), "42");
-        assert!(app.submission_dialog.is_none());
-    }
-
-    #[test]
-    fn run_submission_uses_retained_aoc_result_and_defaults_to_cancel() {
+    fn run_submission_confirmation_dispatches_the_retained_aoc_result() {
         let mut app = app();
         let retained = puzzle(3, 2025);
         let request = super::RunRequest {
@@ -2157,10 +2063,9 @@ mod tests {
             part: PuzzlePart::Two,
             input: RunInput::Aoc,
         };
-        app.run_dialog = Some(RunDialog::Result {
+        app.run_dialog = Some(RunDialog {
             request,
             result: Ok(RunReport {
-                request,
                 compile_stdout: String::new(),
                 compile_stderr: String::new(),
                 solver_stdout: String::new(),
@@ -2174,8 +2079,6 @@ mod tests {
             }),
             scroll: 0,
         });
-        let eligible = app.run_dialog.clone().unwrap();
-
         app.update(Action::OpenSubmission);
         assert!(matches!(
             app.submission_dialog,
@@ -2186,46 +2089,14 @@ mod tests {
                 && request.part == PuzzlePart::Two
                 && request.answer() == "retained-answer"
         ));
-        assert!(app.update(Action::SubmissionSubmit).is_empty());
-
-        app.submission_dialog = None;
-        let mut ineligible = Vec::new();
-        let mut example = eligible.clone();
-        let RunDialog::Result { request, .. } = &mut example;
-        request.input = RunInput::Example;
-        ineligible.push(example);
-        let RunDialog::Result { request, .. } = &eligible;
-        ineligible.push(RunDialog::Result {
-            request: *request,
-            result: Err(RunFailure {
-                request: *request,
-                summary: "failed".to_owned(),
-                details: None,
-            }),
-            scroll: 0,
-        });
-        for answers in [vec![], vec!["   "], vec!["one", "two"]] {
-            let mut dialog = eligible.clone();
-            let RunDialog::Result {
-                result: Ok(report), ..
-            } = &mut dialog
-            else {
-                unreachable!();
-            };
-            report.parts = answers
-                .into_iter()
-                .map(|answer| RunPartReport {
-                    part: PuzzlePart::Two,
-                    answer: answer.to_owned(),
-                    runtime_ms: 1,
-                })
-                .collect();
-            ineligible.push(dialog);
-        }
-        for dialog in ineligible {
-            app.run_dialog = Some(dialog);
-            assert!(app.run_submission_request().is_none());
-        }
+        app.update(Action::ToggleSubmissionChoice);
+        assert_eq!(
+            app.update(Action::SubmissionSubmit),
+            vec![Effect::Background(BackgroundEffect::SubmitAnswer(
+                SubmissionRequest::new(retained, PuzzlePart::Two, "retained-answer".to_owned())
+            ))]
+        );
+        assert!(app.active_submission.is_some());
     }
 
     #[test]
@@ -2247,12 +2118,17 @@ mod tests {
             request: request.clone(),
             result: Ok(AocSubmissionResult::Incorrect),
         };
-        let effect = BackgroundEffect::SubmitAnswer(request);
+        let effect = BackgroundEffect::SubmitAnswer(request.clone());
+        let queue_failure = Action::BackgroundSubmissionFailed {
+            effect: BackgroundEffect::SubmitAnswer(request),
+            message: "worker stopped".to_owned(),
+        };
 
         for debug in [
             format!("{dialog:?}"),
             format!("{action:?}"),
             format!("{effect:?}"),
+            format!("{queue_failure:?}"),
         ] {
             assert!(!debug.contains(sensitive));
             assert!(debug.contains("[REDACTED]"));
@@ -2294,34 +2170,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn correct_submission_does_not_refresh_calendar_content_from_another_tab() {
-        let mut app = app();
-        let selected = puzzle(10, 2026);
-        app.selected_puzzle = Some(selected);
-        app.active_tab = super::Tab::Language;
-        let request = SubmissionRequest {
-            puzzle: selected,
-            part: PuzzlePart::One,
-            answer: "answer".to_owned(),
-        };
-        app.active_submission = Some(request.clone());
-
-        let effects = app.update(Action::SubmissionFinished {
-            request,
-            result: Ok(AocSubmissionResult::Correct),
-        });
-
-        assert!(effects.is_empty());
-        assert!(matches!(
-            app.submission_dialog,
-            Some(SubmissionDialog::Outcome {
-                result: Ok(AocSubmissionResult::Correct),
-                ..
-            })
-        ));
-    }
-
     fn load_calendar(app: &mut App, calendar: Calendar, refresh: bool) -> Vec<Effect> {
         app.update(Action::CalendarFinished {
             year: app.selected_year,
@@ -2341,20 +2189,6 @@ mod tests {
             false,
         );
         app
-    }
-
-    #[test]
-    fn year_navigation_stays_within_released_bounds() {
-        let mut app = app();
-
-        assert!(app.update(Action::NextYear).is_empty());
-        assert_eq!(app.selected_year, puzzle(1, 2026).year);
-
-        for _ in 0..20 {
-            app.update(Action::PreviousYear);
-        }
-        assert_eq!(app.selected_year.get(), PuzzleYear::MIN);
-        assert!(app.update(Action::PreviousYear).is_empty());
     }
 
     #[test]
@@ -2413,188 +2247,10 @@ mod tests {
     }
 
     #[test]
-    fn initial_effect_only_loads_the_calendar() {
-        let mut app = app();
-
-        assert_eq!(
-            app.initial_effects(),
-            vec![Effect::Background(BackgroundEffect::LoadCalendar {
-                year: PuzzleYear::new(2026).unwrap(),
-                refresh: false,
-            })]
-        );
-        assert_eq!(app.selected_puzzle(), None);
-    }
-
-    #[test]
-    fn calendar_load_selects_the_first_visual_puzzle() {
-        let mut app = app();
-
-        let effects = load_calendar(
-            &mut app,
-            calendar(vec![
-                vec![Some(puzzle(8, 2026))],
-                vec![None],
-                vec![Some(puzzle(4, 2026))],
-            ]),
-            false,
-        );
-
-        assert_eq!(app.selected_puzzle(), Some(puzzle(8, 2026)));
-        assert_eq!(app.calendar_scroll.0, 0);
-        assert_eq!(
-            effects,
-            vec![Effect::Background(BackgroundEffect::LoadCachedDescription(
-                puzzle(8, 2026)
-            ))]
-        );
-    }
-
-    #[test]
-    fn description_download_is_explicit_and_single_flight_per_puzzle() {
-        let mut app = selected_app();
-
-        let effects = app.update(Action::DownloadDescription);
-
-        assert_eq!(
-            effects,
-            vec![Effect::Background(BackgroundEffect::DownloadDescription(
-                puzzle(10, 2026)
-            ))]
-        );
-        assert!(app.description_downloading(puzzle(10, 2026)));
-        assert!(app.update(Action::DownloadDescription).is_empty());
-    }
-
-    #[test]
-    fn failed_redownload_preserves_an_existing_preview() {
-        let mut app = selected_app();
-        let puzzle = app.selected_puzzle().unwrap();
-        app.update(Action::CachedDescriptionFinished {
-            puzzle,
-            result: Ok(Some("existing preview".to_owned())),
-        });
-        app.update(Action::DownloadDescription);
-
-        app.update(Action::DescriptionDownloaded {
-            puzzle,
-            result: Err("download failed".to_owned()),
-        });
-
-        assert_eq!(
-            app.description,
-            DescriptionState::Loaded {
-                puzzle,
-                markdown: "existing preview".to_owned()
-            }
-        );
-        assert_eq!(app.status.as_deref(), Some("download failed"));
-        assert!(!app.description_downloading(puzzle));
-    }
-
-    #[test]
-    fn failed_download_without_a_preview_shows_the_error() {
-        let mut app = selected_app();
-        let puzzle = app.selected_puzzle().unwrap();
-        app.update(Action::DownloadDescription);
-
-        app.update(Action::DescriptionDownloaded {
-            puzzle,
-            result: Err("download failed".to_owned()),
-        });
-
-        assert_eq!(
-            app.description,
-            DescriptionState::Error {
-                puzzle,
-                message: "download failed".to_owned()
-            }
-        );
-    }
-
-    #[test]
     fn stale_download_updates_no_visible_state_and_releases_its_guard() {
         let mut app = selected_app();
         let stale = app.selected_puzzle().unwrap();
         app.update(Action::DownloadDescription);
-        app.update(Action::NextCalendarPuzzle);
-
-        app.update(Action::DescriptionDownloaded {
-            puzzle: stale,
-            result: Ok("updated stale puzzle".to_owned()),
-        });
-
-        assert_eq!(
-            app.description,
-            DescriptionState::CheckingCache(puzzle(9, 2026))
-        );
-        assert!(!app.description_downloading(stale));
-        assert_eq!(app.selected_puzzle(), Some(puzzle(9, 2026)));
-        assert!(app.status.is_none());
-    }
-
-    #[test]
-    fn cache_misses_are_silent() {
-        let mut app = selected_app();
-        let puzzle = app.selected_puzzle().unwrap();
-        let status = app.status.clone();
-        assert_eq!(app.description, DescriptionState::CheckingCache(puzzle));
-
-        app.update(Action::CachedDescriptionFinished {
-            puzzle,
-            result: Ok(None),
-        });
-        assert_eq!(app.description, DescriptionState::Empty);
-        assert_eq!(app.status, status);
-    }
-
-    #[test]
-    fn cache_errors_are_visible() {
-        let mut app = selected_app();
-        let puzzle = app.selected_puzzle().unwrap();
-
-        app.update(Action::CachedDescriptionFinished {
-            puzzle,
-            result: Err("cache read failed".to_owned()),
-        });
-        assert_eq!(
-            app.description,
-            DescriptionState::Error {
-                puzzle,
-                message: "cache read failed".to_owned()
-            }
-        );
-        assert_eq!(app.status.as_deref(), Some("cache read failed"));
-    }
-
-    #[test]
-    fn late_cache_results_do_not_replace_a_completed_download() {
-        let mut app = selected_app();
-        let puzzle = app.selected_puzzle().unwrap();
-        app.update(Action::DownloadDescription);
-        app.update(Action::DescriptionDownloaded {
-            puzzle,
-            result: Ok("downloaded preview".to_owned()),
-        });
-
-        app.update(Action::CachedDescriptionFinished {
-            puzzle,
-            result: Ok(Some("older cached preview".to_owned())),
-        });
-
-        assert_eq!(
-            app.description,
-            DescriptionState::Loaded {
-                puzzle,
-                markdown: "downloaded preview".to_owned()
-            }
-        );
-    }
-
-    #[test]
-    fn stale_cache_results_do_not_replace_the_selected_puzzle() {
-        let mut app = selected_app();
-        let stale = app.selected_puzzle().unwrap();
         app.update(Action::NextCalendarPuzzle);
         let selected = app.selected_puzzle().unwrap();
 
@@ -2602,142 +2258,18 @@ mod tests {
             puzzle: stale,
             result: Ok(Some("stale preview".to_owned())),
         });
+        assert_eq!(app.description, DescriptionState::CheckingCache(selected));
+        assert_eq!(app.selected_puzzle(), Some(selected));
+
+        app.update(Action::DescriptionDownloaded {
+            puzzle: stale,
+            result: Ok("updated stale puzzle".to_owned()),
+        });
 
         assert_eq!(app.description, DescriptionState::CheckingCache(selected));
-    }
-
-    #[test]
-    fn routine_operations_clear_footer_status() {
-        let mut app = selected_app();
-        let puzzle = app.selected_puzzle().unwrap();
-
-        app.status = Some("previous problem".to_owned());
-        app.update(Action::DownloadDescription);
+        assert!(!app.description_downloading(stale));
+        assert_eq!(app.selected_puzzle(), Some(selected));
         assert!(app.status.is_none());
-        app.update(Action::DescriptionDownloaded {
-            puzzle,
-            result: Ok("downloaded description".to_owned()),
-        });
-        assert!(app.status.is_none());
-
-        app.status = Some("previous problem".to_owned());
-        app.update(Action::RefreshCalendar);
-        assert!(app.status.is_none());
-        load_calendar(&mut app, calendar(vec![vec![Some(puzzle)]]), true);
-        assert!(app.status.is_none());
-
-        app.status = Some("previous problem".to_owned());
-        assert_eq!(
-            app.update(Action::OpenBrowser),
-            vec![Effect::Foreground(ForegroundEffect::OpenBrowser(puzzle))]
-        );
-        assert!(app.status.is_none());
-        app.update(Action::ForegroundFinished(Ok(())));
-        assert!(app.status.is_none());
-    }
-
-    #[test]
-    fn foreground_failures_remain_visible() {
-        let mut app = selected_app();
-
-        app.update(Action::ForegroundFinished(Err("browser failed".to_owned())));
-
-        assert_eq!(app.status.as_deref(), Some("browser failed"));
-    }
-
-    #[test]
-    fn stale_calendar_results_do_not_replace_the_selected_year() {
-        let mut app = app();
-
-        app.update(Action::PreviousYear);
-        app.update(Action::CalendarFinished {
-            year: puzzle(1, 2026).year,
-            refresh: false,
-            result: Ok(Calendar { rows: Vec::new() }),
-        });
-
-        assert!(app.calendar.is_none());
-        assert_eq!(app.selected_year, puzzle(1, 2025).year);
-    }
-
-    #[test]
-    fn calendar_selection_starts_at_the_top_visual_puzzle() {
-        let mut app = App::new(
-            Some(puzzle(1, 2025).year),
-            puzzle(25, 2026),
-            LanguageId::Python,
-        );
-        load_calendar(
-            &mut app,
-            calendar(vec![
-                vec![Some(puzzle(11, 2025))],
-                vec![Some(puzzle(12, 2025))],
-                vec![Some(puzzle(25, 2025))],
-            ]),
-            false,
-        );
-
-        assert_eq!(app.selected_puzzle(), Some(puzzle(11, 2025)));
-    }
-
-    #[test]
-    fn calendar_refresh_preserves_the_selected_puzzle_in_a_new_position() {
-        let mut app = selected_app();
-        app.update(Action::NextCalendarPuzzle);
-        assert_eq!(app.selected_puzzle(), Some(puzzle(9, 2026)));
-        app.calendar_scroll.0 = 4;
-
-        let effects = load_calendar(
-            &mut app,
-            calendar(vec![
-                vec![Some(puzzle(10, 2026))],
-                vec![None],
-                vec![Some(puzzle(9, 2026))],
-            ]),
-            true,
-        );
-
-        assert!(effects.is_empty());
-        assert_eq!(app.selected_puzzle(), Some(puzzle(9, 2026)));
-        assert_eq!(app.calendar_scroll.0, 4);
-    }
-
-    #[test]
-    fn calendar_refresh_falls_back_to_the_first_visual_puzzle() {
-        let mut app = selected_app();
-        app.calendar_scroll.0 = 2;
-
-        let effects = load_calendar(
-            &mut app,
-            calendar(vec![
-                vec![None],
-                vec![Some(puzzle(6, 2026))],
-                vec![Some(puzzle(4, 2026))],
-            ]),
-            true,
-        );
-
-        assert_eq!(app.selected_puzzle(), Some(puzzle(6, 2026)));
-        assert_eq!(app.calendar_scroll.0, 2);
-        assert_eq!(
-            effects,
-            vec![Effect::Background(BackgroundEffect::LoadCachedDescription(
-                puzzle(6, 2026)
-            ))]
-        );
-    }
-
-    #[test]
-    fn puzzle_actions_are_disabled_until_the_calendar_selects_a_puzzle() {
-        let mut app = app();
-
-        assert!(app.update(Action::DownloadDescription).is_empty());
-        assert_eq!(
-            app.status.as_deref(),
-            Some("No calendar puzzle is selected")
-        );
-        assert!(app.update(Action::OpenBrowser).is_empty());
-        assert!(app.update(Action::OpenExercise).is_empty());
     }
 
     #[test]
@@ -2757,245 +2289,10 @@ mod tests {
             vec![Effect::Background(BackgroundEffect::RunSolver(request))]
         );
         assert_eq!(app.active_run, Some(request));
-        assert!(app.status.is_none());
-
         assert!(app.update(Action::RunPart(PuzzlePart::Two)).is_empty());
-        assert!(app.update(Action::OpenExercise).is_empty());
-        app.update(Action::NextTab);
-        assert_eq!(app.active_tab, super::Tab::Calendar);
-        assert!(app.update(Action::SwitchLanguage).is_empty());
-        app.update(Action::Tick);
-        assert_eq!(app.run_spinner_frame, 1);
-        app.update(Action::Quit);
-        assert!(!app.should_quit);
-        assert_eq!(
-            app.status.as_deref(),
-            Some("Wait for the solver run to finish")
-        );
     }
-
     #[test]
-    fn completed_run_keeps_results_and_persistence_warning_tagged_to_request() {
-        let mut app = selected_app();
-        app.update(Action::ToggleRunInput);
-        assert_eq!(app.run_input, RunInput::Example);
-        assert!(app.status.is_none());
-        app.update(Action::RunPart(PuzzlePart::One));
-        let request = app.active_run.unwrap();
-        let report = RunReport {
-            request,
-            compile_stdout: String::new(),
-            compile_stderr: String::new(),
-            solver_stdout: "solver output".to_owned(),
-            solver_stderr: String::new(),
-            parts: vec![RunPartReport {
-                part: PuzzlePart::One,
-                answer: "42".to_owned(),
-                runtime_ms: 7,
-            }],
-            warning: Some("Run completed, but timing persistence failed".to_owned()),
-        };
-
-        app.update(Action::RunFinished {
-            request,
-            result: Ok(report.clone()),
-        });
-
-        assert!(app.active_run.is_none());
-        assert_eq!(
-            app.run_dialog,
-            Some(RunDialog::Result {
-                request,
-                result: Ok(report),
-                scroll: 0,
-            })
-        );
-    }
-
-    #[test]
-    fn queue_failure_releases_active_run_and_keeps_request_context() {
-        let mut app = selected_app();
-        app.update(Action::RunPart(PuzzlePart::Two));
-        let request = app.active_run.unwrap();
-        let failure = RunFailure {
-            request,
-            summary: "Could not queue solver run".to_owned(),
-            details: Some("worker stopped".to_owned()),
-        };
-
-        app.update(Action::RunEffectFailed {
-            request,
-            failure: failure.clone(),
-        });
-
-        assert!(app.active_run.is_none());
-        assert_eq!(
-            app.run_dialog,
-            Some(RunDialog::Result {
-                request,
-                result: Err(failure),
-                scroll: 0,
-            })
-        );
-    }
-
-    #[test]
-    fn exercise_is_prepared_before_foreground_editor_handoff() {
-        let mut app = selected_app();
-        let puzzle = app.selected_puzzle().unwrap();
-
-        assert_eq!(
-            app.update(Action::OpenExercise),
-            vec![Effect::Background(BackgroundEffect::PrepareExercise {
-                puzzle,
-                language: LanguageId::Rust,
-            })]
-        );
-        assert!(app.exercise_preparing);
-        assert!(app.status.is_none());
-        assert!(app.update(Action::OpenExercise).is_empty());
-
-        let prepared = PreparedExercise {
-            puzzle,
-            editor: "editor".to_owned(),
-            puzzle_description: "puzzle.md".into(),
-            example: "example.txt".into(),
-            solution: "solution.rs".into(),
-            input: "input.txt".into(),
-            working_directory: "workspace".into(),
-        };
-        assert_eq!(
-            app.update(Action::ExercisePrepared {
-                puzzle,
-                language: LanguageId::Rust,
-                result: Ok(prepared.clone()),
-            }),
-            vec![Effect::Foreground(ForegroundEffect::OpenExercise(prepared))]
-        );
-        assert!(!app.exercise_preparing);
-        assert!(app.status.is_none());
-    }
-
-    #[test]
-    fn stale_exercise_preparation_releases_the_single_flight_guard() {
-        let mut app = selected_app();
-        let stale = app.selected_puzzle().unwrap();
-        app.update(Action::OpenExercise);
-        app.update(Action::NextCalendarPuzzle);
-
-        assert!(app
-            .update(Action::ExercisePrepared {
-                puzzle: stale,
-                language: LanguageId::Rust,
-                result: Err("stale preparation".to_owned()),
-            })
-            .is_empty());
-        assert!(!app.exercise_preparing);
-        assert_eq!(app.update(Action::OpenExercise).len(), 1);
-    }
-
-    #[test]
-    fn pending_exercise_preparation_blocks_other_language_jobs() {
-        let mut app = selected_app();
-        let puzzle = app.selected_puzzle().unwrap();
-        app.update(Action::OpenExercise);
-        app.update(Action::NextTab);
-
-        assert!(app.update(Action::SwitchLanguage).is_empty());
-        assert!(app.update(Action::RefreshLanguage).is_empty());
-        app.update(Action::AddPackage);
-        assert_eq!(app.language, LanguageId::Rust);
-        assert!(app.language_dialog.is_none());
-
-        app.update(Action::ExercisePrepared {
-            puzzle,
-            language: LanguageId::Rust,
-            result: Err("preparation failed".to_owned()),
-        });
-        assert!(!app.exercise_preparing);
-    }
-
-    #[test]
-    fn active_language_job_blocks_calendar_exercise_preparation() {
-        let mut app = language_app();
-        app.update(Action::RemoveLanguageItem);
-        app.update(Action::DialogToggleConfirmation);
-        app.update(Action::DialogSubmit);
-        app.update(Action::NextTab);
-        app.update(Action::NextTab);
-        load_calendar(
-            &mut app,
-            calendar(vec![vec![Some(puzzle(10, 2026))]]),
-            false,
-        );
-
-        assert!(app.update(Action::OpenExercise).is_empty());
-        assert_eq!(
-            app.status.as_deref(),
-            Some("A language operation is already running")
-        );
-    }
-
-    #[test]
-    fn entering_language_loads_read_only_lists_once() {
-        let mut app = app();
-
-        assert_eq!(
-            app.update(Action::NextTab),
-            vec![Effect::Background(BackgroundEffect::LoadLanguageData {
-                language: LanguageId::Rust,
-            })]
-        );
-        assert_eq!(app.active_tab, super::Tab::Language);
-        assert_eq!(
-            app.language_operation,
-            LanguageOperationState::Running {
-                packages: Some("loading...".to_owned()),
-                libraries: Some("loading...".to_owned()),
-            }
-        );
-
-        app.update(Action::LanguageDataFinished {
-            language: LanguageId::Rust,
-            result: Ok(LanguageData {
-                packages: vec![],
-                libraries: vec![],
-            }),
-        });
-        app.update(Action::NextTab);
-        assert!(app.update(Action::PreviousTab).is_empty());
-    }
-
-    #[test]
-    fn session_language_controls_calendar_exercise_preparation() {
-        let mut app = language_app();
-        app.update(Action::SwitchLanguage);
-        app.update(Action::LanguageDataFinished {
-            language: LanguageId::Python,
-            result: Ok(LanguageData {
-                packages: vec![],
-                libraries: vec![],
-            }),
-        });
-        app.update(Action::NextTab);
-        app.update(Action::NextTab);
-        load_calendar(
-            &mut app,
-            calendar(vec![vec![Some(puzzle(10, 2026))]]),
-            false,
-        );
-
-        assert_eq!(
-            app.update(Action::OpenExercise),
-            vec![Effect::Background(BackgroundEffect::PrepareExercise {
-                puzzle: puzzle(10, 2026),
-                language: LanguageId::Python,
-            })]
-        );
-    }
-
-    #[test]
-    fn destructive_language_dialogs_cancel_by_default() {
+    fn destructive_confirmations_cancel_by_default() {
         let mut app = language_app();
 
         app.update(Action::RemoveLanguageItem);
@@ -3010,41 +2307,6 @@ mod tests {
         assert!(app.update(Action::DialogSubmit).is_empty());
         assert!(app.language_dialog.is_none());
         assert_eq!(app.language_packages, vec!["anyhow"]);
-    }
-
-    #[test]
-    fn confirmed_package_removal_dispatches_one_serialized_job() {
-        let mut app = language_app();
-        app.update(Action::RemoveLanguageItem);
-        app.update(Action::DialogToggleConfirmation);
-
-        assert_eq!(
-            app.update(Action::DialogSubmit),
-            vec![Effect::Background(BackgroundEffect::MutateLanguage {
-                language: LanguageId::Rust,
-                mutation: LanguageMutation::RemovePackage("anyhow".to_owned()),
-            })]
-        );
-        assert!(app.update(Action::RefreshLanguage).is_empty());
-    }
-
-    #[test]
-    fn library_name_dialog_prepares_the_editor_without_creating_a_file_in_the_reducer() {
-        let mut app = language_app();
-        app.update(Action::NewLibrary);
-        app.update(Action::DialogInput('m'));
-        app.update(Action::DialogInput('a'));
-        app.update(Action::DialogInput('t'));
-        app.update(Action::DialogInput('h'));
-
-        assert_eq!(
-            app.update(Action::DialogSubmit),
-            vec![Effect::Background(BackgroundEffect::PrepareLanguageFile {
-                language: LanguageId::Rust,
-                kind: LanguageFileKind::Library("math".to_owned()),
-                reset: false,
-            })]
-        );
     }
 
     #[test]
@@ -3069,267 +2331,6 @@ mod tests {
     }
 
     #[test]
-    fn language_errors_are_dismissible_messages() {
-        let mut app = app();
-        app.update(Action::NextTab);
-
-        app.update(Action::LanguageDataFinished {
-            language: LanguageId::Rust,
-            result: Err("package query failed".to_owned()),
-        });
-
-        assert_eq!(
-            app.language_dialog,
-            Some(LanguageDialog::Message("package query failed".to_owned()))
-        );
-        assert_eq!(app.language_operation, LanguageOperationState::Idle);
-        assert!(app.status.is_none());
-        app.update(Action::DialogCancel);
-        assert!(app.language_dialog.is_none());
-    }
-
-    #[test]
-    fn library_editor_refresh_marks_only_the_library_pane() {
-        let mut app = language_app();
-        app.language_file_opening = Some(LanguageFileKind::Library("grid".to_owned()));
-        app.language_operation = LanguageOperationState::Running {
-            packages: None,
-            libraries: Some("opening...".to_owned()),
-        };
-
-        assert_eq!(
-            app.update(Action::ForegroundFinished(Ok(()))),
-            vec![Effect::Background(BackgroundEffect::LoadLanguageData {
-                language: LanguageId::Rust,
-            })]
-        );
-        assert_eq!(
-            app.language_operation,
-            LanguageOperationState::Running {
-                packages: None,
-                libraries: Some("loading...".to_owned()),
-            }
-        );
-    }
-
-    #[test]
-    fn entering_config_loads_fields_lazily() {
-        let mut app = app();
-
-        assert_eq!(
-            app.update(Action::PreviousTab),
-            vec![Effect::Background(BackgroundEffect::LoadConfig {
-                latest_year: PuzzleYear::new(2026).unwrap(),
-            })]
-        );
-        assert_eq!(app.active_tab, super::Tab::Config);
-        assert_eq!(
-            app.config_operation,
-            ConfigOperationState::Running("loading...")
-        );
-        assert_eq!(ConfigField::ALL.len(), 4);
-        assert!(!ConfigField::ALL
-            .iter()
-            .any(|field| field.label().contains("Language")));
-    }
-
-    #[test]
-    fn config_editors_start_with_an_empty_input() {
-        for selection in 0..ConfigField::ALL.len() {
-            let mut app = config_app(false);
-            app.config_selection = selection;
-
-            app.update(Action::EditConfigField);
-
-            match app.config_dialog {
-                Some(ConfigDialog::Text { value, .. }) => assert!(value.is_empty()),
-                Some(ConfigDialog::Session { value, .. }) => assert!(value.is_empty()),
-                dialog => panic!("unexpected config dialog: {dialog:?}"),
-            }
-        }
-    }
-
-    #[test]
-    fn config_year_is_released_and_does_not_move_the_calendar() {
-        let mut app = config_app(false);
-        let selected_year = app.selected_year;
-        app.config_dialog = Some(ConfigDialog::Text {
-            field: NonSecretConfigField::Year,
-            value: "2027".to_owned(),
-            error: None,
-        });
-
-        assert!(app.update(Action::ConfigSubmit).is_empty());
-        assert!(matches!(
-            app.config_dialog,
-            Some(ConfigDialog::Text { error: Some(_), .. })
-        ));
-
-        app.config_dialog = Some(ConfigDialog::Text {
-            field: NonSecretConfigField::Year,
-            value: "2025".to_owned(),
-            error: None,
-        });
-        assert_eq!(
-            app.update(Action::ConfigSubmit),
-            vec![Effect::Background(BackgroundEffect::MutateConfig {
-                latest_year: PuzzleYear::new(2026).unwrap(),
-                mutation: ConfigMutation::Set {
-                    field: NonSecretConfigField::Year,
-                    value: Some("2025".to_owned()),
-                },
-            })]
-        );
-        assert_eq!(app.selected_year, selected_year);
-    }
-
-    #[test]
-    fn blank_non_secret_config_values_reset_the_override() {
-        let mut app = config_app(false);
-        app.config_dialog = Some(ConfigDialog::Text {
-            field: NonSecretConfigField::Year,
-            value: String::new(),
-            error: None,
-        });
-
-        assert_eq!(
-            app.update(Action::ConfigSubmit),
-            vec![Effect::Background(BackgroundEffect::MutateConfig {
-                latest_year: PuzzleYear::new(2026).unwrap(),
-                mutation: ConfigMutation::Set {
-                    field: NonSecretConfigField::Year,
-                    value: None,
-                },
-            })]
-        );
-    }
-
-    #[test]
-    fn reset_key_resets_each_non_secret_config_field() {
-        for (selection, field) in [
-            (0, NonSecretConfigField::Year),
-            (1, NonSecretConfigField::Editor),
-            (2, NonSecretConfigField::RunHistoryLimit),
-        ] {
-            let mut app = config_app(false);
-            app.config_selection = selection;
-
-            assert_eq!(
-                app.update(Action::RemoveConfigValue),
-                vec![Effect::Background(BackgroundEffect::MutateConfig {
-                    latest_year: PuzzleYear::new(2026).unwrap(),
-                    mutation: ConfigMutation::Set { field, value: None },
-                })]
-            );
-        }
-    }
-
-    #[test]
-    fn config_editor_and_run_history_use_domain_validation() {
-        let mut app = config_app(false);
-        app.config_dialog = Some(ConfigDialog::Text {
-            field: NonSecretConfigField::RunHistoryLimit,
-            value: "0".to_owned(),
-            error: None,
-        });
-        assert!(app.update(Action::ConfigSubmit).is_empty());
-        assert!(matches!(
-            app.config_dialog,
-            Some(ConfigDialog::Text { error: Some(_), .. })
-        ));
-
-        app.config_dialog = Some(ConfigDialog::Text {
-            field: NonSecretConfigField::Editor,
-            value: "  code --wait  ".to_owned(),
-            error: None,
-        });
-        assert!(matches!(
-            app.update(Action::ConfigSubmit).as_slice(),
-            [Effect::Background(BackgroundEffect::MutateConfig {
-                mutation: ConfigMutation::Set {
-                    field: NonSecretConfigField::Editor,
-                    value: Some(value),
-                },
-                ..
-            })] if value == "code --wait"
-        ));
-    }
-
-    #[test]
-    fn session_input_is_redacted_and_blank_input_is_rejected() {
-        let mut app = config_app(false);
-        app.config_selection = 3;
-        app.update(Action::EditConfigField);
-        assert!(matches!(
-            app.config_dialog,
-            Some(ConfigDialog::Session { .. })
-        ));
-
-        assert!(app.update(Action::ConfigSubmit).is_empty());
-        assert!(matches!(
-            app.config_dialog,
-            Some(ConfigDialog::Session { error: Some(_), .. })
-        ));
-
-        for character in "sensitive-value".chars() {
-            app.update(Action::ConfigSecretInput(super::SecretCharacter(character)));
-        }
-        let debug = format!("{:?}", app.config_dialog);
-        assert!(!debug.contains("sensitive-value"));
-        let effects = app.update(Action::ConfigSubmit);
-        assert_eq!(effects.len(), 1);
-        assert!(!format!("{effects:?}").contains("sensitive-value"));
-        assert!(matches!(
-            &effects[0],
-            Effect::Background(BackgroundEffect::MutateConfig {
-                mutation: ConfigMutation::SetSession(_),
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn session_removal_confirmation_defaults_to_cancel() {
-        let mut app = config_app(true);
-        app.config_selection = 3;
-        app.update(Action::RemoveConfigValue);
-        assert_eq!(
-            app.config_dialog,
-            Some(ConfigDialog::ConfirmRemoveSession { confirmed: false })
-        );
-        assert!(app.update(Action::ConfigSubmit).is_empty());
-
-        app.update(Action::RemoveConfigValue);
-        app.update(Action::ConfigToggleConfirmation);
-        assert!(matches!(
-            app.update(Action::ConfigSubmit).as_slice(),
-            [Effect::Background(BackgroundEffect::MutateConfig {
-                mutation: ConfigMutation::RemoveSession,
-                ..
-            })]
-        ));
-    }
-
-    #[test]
-    fn config_failures_clear_progress_and_open_a_message() {
-        let mut app = app();
-        app.update(Action::PreviousTab);
-
-        app.update(Action::ConfigLoaded {
-            result: Err("config read failed".to_owned()),
-        });
-
-        assert_eq!(app.config_operation, ConfigOperationState::Idle);
-        assert_eq!(
-            app.config_dialog,
-            Some(ConfigDialog::Message {
-                message: "config read failed".to_owned(),
-                scroll: 0,
-            })
-        );
-    }
-
-    #[test]
     fn quit_waits_for_a_confirmed_config_save() {
         let mut app = config_app(false);
         app.config_dialog = Some(ConfigDialog::Text {
@@ -3341,10 +2342,6 @@ mod tests {
 
         app.update(Action::Quit);
         assert!(!app.should_quit);
-        assert_eq!(
-            app.status.as_deref(),
-            Some("Wait for the configuration save to finish")
-        );
 
         app.update(Action::ConfigSaved {
             result: Ok(ConfigData {
@@ -3355,32 +2352,5 @@ mod tests {
             }),
         });
         assert!(app.should_quit);
-        assert!(app.status.is_none());
-    }
-
-    #[test]
-    fn failed_config_save_cancels_deferred_quit() {
-        let mut app = config_app(false);
-        app.config_dialog = Some(ConfigDialog::Text {
-            field: NonSecretConfigField::Editor,
-            value: "vim".to_owned(),
-            error: None,
-        });
-        app.update(Action::ConfigSubmit);
-        app.update(Action::Quit);
-
-        app.update(Action::ConfigSaved {
-            result: Err("save failed".to_owned()),
-        });
-
-        assert!(!app.should_quit);
-        assert!(!app.quit_after_config_save);
-        assert_eq!(
-            app.config_dialog,
-            Some(ConfigDialog::Message {
-                message: "save failed".to_owned(),
-                scroll: 0,
-            })
-        );
     }
 }

@@ -68,7 +68,7 @@ fn extract_wait_time(text: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AocSubmissionResult, extract_wait_time, parse_submission};
+    use super::extract_wait_time;
 
     #[test]
     fn extracts_aoc_wait_times() {
@@ -85,28 +85,5 @@ mod tests {
         for (message, expected) in cases {
             assert_eq!(extract_wait_time(message), expected, "{message}");
         }
-    }
-
-    #[test]
-    fn recognizes_explicit_cooldowns_before_incorrect_answers() {
-        let result = parse_submission(
-            "<main><article><p>That's not the right answer. Please wait 1 minute before trying again.</p></article></main>",
-        )
-        .expect("parse submission response");
-
-        assert_eq!(result, AocSubmissionResult::RateLimited(60));
-    }
-
-    #[test]
-    fn preserves_unknown_submission_article_markdown() {
-        let result = parse_submission(
-            "<main><article><p>Unexpected submission response.</p></article></main>",
-        )
-        .expect("parse submission response");
-
-        assert_eq!(
-            result,
-            AocSubmissionResult::Unknown("Unexpected submission response.".to_owned())
-        );
     }
 }

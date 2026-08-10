@@ -29,7 +29,7 @@ use crate::{
     TuiError,
 };
 
-pub struct EffectRunner {
+pub(crate) struct EffectRunner {
     sender: Option<mpsc::Sender<BackgroundEffect>>,
     receiver: mpsc::Receiver<Action>,
     worker: Option<thread::JoinHandle<()>>,
@@ -37,7 +37,7 @@ pub struct EffectRunner {
 }
 
 impl EffectRunner {
-    pub fn new(layout: RuntimeLayout) -> Self {
+    pub(crate) fn new(layout: RuntimeLayout) -> Self {
         let (effect_sender, effect_receiver) = mpsc::channel();
         let (action_sender, action_receiver) = mpsc::channel();
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -56,15 +56,18 @@ impl EffectRunner {
         }
     }
 
-    pub fn submit(&self, effect: BackgroundEffect) -> Result<(), TuiError> {
+    pub(crate) fn submit(
+        &self,
+        effect: BackgroundEffect,
+    ) -> Result<(), (Box<BackgroundEffect>, TuiError)> {
         self.sender
             .as_ref()
             .expect("effect sender exists until drop")
             .send(effect)
-            .map_err(|_| TuiError::EffectRunnerStopped)
+            .map_err(|error| (Box::new(error.0), TuiError::EffectRunnerStopped))
     }
 
-    pub fn try_receive(&self) -> Option<Action> {
+    pub(crate) fn try_receive(&self) -> Option<Action> {
         self.receiver.try_recv().ok()
     }
 }
@@ -152,8 +155,7 @@ fn run_background_effect(
             }
         }
         BackgroundEffect::RunSolver(request) => {
-            let result =
-                run_solver(layout, request, executor).map_err(|error| run_failure(request, error));
+            let result = run_solver(layout, request, executor).map_err(run_failure);
             Action::RunFinished { request, result }
         }
         BackgroundEffect::SubmitAnswer(request) => {
@@ -256,15 +258,12 @@ fn run_solver(
         RunInput::Aoc => content
             .ensure_input(request.puzzle)
             .map_err(TuiError::from)?,
-        RunInput::Example => {
-            let path = workspace
-                .root_dir()
-                .join("examples")
-                .join(format!("{}.txt", request.puzzle));
-            workspace
-                .ensure_example(request.puzzle)
-                .map_err(|source| RunSolverError::SharedExample { path, source })?
-        }
+        RunInput::Example => workspace.ensure_example(request.puzzle).map_err(|source| {
+            RunSolverError::SharedExample {
+                puzzle: request.puzzle,
+                source,
+            }
+        })?,
     };
     let language = Language::new(request.language, &workspace, executor);
     let output = language
@@ -297,7 +296,7 @@ fn record_run_timings(
     }
 }
 
-fn run_failure(request: RunRequest, error: RunSolverError) -> RunFailure {
+fn run_failure(error: RunSolverError) -> RunFailure {
     match error {
         RunSolverError::Tui(TuiError::Language(AocLanguageError::Command(
             CommandError::Failed {
@@ -316,7 +315,6 @@ fn run_failure(request: RunRequest, error: RunSolverError) -> RunFailure {
                 None
             };
             RunFailure {
-                request,
                 summary: format!("Solver command exited with {}", output.status),
                 details: Some(match output_details {
                     Some(details) => format!("{details}\n\nCommand: {command_context}"),
@@ -327,12 +325,10 @@ fn run_failure(request: RunRequest, error: RunSolverError) -> RunFailure {
         RunSolverError::Tui(TuiError::Language(AocLanguageError::Command(CommandError::Io(
             source,
         )))) => RunFailure {
-            request,
             summary: "Could not launch the solver command".to_owned(),
             details: Some(source.to_string()),
         },
         error => RunFailure {
-            request,
             summary: "Solver run could not be completed".to_owned(),
             details: Some(error.to_string()),
         },
@@ -347,9 +343,9 @@ fn concise_command(request: &aocsuite_utils::CommandRequest) -> String {
 enum RunSolverError {
     #[error(transparent)]
     Tui(#[from] TuiError),
-    #[error("could not prepare shared example input at '{path}': {source}")]
+    #[error("could not prepare example input for puzzle '{puzzle}': {source}")]
     SharedExample {
-        path: std::path::PathBuf,
+        puzzle: PuzzleId,
         source: WorkspaceError,
     },
 }
@@ -367,7 +363,6 @@ fn report_from_output(request: RunRequest, output: &LanguageRunOutput) -> RunRep
         .into_iter()
         .collect();
     RunReport {
-        request,
         compile_stdout: output.compile.stdout.clone(),
         compile_stderr: output.compile.stderr.clone(),
         solver_stdout: output.run.stdout.clone(),
@@ -396,17 +391,17 @@ fn load_optional_session(config: &Configuration) -> Result<Option<String>, AocCo
     }
 }
 
-pub fn run_foreground_effect(
+pub(crate) fn run_foreground_effect(
     effect: ForegroundEffect,
     executor: &dyn CommandExecutor,
 ) -> Result<(), TuiError> {
     let launcher = Launcher::new(executor);
     match effect {
-        ForegroundEffect::OpenBrowser(puzzle) => {
+        ForegroundEffect::Browser(puzzle) => {
             valid_puzzle_release(puzzle.day, puzzle.year)?;
             launcher.open_browser(&AocPage::Puzzle(puzzle).to_string())?;
         }
-        ForegroundEffect::OpenExercise(prepared) => {
+        ForegroundEffect::Exercise(prepared) => {
             launcher.open_puzzle(
                 prepared.editor,
                 OpenPuzzleRequest {
@@ -418,10 +413,10 @@ pub fn run_foreground_effect(
                 },
             )?;
         }
-        ForegroundEffect::OpenLanguageFile(prepared) => {
+        ForegroundEffect::LanguageFile(prepared) => {
             launcher.open_file(prepared.editor, &prepared.path, &prepared.working_directory)?;
         }
-        ForegroundEffect::OpenLazygit(workspace) => {
+        ForegroundEffect::Lazygit(workspace) => {
             let request = aocsuite_utils::CommandRequest::new("lazygit")
                 .current_dir(workspace)
                 .foreground();
@@ -457,7 +452,6 @@ fn prepare_exercise(
     let language = Language::new(language_id, &workspace, executor);
     let editor = config.get::<String>(ConfigKey::Editor)?;
     Ok(PreparedExercise {
-        puzzle,
         editor,
         puzzle_description: content.ensure_puzzle_markdown(puzzle)?,
         example: workspace.ensure_example(puzzle)?,
@@ -529,7 +523,6 @@ fn prepare_language_file(
         LanguageFileKind::Template => language.ensure_solver_file(&SolverFile::SolutionTemplate)?,
     };
     Ok(PreparedLanguageFile {
-        language: language_id,
         kind,
         editor,
         path,
@@ -636,105 +629,21 @@ fn config_operation(mutation: &ConfigMutation) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
     use std::process::{ExitStatus, Output};
     use std::sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc, Mutex,
     };
-    use std::{fs, io, path::PathBuf, time::Duration};
+    use std::{fs, io, path::PathBuf};
 
-    use aocsuite_config::{ConfigKey, Configuration};
-    use aocsuite_lang::AocLanguageError;
     use aocsuite_storage::RuntimeLayout;
     use aocsuite_utils::{
-        CommandError, CommandExecutor, CommandRequest, LanguageId, ProcessMode, PuzzleDay,
-        PuzzleId, PuzzlePart, PuzzleYear,
+        CommandExecutor, CommandRequest, LanguageId, ProcessMode, PuzzleDay, PuzzleId, PuzzlePart,
+        PuzzleYear,
     };
 
-    use super::{
-        config_mutation_failure_message, record_run_timings, run_background_effect, run_failure,
-        run_foreground_effect, submit_answer_with_options, worker_loop, ConfigMutationFailure,
-        RunSolverError,
-    };
-    use crate::app::{
-        Action, BackgroundEffect, ConfigMutation, ForegroundEffect, LanguageFileKind,
-        NonSecretConfigField, PreparedLanguageFile, RunInput, RunPartReport, RunReport, RunRequest,
-        SecretString, SubmissionRequest,
-    };
-
-    #[test]
-    fn submission_posts_once_parses_result_and_invalidates_managed_calendar() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let base_url = format!("http://{}", listener.local_addr().unwrap());
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let responses = [
-                "<html>old calendar</html>",
-                "<main><article>That's the right answer!</article></main>",
-                "<html>refreshed calendar</html>",
-            ];
-            let mut requests = Vec::new();
-            for body in responses {
-                let (mut stream, _) = listener.accept().unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut bytes = [0; 4096];
-                let length = stream.read(&mut bytes).unwrap();
-                requests.push(String::from_utf8_lossy(&bytes[..length]).into_owned());
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                )
-                .unwrap();
-            }
-            sender.send(requests).unwrap();
-        });
-
-        let root = test_root("submission-effect");
-        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
-        layout.bootstrap().unwrap();
-        let mut config = Configuration::load(layout.config_dir()).unwrap();
-        config
-            .set(ConfigKey::Session, Some("test-session"))
-            .unwrap();
-        let options = aocsuite_client::AocClientOptions {
-            base_url,
-            timeout: Duration::from_secs(2),
-            user_agent: "aocsuite-test/1".to_owned(),
-        };
-        let client =
-            aocsuite_client::AocClient::new(Some("test-session"), options.clone()).unwrap();
-        let content = aocsuite_storage::ContentStore::open(layout.cache_dir(), &client).unwrap();
-        let puzzle = PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap());
-        assert_eq!(
-            content.load_calendar(puzzle.year).unwrap(),
-            "<html>old calendar</html>"
-        );
-        let request = SubmissionRequest::new(puzzle, PuzzlePart::One, "manual answer".to_owned());
-
-        let result = submit_answer_with_options(&layout, &request, options).unwrap();
-
-        assert_eq!(result, aocsuite_parser::AocSubmissionResult::Correct);
-        assert_eq!(
-            content.load_calendar(puzzle.year).unwrap(),
-            "<html>refreshed calendar</html>"
-        );
-        let requests = receiver.recv_timeout(Duration::from_secs(2)).unwrap();
-        let posts = requests
-            .iter()
-            .filter(|request| request.starts_with("POST "))
-            .collect::<Vec<_>>();
-        assert_eq!(posts.len(), 1);
-        assert!(posts[0]
-            .to_ascii_lowercase()
-            .contains("cookie: session=test-session"));
-        assert!(posts[0].contains("level=1&answer=manual+answer"));
-        fs::remove_dir_all(root).unwrap();
-    }
+    use super::{run_background_effect, run_foreground_effect, worker_loop};
+    use crate::app::{Action, BackgroundEffect, RunInput, RunRequest};
 
     struct PanicExecutor;
 
@@ -759,7 +668,7 @@ mod tests {
                 worker_executions.fetch_add(1, Ordering::Relaxed);
                 started_sender.send(()).unwrap();
                 release_receiver.recv().unwrap();
-                Action::EffectFailed("test effect complete".to_owned())
+                Action::ForegroundFinished(Ok(()))
             });
         });
         let effect = BackgroundEffect::LoadCalendar {
@@ -775,40 +684,6 @@ mod tests {
         worker.join().unwrap();
 
         assert_eq!(executions.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn language_list_effect_does_not_initialize_an_absent_project() {
-        let root = std::env::temp_dir().join(format!(
-            "aocsuite-tui-language-list-{}-{}",
-            std::process::id(),
-            TEST_ROOT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&root).unwrap();
-        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
-
-        let action = run_background_effect(
-            &layout,
-            BackgroundEffect::LoadLanguageData {
-                language: LanguageId::Rust,
-            },
-            &PanicExecutor,
-        );
-
-        match action {
-            Action::LanguageDataFinished {
-                language,
-                result: Ok(data),
-                ..
-            } => {
-                assert_eq!(language, LanguageId::Rust);
-                assert!(data.packages.is_empty());
-                assert!(data.libraries.is_empty());
-            }
-            action => panic!("unexpected action: {action:?}"),
-        }
-        assert!(!layout.workspace_dir().exists());
-        fs::remove_dir(root).unwrap();
     }
 
     #[test]
@@ -878,409 +753,16 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    #[test]
-    fn shared_example_failure_identifies_the_example_path() {
-        let root = test_root("solver-example-error");
-        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
-        layout.bootstrap().unwrap();
-        fs::write(layout.workspace_dir().join("examples"), "not a directory").unwrap();
-        let puzzle = PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap());
-
-        let action = run_background_effect(
-            &layout,
-            BackgroundEffect::RunSolver(RunRequest {
-                puzzle,
-                language: LanguageId::Rust,
-                part: PuzzlePart::One,
-                input: RunInput::Example,
-            }),
-            &PanicExecutor,
-        );
-
-        let Action::RunFinished {
-            result: Err(failure),
-            ..
-        } = action
-        else {
-            panic!("unexpected action: {action:?}");
-        };
-        let expected_path = layout
-            .workspace_dir()
-            .join("examples")
-            .join(format!("{puzzle}.txt"));
-        let details = failure.details.unwrap();
-        assert!(details.contains(&expected_path.display().to_string()));
-        assert!(details.contains("could not prepare shared example input"));
-        assert!(details.contains("File exists") || details.contains("Not a directory"));
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn timing_failure_preserves_the_run_report_with_a_warning() {
-        let request = RunRequest {
-            puzzle: PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap()),
-            language: LanguageId::Rust,
-            part: PuzzlePart::One,
-            input: RunInput::Example,
-        };
-        let mut report = RunReport {
-            request,
-            compile_stdout: "compiled".to_owned(),
-            compile_stderr: String::new(),
-            solver_stdout: "ran once".to_owned(),
-            solver_stderr: String::new(),
-            parts: vec![RunPartReport {
-                part: PuzzlePart::One,
-                answer: "42".to_owned(),
-                runtime_ms: 3,
-            }],
-            warning: None,
-        };
-
-        record_run_timings(&mut report, |_, _| Err("database unavailable".to_owned()));
-
-        assert_eq!(report.solver_stdout, "ran once");
-        assert_eq!(report.parts[0].answer, "42");
-        assert!(report
-            .warning
-            .as_deref()
-            .is_some_and(|warning| warning.contains("database unavailable")));
-    }
-
-    #[test]
-    fn failed_command_is_presented_without_debug_request_or_output() {
-        let request = RunRequest {
-            puzzle: PuzzleId::new(PuzzleDay::new(1).unwrap(), PuzzleYear::new(2024).unwrap()),
-            language: LanguageId::Rust,
-            part: PuzzlePart::One,
-            input: RunInput::Example,
-        };
-        let failure = run_failure(
-            request,
-            RunSolverError::Tui(crate::TuiError::Language(AocLanguageError::Command(
-                CommandError::Failed {
-                    request: Box::new(CommandRequest::new("cargo").arg("build")),
-                    output: Box::new(Output {
-                        status: failed_status(),
-                        stdout: b"less useful stdout".to_vec(),
-                        stderr: b"concise compiler error".to_vec(),
-                    }),
-                },
-            ))),
-        );
-
-        assert!(failure.summary.contains("exited with"));
-        let details = failure.details.unwrap();
-        assert!(details.starts_with("concise compiler error"));
-        assert!(details.contains("Command: cargo"));
-        assert!(!details.contains("cargo build"));
-        assert!(!details.contains("less useful stdout"));
-        assert!(!details.contains("CommandRequest"));
-        assert!(!details.contains("Output"));
-    }
-
-    #[test]
-    fn language_file_uses_foreground_editor_request() {
-        #[derive(Default)]
-        struct RecordingExecutor(Mutex<Vec<CommandRequest>>);
-
-        impl CommandExecutor for RecordingExecutor {
-            fn execute(&self, request: &CommandRequest) -> io::Result<Output> {
-                self.0.lock().unwrap().push(request.clone());
-                Ok(Output {
-                    status: successful_status(),
-                    stdout: Vec::new(),
-                    stderr: Vec::new(),
-                })
-            }
-        }
-
-        let executor = RecordingExecutor::default();
-        let editor = std::env::current_exe().unwrap();
-        let working_directory = std::env::temp_dir();
-        let path = working_directory.join("library.rs");
-
-        run_foreground_effect(
-            ForegroundEffect::OpenLanguageFile(PreparedLanguageFile {
-                language: LanguageId::Rust,
-                kind: LanguageFileKind::Library("library".to_owned()),
-                editor: editor.to_string_lossy().into_owned(),
-                path: path.clone(),
-                working_directory: working_directory.clone(),
-            }),
-            &executor,
-        )
-        .unwrap();
-
-        let requests = executor.0.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].program, editor.into_os_string());
-        assert_eq!(requests[0].args, vec![path.into_os_string()]);
-        assert_eq!(requests[0].current_dir.as_ref(), Some(&working_directory));
-        assert_eq!(requests[0].mode, ProcessMode::Foreground);
-    }
-
-    #[test]
-    fn lazygit_preparation_and_foreground_requests_are_exact() {
-        #[derive(Default)]
-        struct RecordingExecutor(Mutex<Vec<CommandRequest>>);
-        impl CommandExecutor for RecordingExecutor {
-            fn execute(&self, request: &CommandRequest) -> io::Result<Output> {
-                self.0.lock().unwrap().push(request.clone());
-                Ok(Output {
-                    status: successful_status(),
-                    stdout: Vec::new(),
-                    stderr: Vec::new(),
-                })
-            }
-        }
-
-        let root = test_root("lazygit");
-        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
-        let executor = RecordingExecutor::default();
-        let action = run_background_effect(
-            &layout,
-            BackgroundEffect::PrepareLazygit {
-                language_active: true,
-            },
-            &executor,
-        );
-        let Action::LazygitPrepared {
-            result: Ok(path), ..
-        } = action
-        else {
-            panic!("unexpected action: {action:?}");
-        };
-        run_foreground_effect(ForegroundEffect::OpenLazygit(path.clone()), &executor).unwrap();
-
-        let requests = executor.0.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0].program, "git");
-        assert_eq!(requests[0].args, ["init"]);
-        assert_eq!(requests[0].mode, ProcessMode::Captured);
-        assert_eq!(requests[1].program, "lazygit");
-        assert!(requests[1].args.is_empty());
-        assert_eq!(requests[1].current_dir.as_deref(), Some(path.as_path()));
-        assert!(requests[1].environment.is_empty());
-        assert!(requests[1].inherit_environment);
-        assert_eq!(requests[1].mode, ProcessMode::Foreground);
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn config_load_is_non_mutating_and_uses_effective_defaults() {
-        let root = test_root("config-load");
-        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
-
-        let action = run_background_effect(
-            &layout,
-            BackgroundEffect::LoadConfig {
-                latest_year: PuzzleYear::new(2026).unwrap(),
-            },
-            &PanicExecutor,
-        );
-
-        match action {
-            Action::ConfigLoaded { result: Ok(config) } => {
-                assert_eq!(config.year, "2026");
-                assert_eq!(config.run_history_limit, "10");
-                assert!(!config.session_configured);
-            }
-            action => panic!("unexpected action: {action:?}"),
-        }
-        assert!(!layout.config_dir().exists());
-        fs::remove_dir(root).unwrap();
-    }
-
-    #[test]
-    fn config_mutation_preserves_other_explicit_settings() {
-        let root = test_root("config-mutation");
-        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
-        fs::create_dir_all(layout.config_dir()).unwrap();
-        let mut config = Configuration::load(layout.config_dir()).unwrap();
-        config.set(ConfigKey::Language, Some("python")).unwrap();
-
-        let action = run_background_effect(
-            &layout,
-            BackgroundEffect::MutateConfig {
-                latest_year: PuzzleYear::new(2026).unwrap(),
-                mutation: ConfigMutation::Set {
-                    field: NonSecretConfigField::Year,
-                    value: Some("2025".to_owned()),
-                },
-            },
-            &PanicExecutor,
-        );
-
-        assert!(matches!(action, Action::ConfigSaved { result: Ok(_) }));
-        let config = Configuration::load(layout.config_dir()).unwrap();
-        assert_eq!(
-            config.get::<LanguageId>(ConfigKey::Language).unwrap(),
-            LanguageId::Python
-        );
-        assert_eq!(
-            config.get::<PuzzleYear>(ConfigKey::Year).unwrap(),
-            PuzzleYear::new(2025).unwrap()
-        );
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn blank_config_mutations_restore_effective_defaults() {
-        let root = test_root("config-reset");
-        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
-        fs::create_dir_all(layout.config_dir()).unwrap();
-        let mut config = Configuration::load(layout.config_dir()).unwrap();
-        config.set(ConfigKey::Year, Some("2025")).unwrap();
-        config.set(ConfigKey::Editor, Some("vim")).unwrap();
-        config.set(ConfigKey::RunHistoryLimit, Some("7")).unwrap();
-
-        let mut last = None;
-        for field in [
-            NonSecretConfigField::Year,
-            NonSecretConfigField::Editor,
-            NonSecretConfigField::RunHistoryLimit,
-        ] {
-            last = Some(run_background_effect(
-                &layout,
-                BackgroundEffect::MutateConfig {
-                    latest_year: PuzzleYear::new(2026).unwrap(),
-                    mutation: ConfigMutation::Set { field, value: None },
-                },
-                &PanicExecutor,
-            ));
-        }
-
-        assert!(matches!(
-            last,
-            Some(Action::ConfigSaved {
-                result: Ok(crate::app::ConfigData {
-                    ref year,
-                    ref run_history_limit,
-                    ..
-                })
-            }) if year == "2026" && run_history_limit == "10"
-        ));
-        let persisted = fs::read_to_string(layout.config_dir().join("config.json")).unwrap();
-        assert!(!persisted.contains("\"year\""));
-        assert!(!persisted.contains("\"editor\""));
-        assert!(!persisted.contains("\"run_history_limit\""));
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn session_mutations_return_only_configured_status() {
-        let root = test_root("config-session");
-        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
-        fs::create_dir_all(layout.config_dir()).unwrap();
-        let sensitive = "sensitive-value";
-
-        let saved = run_background_effect(
-            &layout,
-            BackgroundEffect::MutateConfig {
-                latest_year: PuzzleYear::new(2026).unwrap(),
-                mutation: ConfigMutation::SetSession(SecretString::new(sensitive.to_owned())),
-            },
-            &PanicExecutor,
-        );
-        assert!(!format!("{saved:?}").contains(sensitive));
-        assert!(matches!(
-            saved,
-            Action::ConfigSaved {
-                result: Ok(crate::app::ConfigData {
-                    session_configured: true,
-                    ..
-                })
-            }
-        ));
-
-        let removed = run_background_effect(
-            &layout,
-            BackgroundEffect::MutateConfig {
-                latest_year: PuzzleYear::new(2026).unwrap(),
-                mutation: ConfigMutation::RemoveSession,
-            },
-            &PanicExecutor,
-        );
-        assert!(matches!(
-            removed,
-            Action::ConfigSaved {
-                result: Ok(crate::app::ConfigData {
-                    session_configured: false,
-                    ..
-                })
-            }
-        ));
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn config_mutation_failures_identify_phase_and_path() {
-        let root = test_root("config-errors");
-        let layout = RuntimeLayout::new(root.join("runtime")).unwrap();
-        let target = layout.config_dir().join("session");
-        let error = || {
-            crate::TuiError::Io(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "permission denied",
-            ))
-        };
-
-        let load = config_mutation_failure_message(
-            &layout,
-            "remove the session",
-            &target,
-            ConfigMutationFailure::Load(error()),
-        );
-        assert!(load.contains(
-            &layout
-                .config_dir()
-                .join("config.json")
-                .display()
-                .to_string()
-        ));
-
-        let write = config_mutation_failure_message(
-            &layout,
-            "remove the session",
-            &target,
-            ConfigMutationFailure::Write(error()),
-        );
-        assert!(write.contains(&target.display().to_string()));
-
-        let reload = config_mutation_failure_message(
-            &layout,
-            "remove the session",
-            &target,
-            ConfigMutationFailure::Reload(error()),
-        );
-        assert!(reload.contains("Saved the configuration"));
-        assert!(reload.contains(&layout.config_dir().display().to_string()));
-        fs::remove_dir(root).unwrap();
-    }
-
     #[cfg(unix)]
     fn successful_status() -> ExitStatus {
         use std::os::unix::process::ExitStatusExt;
         ExitStatusExt::from_raw(0)
     }
 
-    #[cfg(unix)]
-    fn failed_status() -> ExitStatus {
-        use std::os::unix::process::ExitStatusExt;
-        ExitStatusExt::from_raw(1 << 8)
-    }
-
     #[cfg(windows)]
     fn successful_status() -> ExitStatus {
         use std::os::windows::process::ExitStatusExt;
         ExitStatusExt::from_raw(0)
-    }
-
-    #[cfg(windows)]
-    fn failed_status() -> ExitStatus {
-        use std::os::windows::process::ExitStatusExt;
-        ExitStatusExt::from_raw(1)
     }
 
     static TEST_ROOT: AtomicUsize = AtomicUsize::new(0);

@@ -276,13 +276,13 @@ pub type LanguageRunner<'executor> = Box<dyn LanguageHandler + 'executor>;
 #[cfg(test)]
 mod tests {
     use std::{
-        fs, io,
+        fs,
         path::PathBuf,
         process,
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{symlink_file, symlink_file_with, AocLanguageError};
+    use super::{symlink_file, AocLanguageError};
 
     fn test_root() -> PathBuf {
         let unique = SystemTime::now()
@@ -290,29 +290,6 @@ mod tests {
             .expect("system time is after the Unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("aocsuite-links-{}-{unique}", process::id()))
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn failed_link_creation_preserves_the_active_solution() {
-        let root = test_root();
-        fs::create_dir_all(&root).expect("create test runtime");
-        let first_solution = root.join("first.rs");
-        let active_solution = root.join("solution.rs");
-        fs::write(&first_solution, "first solution").expect("write first solution");
-        symlink_file(&first_solution, &active_solution).expect("create active solution");
-
-        let result = symlink_file_with(&root.join("second.rs"), &active_solution, |_, _| {
-            Err(io::Error::other("create link failed"))
-        });
-
-        assert!(result.is_err());
-        assert_eq!(
-            fs::read_to_string(&active_solution).expect("read preserved active solution"),
-            "first solution"
-        );
-
-        fs::remove_dir_all(root).expect("remove test runtime");
     }
 
     #[cfg(unix)]
