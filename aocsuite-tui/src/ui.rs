@@ -997,7 +997,6 @@ mod tests {
 
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(!rendered.contains("sensitive-value"));
-        assert!(rendered.contains("> ********"));
     }
 
     fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {

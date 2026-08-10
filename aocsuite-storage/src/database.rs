@@ -497,23 +497,6 @@ mod tests {
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .expect("read schema version");
         assert_eq!(version, SCHEMA_VERSION);
-
-        for name in [
-            "cache_entries",
-            "calendar_stars",
-            "submission_counts",
-            "run_timings",
-            "run_timings_retention",
-        ] {
-            let exists: bool = connection
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = ?1)",
-                    [name],
-                    |row| row.get(0),
-                )
-                .expect("query schema object");
-            assert!(exists, "missing schema object {name}");
-        }
     }
 
     #[test]

@@ -144,6 +144,15 @@ mod tests {
     }
 
     #[test]
+    fn absent_configuration_reads_do_not_create_state() {
+        let temp = TempDir::new().unwrap();
+        let config = configuration(&temp);
+
+        assert!(!config.session_configured().unwrap());
+        assert!(!temp.path().join("config").exists());
+    }
+
+    #[test]
     fn malformed_and_invalid_config_values_fail_during_load() {
         let temp = TempDir::new().unwrap();
         let dir = temp.path().join("config");
@@ -192,5 +201,28 @@ mod tests {
                 .mode();
             assert_eq!(mode & 0o777, 0o600);
         }
+    }
+
+    #[test]
+    fn session_in_config_json_is_rejected_and_not_exposed() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("config");
+        let path = dir.join("config.json");
+        let contents = br#"{"session":"placeholder"}"#;
+        fs::create_dir(&dir).unwrap();
+        fs::write(&path, contents).unwrap();
+
+        assert!(matches!(
+            Configuration::load(&dir),
+            Err(AocConfigError::SessionInConfig)
+        ));
+        assert_eq!(fs::read(&path).unwrap(), contents);
+
+        fs::remove_file(path).unwrap();
+        let config = Configuration::load(&dir).unwrap();
+        assert!(matches!(
+            config.get::<String>(ConfigKey::Session),
+            Err(AocConfigError::SessionReadNotAllowed)
+        ));
     }
 }

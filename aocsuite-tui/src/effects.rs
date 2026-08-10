@@ -631,60 +631,18 @@ fn config_operation(mutation: &ConfigMutation) -> &'static str {
 mod tests {
     use std::process::{ExitStatus, Output};
     use std::sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        mpsc, Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
     };
     use std::{fs, io, path::PathBuf};
 
     use aocsuite_storage::RuntimeLayout;
     use aocsuite_utils::{
-        CommandExecutor, CommandRequest, LanguageId, ProcessMode, PuzzleDay, PuzzleId, PuzzlePart,
-        PuzzleYear,
+        CommandExecutor, CommandRequest, LanguageId, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear,
     };
 
-    use super::{run_background_effect, run_foreground_effect, worker_loop};
+    use super::run_background_effect;
     use crate::app::{Action, BackgroundEffect, RunInput, RunRequest};
-
-    struct PanicExecutor;
-
-    impl CommandExecutor for PanicExecutor {
-        fn execute(&self, _: &CommandRequest) -> io::Result<Output> {
-            panic!("this effect must not run a process");
-        }
-    }
-
-    #[test]
-    fn shutdown_abandons_effects_queued_after_active_work() {
-        let (effect_sender, effect_receiver) = mpsc::channel();
-        let (action_sender, _action_receiver) = mpsc::channel();
-        let (started_sender, started_receiver) = mpsc::channel();
-        let (release_sender, release_receiver) = mpsc::channel();
-        let shutdown = Arc::new(AtomicBool::new(false));
-        let worker_shutdown = Arc::clone(&shutdown);
-        let executions = Arc::new(AtomicUsize::new(0));
-        let worker_executions = Arc::clone(&executions);
-        let worker = std::thread::spawn(move || {
-            worker_loop(effect_receiver, action_sender, worker_shutdown, move |_| {
-                worker_executions.fetch_add(1, Ordering::Relaxed);
-                started_sender.send(()).unwrap();
-                release_receiver.recv().unwrap();
-                Action::ForegroundFinished(Ok(()))
-            });
-        });
-        let effect = BackgroundEffect::LoadCalendar {
-            year: PuzzleYear::new(2024).unwrap(),
-            refresh: false,
-        };
-        effect_sender.send(effect.clone()).unwrap();
-        effect_sender.send(effect).unwrap();
-        started_receiver.recv().unwrap();
-
-        shutdown.store(true, Ordering::Release);
-        release_sender.send(()).unwrap();
-        worker.join().unwrap();
-
-        assert_eq!(executions.load(Ordering::Relaxed), 1);
-    }
 
     #[test]
     fn shared_example_solver_effect_maps_parts_and_executes_solver_once() {

@@ -298,12 +298,11 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{ensure_no_case_collision, validate_user_lib, ConfirmedLibraryRemoval, Language};
+    use super::{ensure_no_case_collision, validate_user_lib, Language};
     use crate::{
         rust::RustRunner,
-        traits::{LanguageHandler, Solver},
+        traits::Solver,
         utils::{read_result, with_result_file},
-        AocLanguageError, SolverFile,
     };
     use aocsuite_storage::Workspace;
     use aocsuite_utils::{
@@ -312,20 +311,6 @@ mod tests {
     };
 
     static SYSTEM_EXECUTOR: SystemCommandExecutor = SystemCommandExecutor;
-
-    fn puzzle_solution(day: u32) -> SolverFile {
-        SolverFile::PuzzleSolution(PuzzleId::new(
-            PuzzleDay::new(day).expect("valid test day"),
-            PuzzleYear::new(2024).expect("valid test year"),
-        ))
-    }
-
-    fn active_solution(day: u32) -> SolverFile {
-        SolverFile::ActiveSolution(PuzzleId::new(
-            PuzzleDay::new(day).expect("valid test day"),
-            PuzzleYear::new(2024).expect("valid test year"),
-        ))
-    }
 
     fn test_root(language: &str) -> PathBuf {
         let unique = SystemTime::now()
