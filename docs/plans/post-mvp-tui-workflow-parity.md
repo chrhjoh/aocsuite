@@ -4,7 +4,7 @@
 
 Last reviewed: 2026-08-02.
 
-Overall status: **active**.
+Overall status: **complete**.
 
 This plan succeeds `tui-implementation.md` and tracks the remaining deliberate
 TUI workflow-parity slices. Existing CLI workflows remain supported.
@@ -22,8 +22,8 @@ TUI workflow-parity slices. Existing CLI workflows remain supported.
    content after correct answers.
 3. **Git through lazygit - implemented.** Add frontend-owned terminal handoff
    to lazygit for the workspace without wrapping or parsing its output.
-4. **Releases - unimplemented.** Add TUI artifacts to the existing release
-   process after workflow parity and cross-platform readiness are established.
+4. **Releases - implemented.** Linux x86-64, Windows x86-64, and macOS ARM64
+   product archives contain both CLI and TUI binaries.
 
 ## Exclusions
 

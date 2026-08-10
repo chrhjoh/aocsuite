@@ -21,9 +21,14 @@ Generally language implementations are made with the fewest tools possible for s
 
 ## Installation
 
+### Release
+
+CLI and TUI are available precompiled for Linux x86-64, Windows
+x86-64, and macOS ARM64 as github releases.
+
 ### From Source
 
-For now the CLI and TUI can be installed from their workspace crates:
+The CLI and TUI can also be installed from their workspace crates:
 
 ```bash
 git clone https://github.com/your-username/aocsuite.git
