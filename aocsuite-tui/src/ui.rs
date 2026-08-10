@@ -3,12 +3,11 @@ use std::collections::HashMap;
 use aocsuite_parser::{AocSubmissionResult, Calendar, CalendarStars};
 use aocsuite_utils::PuzzleId;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Margin, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs,
-        Wrap,
+        Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
     },
     Frame,
 };
@@ -22,19 +21,14 @@ use crate::app::{
 pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
     let root = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(4),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Min(4), Constraint::Length(1)])
         .split(frame.area());
-    render_tabs(frame, root[0], app);
     match app.active_tab {
-        Tab::Calendar => render_calendar_tab(frame, root[1], app),
-        Tab::Language => render_language_tab(frame, root[1], app),
-        Tab::Config => render_config_tab(frame, root[1], app),
+        Tab::Calendar => render_calendar_tab(frame, root[0], app),
+        Tab::Language => render_language_tab(frame, root[0], app),
+        Tab::Config => render_config_tab(frame, root[0], app),
     }
-    render_footer(frame, root[2], app);
+    render_footer(frame, root[1], app);
     if app.active_submission.is_some() {
         render_submitting(frame, app.run_spinner_frame);
     } else if let Some(dialog) = &app.submission_dialog {
@@ -337,29 +331,6 @@ fn render_run_dialog(frame: &mut Frame<'_>, dialog: &RunDialog) {
     );
 }
 
-fn render_tabs(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let titles = Tab::ALL
-        .iter()
-        .map(|tab| Line::from(tab.title()))
-        .collect::<Vec<_>>();
-    let selected = Tab::ALL
-        .iter()
-        .position(|tab| *tab == app.active_tab)
-        .expect("active tab exists");
-    frame.render_widget(
-        Tabs::new(titles)
-            .select(selected)
-            .block(Block::default().borders(Borders::ALL).title(" AoC Suite "))
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .divider(" | "),
-        area,
-    );
-}
-
 fn render_calendar_tab(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let direction = if area.width >= 100 {
         Direction::Horizontal
@@ -432,10 +403,14 @@ fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
 fn render_description(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let Some(puzzle) = app.selected_puzzle() else {
+        let block = match app.preview_puzzle() {
+            Some(puzzle) => Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" Day {} ", puzzle.day)),
+            None => Block::default().borders(Borders::ALL),
+        };
         frame.render_widget(
-            Paragraph::new("")
-                .block(Block::default().borders(Borders::ALL).title(" Puzzle "))
-                .wrap(Wrap { trim: false }),
+            Paragraph::new("").block(block).wrap(Wrap { trim: false }),
             area,
         );
         return;
@@ -818,13 +793,48 @@ fn centered_dialog(area: Rect) -> Rect {
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let text = match &app.status {
-        Some(status) => format!("? help\n{status}"),
-        None => "? help".to_owned(),
-    };
+    let tabs_width = Tab::ALL.iter().map(|tab| tab.title().len()).sum::<usize>()
+        + " | ".len() * Tab::ALL.len().saturating_sub(1);
+    let available_tabs_width = usize::from(area.width)
+        .saturating_sub("? help".len())
+        .min(tabs_width);
+    let footer = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min("? help".len() as u16),
+            Constraint::Length(available_tabs_width as u16),
+        ])
+        .split(area);
+    let mut left = vec![Span::raw("? help")];
+    if let Some(status) = &app.status {
+        left.extend([Span::raw("  "), Span::raw(status)]);
+    }
     frame.render_widget(
-        Paragraph::new(text).style(Style::default().fg(Color::Gray)),
-        area,
+        Paragraph::new(Line::from(left)).style(Style::default().fg(Color::Gray)),
+        footer[0],
+    );
+    let mut tabs = Vec::new();
+    let visible_tabs = if available_tabs_width < tabs_width {
+        std::slice::from_ref(&app.active_tab)
+    } else {
+        Tab::ALL.as_slice()
+    };
+    for (index, tab) in visible_tabs.iter().enumerate() {
+        if index > 0 {
+            tabs.push(Span::styled(" | ", Style::default().fg(Color::Gray)));
+        }
+        let style = if *tab == app.active_tab {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        tabs.push(Span::styled(tab.title(), style));
+    }
+    frame.render_widget(
+        Paragraph::new(Line::from(tabs)).alignment(Alignment::Right),
+        footer[1],
     );
 }
 
@@ -943,7 +953,11 @@ fn completion(calendar: &Calendar) -> (usize, usize, usize) {
 mod tests {
     use aocsuite_parser::{Calendar, CalendarCell, CalendarRow, Rgb};
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{
+        backend::TestBackend,
+        style::{Color, Modifier},
+        Terminal,
+    };
 
     use crate::app::{Action, App, ConfigData, SecretCharacter};
 
@@ -997,6 +1011,88 @@ mod tests {
 
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(!rendered.contains("sensitive-value"));
+    }
+
+    #[test]
+    fn puzzle_preview_has_no_title_before_selection() {
+        let backend = TestBackend::new(120, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let puzzle = PuzzleId::new(PuzzleDay::new(10).unwrap(), PuzzleYear::new(2026).unwrap());
+        let unselected = App::new(None, puzzle, LanguageId::Rust);
+
+        terminal.draw(|frame| render(frame, &unselected)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(!rendered.contains("Puzzle"));
+        assert!(!rendered.contains("Day 10"));
+
+        let selected = app();
+        terminal.draw(|frame| render(frame, &selected)).unwrap();
+        assert!(buffer_text(terminal.backend().buffer()).contains("Day 10"));
+    }
+
+    #[test]
+    fn puzzle_preview_retains_its_title_only_while_the_next_year_loads() {
+        let backend = TestBackend::new(120, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+
+        app.update(Action::PreviousYear);
+        assert!(app.selected_puzzle().is_none());
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        assert!(buffer_text(terminal.backend().buffer()).contains("Day 10"));
+
+        app.update(Action::CalendarFinished {
+            year: PuzzleYear::new(2025).unwrap(),
+            refresh: false,
+            result: Ok(Calendar { rows: Vec::new() }),
+        });
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(!rendered.contains("Day 10"));
+        assert!(!rendered.contains("Puzzle"));
+    }
+
+    #[test]
+    fn footer_keeps_help_and_status_left_with_tabs_right() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.status = Some("Preparing workspace Git...".to_owned());
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let rendered = buffer_text(buffer);
+        let first_line = rendered.lines().next().unwrap();
+        let footer = rendered.lines().last().unwrap();
+        assert!(!rendered.contains("AoC Suite"));
+        assert!(first_line.contains("2026"));
+        assert!(footer.starts_with("? help  Preparing workspace Git..."));
+        assert!(footer.ends_with("Calendar | Language | Config"));
+
+        let calendar_x = footer.find("Calendar").unwrap() as u16;
+        let calendar_cell = &buffer[(
+            calendar_x,
+            buffer.area.y + buffer.area.height.saturating_sub(1),
+        )];
+        assert_eq!(calendar_cell.fg, Color::Yellow);
+        assert!(calendar_cell.modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn narrow_footer_keeps_the_active_tab_visible() {
+        let backend = TestBackend::new(24, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::NextTab);
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        let footer = rendered.lines().last().unwrap();
+        assert!(footer.starts_with("? help"));
+        assert!(footer.ends_with("Language"));
     }
 
     fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {

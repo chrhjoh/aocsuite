@@ -404,6 +404,7 @@ pub(crate) struct App {
     pub calendar_loading: bool,
     pub selected_year: PuzzleYear,
     selected_puzzle: Option<PuzzleId>,
+    preview_puzzle: Option<PuzzleId>,
     pub latest_puzzle: PuzzleId,
     pub description: DescriptionState,
     pub description_scroll: u16,
@@ -640,6 +641,7 @@ impl App {
             calendar_loading: false,
             selected_year,
             selected_puzzle: None,
+            preview_puzzle: None,
             latest_puzzle,
             description: DescriptionState::Empty,
             description_scroll: 0,
@@ -1185,6 +1187,7 @@ impl App {
                             .or_else(|| available.first().copied());
                         self.calendar = Some(calendar);
                         self.selected_puzzle = selected;
+                        self.preview_puzzle = selected;
                         let mut effects = Vec::new();
                         if selected != previous_puzzle {
                             self.clear_description();
@@ -1195,7 +1198,12 @@ impl App {
                         self.status = None;
                         return effects;
                     }
-                    Err(message) => self.status = Some(message),
+                    Err(message) => {
+                        if self.selected_puzzle.is_none() {
+                            self.preview_puzzle = None;
+                        }
+                        self.status = Some(message);
+                    }
                 }
             }
             Action::CachedDescriptionFinished { puzzle, result } => {
@@ -1414,6 +1422,10 @@ impl App {
         self.selected_puzzle
     }
 
+    pub const fn preview_puzzle(&self) -> Option<PuzzleId> {
+        self.preview_puzzle
+    }
+
     pub fn description_downloading(&self, puzzle: PuzzleId) -> bool {
         self.description_downloads.contains(&puzzle)
     }
@@ -1441,6 +1453,9 @@ impl App {
         match effect {
             BackgroundEffect::LoadCalendar { .. } => {
                 self.calendar_loading = false;
+                if self.selected_puzzle.is_none() {
+                    self.preview_puzzle = None;
+                }
                 self.status = Some(message);
             }
             BackgroundEffect::LoadCachedDescription(puzzle) => {
@@ -1901,6 +1916,7 @@ impl App {
 
     fn select_year(&mut self, year: PuzzleYear) -> Vec<Effect> {
         self.selected_year = year;
+        self.preview_puzzle = self.selected_puzzle.or(self.preview_puzzle);
         self.selected_puzzle = None;
         self.calendar = None;
         self.calendar_loading = true;
@@ -1935,6 +1951,7 @@ impl App {
         };
 
         self.selected_puzzle = Some(puzzle);
+        self.preview_puzzle = Some(puzzle);
         self.clear_description();
         vec![self.check_cached_description(puzzle)]
     }
