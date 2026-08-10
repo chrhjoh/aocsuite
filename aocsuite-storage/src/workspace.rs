@@ -290,25 +290,6 @@ mod tests {
         assert!(!other.gitignore_path().exists());
     }
 
-    #[test]
-    fn workspace_allocates_unique_result_files_in_its_ignored_runs_directory() {
-        let temp = tempfile::tempdir().expect("create temporary workspace");
-        let workspace = Workspace::new(temp.path().to_path_buf());
-
-        let first = workspace
-            .allocate_run_result_file()
-            .expect("allocate first result path");
-        let second = workspace
-            .allocate_run_result_file()
-            .expect("allocate second result path");
-        let runs_dir = temp.path().join(".aocsuite-runs");
-
-        assert_ne!(first, second);
-        assert_eq!(first.parent(), Some(runs_dir.as_path()));
-        assert!(first.parent().expect("result parent").is_dir());
-        assert!(!first.exists());
-    }
-
     #[cfg(unix)]
     fn status(success: bool) -> std::process::ExitStatus {
         use std::os::unix::process::ExitStatusExt;

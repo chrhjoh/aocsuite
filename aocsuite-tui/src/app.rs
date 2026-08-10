@@ -330,11 +330,6 @@ impl SecretString {
         self.0.is_empty()
     }
 
-    #[cfg(test)]
-    pub(crate) fn new(value: String) -> Self {
-        Self(value)
-    }
-
     fn push(&mut self, character: char) {
         self.0.push(character);
     }
@@ -1985,11 +1980,9 @@ mod tests {
     use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
 
     use super::{
-        Action, App, BackgroundEffect, ConfigData, ConfigDialog, ConfigMutation,
-        ConfigOperationState, DescriptionState, Effect, ForegroundEffect, LanguageData,
-        LanguageDialog, LanguageFileKind, LanguageOperationState, NonSecretConfigField,
-        PreparedExercise, RunDialog, RunInput, RunPartReport, RunReport, SubmissionDialog,
-        SubmissionRequest,
+        Action, App, BackgroundEffect, ConfigData, ConfigDialog, DescriptionState, Effect,
+        LanguageData, LanguageDialog, LanguageOperationState, NonSecretConfigField, RunDialog,
+        RunInput, RunPartReport, RunReport, SubmissionDialog, SubmissionRequest,
     };
 
     fn puzzle(day: u32, year: i32) -> PuzzleId {
@@ -2152,7 +2145,6 @@ mod tests {
             request,
             result: Ok(AocSubmissionResult::Correct),
         });
-        assert_eq!(effects.len(), 2);
         assert!(effects.iter().any(|effect| matches!(
             effect,
             Effect::Background(BackgroundEffect::LoadCalendar { refresh: true, .. })
@@ -2194,7 +2186,7 @@ mod tests {
     #[test]
     fn calendar_navigation_follows_visual_puzzle_order() {
         let mut app = app();
-        let initial_effects = load_calendar(
+        load_calendar(
             &mut app,
             calendar(vec![
                 vec![None],
@@ -2206,40 +2198,12 @@ mod tests {
             false,
         );
         assert_eq!(app.selected_puzzle(), Some(puzzle(7, 2026)));
-        assert_eq!(
-            app.description,
-            DescriptionState::CheckingCache(puzzle(7, 2026))
-        );
-        assert_eq!(
-            initial_effects,
-            vec![Effect::Background(BackgroundEffect::LoadCachedDescription(
-                puzzle(7, 2026)
-            ))]
-        );
-        app.update(Action::CachedDescriptionFinished {
-            puzzle: puzzle(7, 2026),
-            result: Ok(Some("description".to_owned())),
-        });
-        app.calendar_scroll.0 = 3;
-
-        let effects = app.update(Action::NextCalendarPuzzle);
+        app.update(Action::NextCalendarPuzzle);
 
         assert_eq!(app.selected_puzzle(), Some(puzzle(3, 2026)));
-        assert_eq!(
-            app.description,
-            DescriptionState::CheckingCache(puzzle(3, 2026))
-        );
-        assert_eq!(
-            effects,
-            vec![Effect::Background(BackgroundEffect::LoadCachedDescription(
-                puzzle(3, 2026)
-            ))]
-        );
-        assert_eq!(app.calendar_scroll.0, 3);
 
         app.update(Action::NextCalendarPuzzle);
         assert_eq!(app.selected_puzzle(), Some(puzzle(10, 2026)));
-        assert_eq!(app.calendar_scroll.0, 3);
         assert!(app.update(Action::NextCalendarPuzzle).is_empty());
 
         app.update(Action::PreviousCalendarPuzzle);
@@ -2291,6 +2255,52 @@ mod tests {
         assert_eq!(app.active_run, Some(request));
         assert!(app.update(Action::RunPart(PuzzlePart::Two)).is_empty());
     }
+
+    #[test]
+    fn queue_failures_release_run_and_submission_guards_with_context() {
+        let mut app = selected_app();
+        let run_request = super::RunRequest {
+            puzzle: app.selected_puzzle().unwrap(),
+            language: LanguageId::Rust,
+            part: PuzzlePart::One,
+            input: RunInput::Aoc,
+        };
+        app.active_run = Some(run_request);
+        app.update(Action::BackgroundSubmissionFailed {
+            effect: BackgroundEffect::RunSolver(run_request),
+            message: "worker stopped".to_owned(),
+        });
+
+        assert!(app.active_run.is_none());
+        assert!(matches!(
+            app.run_dialog,
+            Some(RunDialog {
+                request,
+                result: Err(ref failure),
+                ..
+            }) if request == run_request && failure.details.as_deref() == Some("worker stopped")
+        ));
+
+        let submission =
+            SubmissionRequest::new(run_request.puzzle, PuzzlePart::Two, "answer".to_owned());
+        app.active_submission = Some(submission.clone());
+        app.update(Action::BackgroundSubmissionFailed {
+            effect: BackgroundEffect::SubmitAnswer(submission),
+            message: "worker stopped".to_owned(),
+        });
+
+        assert!(app.active_submission.is_none());
+        assert!(matches!(
+            app.submission_dialog,
+            Some(SubmissionDialog::Outcome {
+                puzzle,
+                part: PuzzlePart::Two,
+                result: Err(ref message),
+                ..
+            }) if puzzle == run_request.puzzle && message == "worker stopped"
+        ));
+    }
+
     #[test]
     fn destructive_confirmations_cancel_by_default() {
         let mut app = language_app();

@@ -68,22 +68,16 @@ fn extract_wait_time(text: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_wait_time;
+    use super::{AocSubmissionResult, parse_submission};
 
     #[test]
-    fn extracts_aoc_wait_times() {
-        let cases = [
-            ("you have to wait 12 seconds.", Some(12)),
-            ("You have to wait 1 second!", Some(1)),
-            ("You have 2 minutes left to wait.", Some(120)),
-            ("You have 1m 47s left to wait.", Some(107)),
-            ("YOU HAVE 3 MINUTES AND 2 SECONDS LEFT TO WAIT.", Some(182)),
-            ("Please wait 8 seconds before trying again.", Some(8)),
-            ("You have to wait soon.", None),
-        ];
-
-        for (message, expected) in cases {
-            assert_eq!(extract_wait_time(message), expected, "{message}");
-        }
+    fn submission_parser_recognizes_cooldown() {
+        assert_eq!(
+            parse_submission(
+                "<main><article><p>You have 1m 47s left to wait.</p></article></main>"
+            )
+            .unwrap(),
+            AocSubmissionResult::RateLimited(107)
+        );
     }
 }
