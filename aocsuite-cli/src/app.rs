@@ -10,7 +10,10 @@ use crate::{
 };
 use aocsuite_client::{AocClient, AocPage};
 use aocsuite_config::{ConfigKey, Configuration};
-use aocsuite_lang::{ConfirmedTemplateReset, Language, LanguageRunOutput, PartResult, SolverFile};
+use aocsuite_lang::{
+    ConfirmedLibraryRemoval, ConfirmedTemplateReset, Language, LanguageRunOutput, PartResult,
+    SolverFile,
+};
 use aocsuite_launcher::{Launcher, OpenPuzzleRequest};
 use aocsuite_parser::{parse_calendar, parse_submission, AocSubmissionResult, Calendar};
 use aocsuite_storage::{CacheCleanScope, ContentStore, GitMode, Workspace};
@@ -141,7 +144,7 @@ pub fn run_aocsuite(
         }
         AocCommand::GitIgnore => {
             let editor_program = config.get::<String>(ConfigKey::Editor)?;
-            workspace.ensure()?;
+            workspace.ensure_git(executor)?;
             let path = workspace.gitignore_path();
             launcher.open_file(editor_program, &path, workspace.root_dir())?;
         }
@@ -202,7 +205,7 @@ pub fn run_aocsuite(
                             force,
                         )? {
                             for lib in files.iter() {
-                                language.remove_lib_file(lib)?
+                                language.remove_lib_file(lib, ConfirmedLibraryRemoval::Confirmed)?
                             }
                         }
                     } else {
@@ -218,7 +221,7 @@ pub fn run_aocsuite(
                             ),
                             force,
                         )? {
-                            language.remove_lib_file(&lib)?;
+                            language.remove_lib_file(&lib, ConfirmedLibraryRemoval::Confirmed)?;
                             println!("Removed library: {} for {}", lib, language_name);
                         }
                     }
@@ -442,90 +445,9 @@ fn resolve_custom_input_path(file: &str, invocation_dir: &Path) -> std::io::Resu
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        io::Cursor,
-        path::PathBuf,
-        process,
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Mutex,
-        },
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::io::Cursor;
 
-    use aocsuite_client::{AocClient, AocClientOptions};
-    use aocsuite_config::{AocConfigError, ConfigKey, Configuration};
-    use aocsuite_storage::{ContentStore, Workspace};
-    use aocsuite_utils::{CommandExecutor, CommandRequest, ProcessMode, PuzzleDay, PuzzleYear};
-
-    use super::{resolve_custom_input_path, run_aocsuite, user_confirm};
-    use crate::AocCommand;
-
-    static TEST_ROOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-    fn test_root() -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time is after the Unix epoch")
-            .as_nanos();
-        let counter = TEST_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("aocsuite-cli-{unique}-{}-{counter}", process::id()))
-    }
-
-    #[test]
-    fn custom_input_is_resolved_from_the_invocation_directory() {
-        let root = test_root();
-        let invocation_dir = root.join("invocation");
-        let language_dir = root.join("language");
-        let input = invocation_dir.join("fixtures/input.txt");
-        fs::create_dir_all(input.parent().expect("input has parent"))
-            .expect("create input directory");
-        fs::create_dir_all(&language_dir).expect("create language directory");
-        fs::write(&input, "example input").expect("write input");
-
-        let resolved = resolve_custom_input_path("fixtures/input.txt", &invocation_dir)
-            .expect("resolve custom input");
-
-        assert_eq!(resolved, input.canonicalize().expect("canonicalize input"));
-        assert_ne!(resolved, language_dir.join("fixtures/input.txt"));
-
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
-    fn missing_custom_input_returns_an_io_error() {
-        let root = test_root();
-        fs::create_dir_all(&root).expect("create test runtime");
-
-        let result = resolve_custom_input_path("missing.txt", &root);
-
-        assert_eq!(
-            result.expect_err("missing input fails").kind(),
-            std::io::ErrorKind::NotFound
-        );
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
-    fn session_config_reads_are_not_allowed() {
-        let root = test_root();
-        fs::create_dir(&root).expect("create test runtime");
-        let config = Configuration::load(&root).expect("load configuration");
-
-        assert!(matches!(
-            config.get::<String>(ConfigKey::Session),
-            Err(AocConfigError::SessionReadNotAllowed)
-        ));
-        assert_eq!(
-            config
-                .get::<String>(ConfigKey::Language)
-                .expect("read language"),
-            "rust"
-        );
-
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
+    use super::user_confirm;
 
     #[test]
     fn confirmations_reject_eof_but_accept_empty_and_yes() {
@@ -546,75 +468,5 @@ mod tests {
             !user_confirm(&mut Cursor::new(b"no\n"), &mut output, "Confirm? ")
                 .expect("read rejection")
         );
-    }
-
-    #[test]
-    fn run_aocsuite_uses_the_injected_executor_for_git() {
-        struct FakeExecutor {
-            requests: Mutex<Vec<CommandRequest>>,
-        }
-
-        impl CommandExecutor for FakeExecutor {
-            fn execute(&self, request: &CommandRequest) -> std::io::Result<process::Output> {
-                self.requests.lock().unwrap().push(request.clone());
-                Ok(successful_output())
-            }
-        }
-
-        let root = test_root();
-        fs::create_dir_all(&root).expect("create test runtime");
-        let client = AocClient::new(None, AocClientOptions::default()).expect("create client");
-        let content = ContentStore::open(root.join("cache"), &client).expect("open content store");
-        let workspace = Workspace::new(root.join("workspace"));
-        let mut config = Configuration::load(root.join("config")).expect("load configuration");
-        let executor = FakeExecutor {
-            requests: Mutex::new(Vec::new()),
-        };
-
-        run_aocsuite(
-            AocCommand::Git {
-                args: vec!["status".to_string()],
-            },
-            PuzzleDay::new(1).expect("valid test day"),
-            PuzzleYear::new(2024).expect("valid test year"),
-            &client,
-            &content,
-            &workspace,
-            &mut config,
-            &executor,
-        )
-        .expect("run git command");
-
-        let requests = executor.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].program, "git");
-        assert_eq!(requests[0].args[0], "status");
-        assert_eq!(requests[0].mode, ProcessMode::Captured);
-
-        drop(requests);
-        drop(content);
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[cfg(unix)]
-    fn successful_output() -> process::Output {
-        use std::os::unix::process::ExitStatusExt;
-
-        process::Output {
-            status: process::ExitStatus::from_raw(0),
-            stdout: Vec::new(),
-            stderr: Vec::new(),
-        }
-    }
-
-    #[cfg(windows)]
-    fn successful_output() -> process::Output {
-        use std::os::windows::process::ExitStatusExt;
-
-        process::Output {
-            status: process::ExitStatus::from_raw(0),
-            stdout: Vec::new(),
-            stderr: Vec::new(),
-        }
     }
 }

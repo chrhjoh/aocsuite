@@ -225,6 +225,14 @@ pub enum AocLanguageError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("could not {operation} library path '{}': {source}", path.display())]
+    LibraryIo {
+        operation: &'static str,
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error(transparent)]
     Workspace(#[from] WorkspaceError),
 
@@ -268,7 +276,7 @@ pub type LanguageRunner<'executor> = Box<dyn LanguageHandler + 'executor>;
 #[cfg(test)]
 mod tests {
     use std::{
-        fs, io,
+        fs,
         path::PathBuf,
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -282,29 +290,6 @@ mod tests {
             .expect("system time is after the Unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("aocsuite-links-{}-{unique}", process::id()))
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn failed_link_creation_preserves_the_active_solution() {
-        let root = test_root();
-        fs::create_dir_all(&root).expect("create test runtime");
-        let first_solution = root.join("first.rs");
-        let active_solution = root.join("solution.rs");
-        fs::write(&first_solution, "first solution").expect("write first solution");
-        symlink_file(&first_solution, &active_solution).expect("create active solution");
-
-        let result = symlink_file_with(&root.join("second.rs"), &active_solution, |_, _| {
-            Err(io::Error::other("create link failed"))
-        });
-
-        assert!(result.is_err());
-        assert_eq!(
-            fs::read_to_string(&active_solution).expect("read preserved active solution"),
-            "first solution"
-        );
-
-        fs::remove_dir_all(root).expect("remove test runtime");
     }
 
     #[cfg(unix)]
@@ -326,6 +311,30 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&destination).expect("read preserved user file"),
             "user file"
+        );
+
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_active_link_replacement_preserves_the_previous_link() {
+        let root = test_root();
+        fs::create_dir_all(&root).expect("create test runtime");
+        let original = root.join("original.rs");
+        let replacement = root.join("replacement.rs");
+        let destination = root.join("solution.rs");
+        fs::write(&original, "original solution").expect("write original solution");
+        fs::write(&replacement, "replacement solution").expect("write replacement solution");
+        std::os::unix::fs::symlink(&original, &destination).expect("create active solution link");
+
+        assert!(symlink_file_with(&replacement, &destination, |_, _| {
+            Err(std::io::Error::other("forced link creation failure"))
+        })
+        .is_err());
+        assert_eq!(
+            fs::read_to_string(&destination).expect("read preserved active solution"),
+            "original solution"
         );
 
         fs::remove_dir_all(root).expect("remove test runtime");

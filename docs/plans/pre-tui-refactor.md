@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This file tracks current implementation status and sequencing before
-`aocsuite-tui` begins.
+This file records the completed pre-TUI migration and its acceptance criteria.
+Initial TUI scope and sequencing are tracked in `tui-implementation.md`.
 
 Stable decisions belong in:
 
-- `../ARCHITECTURE.md`;
-- `../STORAGE.md`;
+- `../design/architecture.md`;
+- `../design/storage.md`;
 - `../CI.md`.
 
 This plan does not restate every design detail and does not authorize unrelated
@@ -27,9 +27,9 @@ coordination is outside this plan.
 
 ## Status
 
-Last reviewed: 2026-07-29.
+Last reviewed: 2026-07-31.
 
-Overall status: **in progress**.
+Overall status: **pre-TUI milestone met**.
 
 A crate, type, or initial schema existing does not make its phase complete.
 
@@ -65,22 +65,26 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
-## Remaining pre-TUI blockers
+## Pre-TUI blocker outcome
 
-1. Complete storage lifecycle policy:
+All pre-TUI blockers are complete. The completed workstreams below retain their
+acceptance details. The blockers covered:
+
+1. Storage lifecycle policy:
    - strict unversioned-root handling;
    - database and cache validation;
    - typed cleanup;
    - uninstall safety.
-2. Complete portable language execution:
+2. Portable language execution:
    - activate and migrate before compilation;
    - expose one serialized typed run operation;
    - return public structured results.
-3. Reduce CLI orchestration to frontend mapping over injectable domain services.
-4. Reach the verification and required-CI milestone described below.
+3. CLI orchestration reduced to frontend mapping over injectable domain services.
+4. The verification and required-CI milestone described below.
 
-Typed persisted calendar state remains deferred until TUI calendar behavior is
-defined.
+Typed persisted calendar state is not part of the initial TUI. Completion is
+derived from the currently loaded semantic calendar as defined in
+`../design/storage.md`.
 
 ## Delivery rules
 
@@ -89,7 +93,7 @@ defined.
 - Preserve command names and normal successful workflows unless an approved
   migration requires a documented change.
 - Do not begin TUI implementation before the milestone is met.
-- tests may be added or updated when behavior changes, following
+- Tests may be added or updated when behavior changes, following
   `../../AGENTS.md`.
 - Do not opportunistically complete later items while working on an earlier task.
 - Update this plan to reflect current progress.
@@ -124,12 +128,12 @@ Done:
 - Path and status getters are pure.
 - Typed persisted-cache cleanup and confirmed `RuntimeLayout` root uninstall
   are storage-owned.
-- Workspace initialization creates a missing `.gitignore` without overwriting
-  an existing user-managed file.
+- The first Git workflow lazily initializes workspace Git and creates a missing
+  `.gitignore` without overwriting an existing user-managed file.
 
 Acceptance:
 
-- Runtime-root and config behavior match `../STORAGE.md`.
+- Runtime-root and config behavior match `../design/storage.md`.
 - Reads are non-mutating.
 - No domain input discovers config or the runtime root globally.
 - Focused resolver and layout tests use explicit roots and deterministic seams.
@@ -154,13 +158,13 @@ Done:
 - Focused tests cover corrupt database files, v1 bootstrap, newer-schema
   rejection, and public error mapping.
 
-Deferred:
+Not required by the initial TUI contract:
 
 - Persisted typed calendar state and derived stars.
 
 Acceptance:
 
-- Behavior matches `../STORAGE.md`.
+- Behavior matches `../design/storage.md`.
 - Unindexed cache files remain unmanaged; full uninstall removes its confirmed
   runtime root.
 - Client-rejected remote bodies cannot replace valid cached data.
@@ -256,9 +260,8 @@ Done:
 
 Deferred:
 
-- Validate the quality workflow on the next qualifying pull request and the
-  release workflow on the next actual version tag; do not create a release tag
-  solely for workflow validation.
+- Validate the release workflow on the next actual version tag; do not create a
+  release tag solely for workflow validation.
 - Required Windows and macOS matrix jobs pending a cross-platform readiness
   decision.
 - `cargo-deny` enforcement pending an approved license policy.
@@ -279,20 +282,18 @@ The milestone is met only when:
 - CLI behavior is implemented through the typed services intended for TUI;
 - storage lifecycle and language execution acceptance criteria are met;
 - the applicable workspace checks pass;
-- required CI passes on the supported baseline without live services or real
-  external applications.
+- required CI is configured for the supported baseline without live services or
+  real external applications.
 
-## TUI phase — not started
+## TUI phase — in progress
 
-After the milestone:
+The initial scope and implementation sequence are defined in
+`tui-implementation.md`. The phase retains these constraints:
 
 1. Add `aocsuite-tui` with Ratatui and explicit terminal lifecycle handling.
 2. Implement a pure state reducer and serialized background-effect runner.
 3. Keep rendering and event handling free of blocking I/O.
-4. Build workflow parity through shared services, not `run_aocsuite` or parsed
-   CLI output.
+4. Build phased workflow parity through shared services, not `run_aocsuite` or
+   parsed CLI output.
 5. Use `ratatui::TestBackend` and fake terminal operations for deterministic
    tests.
-
-The precise calendar persistence model should be decided while defining TUI
-calendar behavior.

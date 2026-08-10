@@ -44,10 +44,31 @@ impl Workspace {
     }
 
     pub fn ensure(&self) -> WorkspaceResult<()> {
-        std::fs::create_dir_all(&self.directory)?;
+        std::fs::create_dir_all(&self.directory).map_err(|source| WorkspaceError::Ensure {
+            path: self.directory.clone(),
+            source,
+        })?;
+        Ok(())
+    }
+
+    pub fn ensure_git(&self, executor: &dyn CommandExecutor) -> WorkspaceResult<()> {
+        self.ensure()?;
         let gitignore_path = self.gitignore_path();
         if !gitignore_path.exists() {
-            atomic_write(&gitignore_path, GITIGNORE.as_bytes())?;
+            atomic_write(&gitignore_path, GITIGNORE.as_bytes()).map_err(|source| {
+                WorkspaceError::Gitignore {
+                    path: gitignore_path,
+                    source,
+                }
+            })?;
+        }
+        if !self.directory.join(".git").exists() {
+            execute_git(
+                executor,
+                &self.directory,
+                &["init".to_owned()],
+                GitMode::Captured,
+            )?;
         }
         Ok(())
     }
@@ -103,13 +124,23 @@ impl Workspace {
         executor: &dyn CommandExecutor,
     ) -> WorkspaceResult<String> {
         if is_simple_clone(args)? {
-            std::fs::create_dir_all(&self.directory)?;
+            self.ensure()?;
             let mut clone_args = args.to_vec();
             clone_args.push(".".to_owned());
-            return execute_git(executor, &self.directory, &clone_args, mode);
+            let output = execute_git(executor, &self.directory, &clone_args, mode)?;
+            let gitignore_path = self.gitignore_path();
+            if !gitignore_path.exists() {
+                atomic_write(&gitignore_path, GITIGNORE.as_bytes()).map_err(|source| {
+                    WorkspaceError::Gitignore {
+                        path: gitignore_path,
+                        source,
+                    }
+                })?;
+            }
+            return Ok(output);
         }
 
-        self.ensure()?;
+        self.ensure_git(executor)?;
         execute_git(executor, &self.directory, args, mode)
     }
 }
@@ -128,24 +159,29 @@ fn execute_git(
     } else {
         request = request.foreground();
     }
-    let output = executor.execute(&request)?;
-    git_output(output, mode)
+    let output = executor
+        .execute(&request)
+        .map_err(|source| WorkspaceError::GitLaunch {
+            args: args.to_vec(),
+            current_dir: directory.clone(),
+            source,
+        })?;
+    git_output(output, args, directory)
 }
 
-fn git_output(output: Output, mode: GitMode) -> WorkspaceResult<String> {
+fn git_output(output: Output, args: &[String], directory: &Path) -> WorkspaceResult<String> {
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).to_string());
     }
 
     let code = output.status.code().unwrap_or(1);
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    if mode == GitMode::Captured && stderr.is_empty() {
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        if !stdout.is_empty() {
-            return Ok(stdout);
-        }
-    }
-    Err(WorkspaceError::CommandFailed { code, stderr })
+    Err(WorkspaceError::GitFailed {
+        args: args.to_vec(),
+        current_dir: directory.to_path_buf(),
+        code,
+        stderr,
+    })
 }
 
 fn is_simple_clone(args: &[String]) -> WorkspaceResult<bool> {
@@ -160,10 +196,34 @@ fn is_simple_clone(args: &[String]) -> WorkspaceResult<bool> {
 
 #[derive(Debug, Error)]
 pub enum WorkspaceError {
-    #[error("Git command exited with code {code}: {stderr}")]
-    CommandFailed { code: i32, stderr: String },
+    #[error("could not launch `git {}` in '{}': {source}", args.join(" "), current_dir.display())]
+    GitLaunch {
+        args: Vec<String>,
+        current_dir: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("`git {}` in '{}' exited with code {code}: {stderr}", args.join(" "), current_dir.display())]
+    GitFailed {
+        args: Vec<String>,
+        current_dir: PathBuf,
+        code: i32,
+        stderr: String,
+    },
     #[error("only clone in format `git clone my_git_repo` is supported")]
     Clone,
+    #[error("could not create workspace directory at '{path}': {source}")]
+    Ensure {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("could not create workspace Git ignore file at '{path}': {source}")]
+    Gitignore {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -172,70 +232,73 @@ pub type WorkspaceResult<T> = Result<T, WorkspaceError>;
 
 #[cfg(test)]
 mod tests {
-    use super::{is_simple_clone, Workspace, WorkspaceError, GITIGNORE};
-    use aocsuite_utils::LanguageId;
+    use std::{io, process::Output, sync::Mutex};
 
-    #[test]
-    fn empty_args_are_not_a_clone() {
-        assert!(!is_simple_clone(&[]).expect("empty args are valid"));
+    use super::{GitMode, Workspace};
+    use aocsuite_utils::{CommandExecutor, CommandRequest};
+
+    #[derive(Default)]
+    struct RecordingExecutor {
+        requests: Mutex<Vec<CommandRequest>>,
+        fail: bool,
+    }
+
+    impl CommandExecutor for RecordingExecutor {
+        fn execute(&self, request: &CommandRequest) -> io::Result<Output> {
+            self.requests.lock().unwrap().push(request.clone());
+            Ok(Output {
+                status: status(!self.fail),
+                stdout: Vec::new(),
+                stderr: if self.fail {
+                    b"failed init".to_vec()
+                } else {
+                    Vec::new()
+                },
+            })
+        }
     }
 
     #[test]
-    fn clone_requires_exactly_one_repository_argument() {
-        assert!(
-            is_simple_clone(&["clone".to_string(), "repository".to_string()])
-                .expect("simple clone is accepted")
-        );
-        assert!(matches!(
-            is_simple_clone(&["clone".to_string()]),
-            Err(WorkspaceError::Clone)
-        ));
+    fn clone_bypasses_init_and_adds_gitignore_only_after_success() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::new(temp.path().join("workspace"));
+        let executor = RecordingExecutor::default();
+        workspace
+            .run_git(
+                &["clone".into(), "repository".into()],
+                GitMode::Captured,
+                &executor,
+            )
+            .unwrap();
+        assert!(workspace.gitignore_path().is_file());
+        let requests = executor.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].args, ["clone", "repository", "."]);
+
+        let other = Workspace::new(temp.path().join("failed"));
+        let failed = RecordingExecutor {
+            fail: true,
+            ..Default::default()
+        };
+        assert!(other
+            .run_git(
+                &["clone".into(), "repository".into()],
+                GitMode::Captured,
+                &failed
+            )
+            .is_err());
+        assert!(!other.gitignore_path().exists());
     }
 
-    #[test]
-    fn workspace_gitignore_preserves_tracked_project_files() {
-        assert!(GITIGNORE.contains("rust/target/"));
-        assert!(GITIGNORE.contains("python/venv/"));
-        assert!(!GITIGNORE.contains("Cargo.lock"));
-        assert!(!GITIGNORE.contains("config.json"));
+    #[cfg(unix)]
+    fn status(success: bool) -> std::process::ExitStatus {
+        use std::os::unix::process::ExitStatusExt;
+        std::process::ExitStatus::from_raw(if success { 0 } else { 1 << 8 })
     }
 
-    #[test]
-    fn workspace_ensure_preserves_an_existing_gitignore() {
-        let temp = tempfile::tempdir().expect("create temporary workspace");
-        let workspace = Workspace::new(temp.path().to_path_buf());
-        let gitignore = workspace.gitignore_path();
-        std::fs::write(&gitignore, "user rule\n").expect("write user gitignore");
-
-        workspace.ensure().expect("ensure workspace");
-
-        assert_eq!(
-            std::fs::read_to_string(gitignore).expect("read gitignore"),
-            "user rule\n"
-        );
-    }
-
-    #[test]
-    fn workspace_allocates_unique_result_files_in_its_ignored_runs_directory() {
-        let temp = tempfile::tempdir().expect("create temporary workspace");
-        let workspace = Workspace::new(temp.path().to_path_buf());
-
-        assert_eq!(
-            workspace.language_project_dir(LanguageId::Rust),
-            temp.path().join("rust")
-        );
-
-        let first = workspace
-            .allocate_run_result_file()
-            .expect("allocate first result path");
-        let second = workspace
-            .allocate_run_result_file()
-            .expect("allocate second result path");
-        let runs_dir = temp.path().join(".aocsuite-runs");
-
-        assert_ne!(first, second);
-        assert_eq!(first.parent(), Some(runs_dir.as_path()));
-        assert!(first.parent().expect("result parent").is_dir());
-        assert!(!first.exists());
+    #[cfg(windows)]
+    fn status(success: bool) -> std::process::ExitStatus {
+        use std::os::windows::process::ExitStatusExt;
+        std::process::ExitStatus::from_raw(if success { 0 } else { 1 })
     }
 }

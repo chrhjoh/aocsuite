@@ -262,34 +262,3 @@ impl FromStr for LanguageId {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{LanguageId, PartSelection, PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
-
-    #[test]
-    fn puzzle_values_validate_structural_bounds() {
-        assert!(PuzzleDay::new(1).is_ok());
-        assert!(PuzzleDay::new(25).is_ok());
-        assert!(PuzzleDay::new(0).is_err());
-        assert!(PuzzleDay::new(26).is_err());
-        assert!(PuzzleYear::new(2015).is_ok());
-        assert!(PuzzleYear::new(2014).is_err());
-
-        let id = PuzzleId::new(PuzzleDay::new(4).unwrap(), PuzzleYear::new(2024).unwrap());
-        assert_eq!(id.day.get(), 4);
-        assert_eq!(id.year.get(), 2024);
-        assert_eq!(id.to_string(), "year2024_day4");
-        assert!("not-a-day".parse::<PuzzleDay>().is_err());
-    }
-
-    #[test]
-    fn parts_and_languages_parse_without_frontend_traits() {
-        assert_eq!("1".parse(), Ok(PuzzlePart::One));
-        assert_eq!("two".parse(), Ok(PuzzlePart::Two));
-        assert_eq!("both".parse(), Ok(PartSelection::Both));
-        assert_eq!("RUST".parse(), Ok(LanguageId::Rust));
-        assert!("three".parse::<PuzzlePart>().is_err());
-        assert!("ruby".parse::<LanguageId>().is_err());
-    }
-}

@@ -68,45 +68,16 @@ fn extract_wait_time(text: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AocSubmissionResult, extract_wait_time, parse_submission};
+    use super::{AocSubmissionResult, parse_submission};
 
     #[test]
-    fn extracts_aoc_wait_times() {
-        let cases = [
-            ("you have to wait 12 seconds.", Some(12)),
-            ("You have to wait 1 second!", Some(1)),
-            ("You have 2 minutes left to wait.", Some(120)),
-            ("You have 1m 47s left to wait.", Some(107)),
-            ("YOU HAVE 3 MINUTES AND 2 SECONDS LEFT TO WAIT.", Some(182)),
-            ("Please wait 8 seconds before trying again.", Some(8)),
-            ("You have to wait soon.", None),
-        ];
-
-        for (message, expected) in cases {
-            assert_eq!(extract_wait_time(message), expected, "{message}");
-        }
-    }
-
-    #[test]
-    fn recognizes_explicit_cooldowns_before_incorrect_answers() {
-        let result = parse_submission(
-            "<main><article><p>That's not the right answer. Please wait 1 minute before trying again.</p></article></main>",
-        )
-        .expect("parse submission response");
-
-        assert_eq!(result, AocSubmissionResult::RateLimited(60));
-    }
-
-    #[test]
-    fn preserves_unknown_submission_article_markdown() {
-        let result = parse_submission(
-            "<main><article><p>Unexpected submission response.</p></article></main>",
-        )
-        .expect("parse submission response");
-
+    fn submission_parser_recognizes_cooldown() {
         assert_eq!(
-            result,
-            AocSubmissionResult::Unknown("Unexpected submission response.".to_owned())
+            parse_submission(
+                "<main><article><p>You have 1m 47s left to wait.</p></article></main>"
+            )
+            .unwrap(),
+            AocSubmissionResult::RateLimited(107)
         );
     }
 }

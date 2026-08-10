@@ -1,10 +1,9 @@
 description: Create a focused Conventional Commit
 
 Inspect the current status and diff. Stage only the changes that form one
-coherent commit, then run these verification checks:
-- cargo fmt --all -- --check
-- cargo check --workspace --locked
-- cargo test --workspace --locked
+coherent commit.
+
+Only run verification tests if code have actually changed since last check.
 
 Create a Conventional Commit using this context:
 

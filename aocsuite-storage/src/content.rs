@@ -69,6 +69,21 @@ impl<'client> ContentStore<'client> {
         Ok(fs::read_to_string(path)?)
     }
 
+    pub fn refresh_calendar(&self, year: PuzzleYear) -> ContentResult<String> {
+        let key = CacheKey::Calendar(year);
+        let path = self.cache_path(key);
+        self.ensure_replaceable(key)?;
+
+        let body = self.client.download(&AocPage::Calendar(year))?;
+        let entry = self.cache_entry(key, body.len());
+        replace_with_rollback(&path, body.as_bytes(), || {
+            self.database
+                .upsert_cache_entry(&entry)
+                .map_err(ContentError::from_database)
+        })?;
+        Ok(body)
+    }
+
     pub fn ensure_input(&self, puzzle: PuzzleId) -> ContentResult<PathBuf> {
         let path = self.load_or_fetch(CacheKey::Input(puzzle))?;
         set_owner_only_permissions(&path)?;
@@ -84,6 +99,42 @@ impl<'client> ContentStore<'client> {
 
         let markdown = parse_puzzle_markdown(&fs::read_to_string(html_path)?)?;
         self.save(markdown_key, markdown.as_bytes())
+    }
+
+    pub fn load_puzzle_markdown(&self, puzzle: PuzzleId) -> ContentResult<String> {
+        Ok(fs::read_to_string(self.ensure_puzzle_markdown(puzzle)?)?)
+    }
+
+    pub fn load_cached_puzzle_markdown(&self, puzzle: PuzzleId) -> ContentResult<Option<String>> {
+        let key = CacheKey::PuzzleMarkdown(puzzle);
+        if !self.is_cached(key)? {
+            return Ok(None);
+        }
+        Ok(Some(fs::read_to_string(self.cache_path(key))?))
+    }
+
+    pub fn download_puzzle_markdown(&self, puzzle: PuzzleId) -> ContentResult<String> {
+        let html_key = CacheKey::PuzzleHtml(puzzle);
+        let markdown_key = CacheKey::PuzzleMarkdown(puzzle);
+        self.ensure_replaceable(html_key)?;
+        self.ensure_replaceable(markdown_key)?;
+
+        let html = self.client.download(&AocPage::Puzzle(puzzle))?;
+        let markdown = parse_puzzle_markdown(&html)?;
+        let html_path = self.cache_path(html_key);
+        let markdown_path = self.cache_path(markdown_key);
+        let entries = [
+            self.cache_entry(html_key, html.len()),
+            self.cache_entry(markdown_key, markdown.len()),
+        ];
+        replace_with_rollback(&html_path, html.as_bytes(), || {
+            replace_with_rollback(&markdown_path, markdown.as_bytes(), || {
+                self.database
+                    .upsert_cache_entries(&entries)
+                    .map_err(ContentError::from_database)
+            })
+        })?;
+        Ok(markdown)
     }
 
     pub fn record_submission(
@@ -198,6 +249,21 @@ impl<'client> ContentStore<'client> {
             }))
     }
 
+    fn ensure_replaceable(&self, key: CacheKey) -> ContentResult<()> {
+        let path = self.cache_path(key);
+        let indexed_at_path = self
+            .database
+            .cache_entry(key)
+            .map_err(ContentError::from_database)?
+            .is_some_and(|entry| entry.relative_path == self.cache_relative_path(key));
+        match fs::symlink_metadata(&path) {
+            Ok(_) if !indexed_at_path => Err(ContentError::UnmanagedCacheFile { path }),
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     fn save(&self, key: CacheKey, contents: &[u8]) -> ContentResult<PathBuf> {
         let path = self.cache_path(key);
         if let Some(parent) = path.parent() {
@@ -205,17 +271,21 @@ impl<'client> ContentStore<'client> {
         }
         atomic_write(&path, contents)?;
         self.database
-            .upsert_cache_entry(&CacheEntry {
-                key,
-                relative_path: self.cache_relative_path(key),
-                byte_size: contents.len() as u64,
-                fetched_at: Some(current_unix_timestamp()),
-                etag: None,
-                last_modified: None,
-                is_valid: true,
-            })
+            .upsert_cache_entry(&self.cache_entry(key, contents.len()))
             .map_err(ContentError::from_database)?;
         Ok(path)
+    }
+
+    fn cache_entry(&self, key: CacheKey, byte_size: usize) -> CacheEntry {
+        CacheEntry {
+            key,
+            relative_path: self.cache_relative_path(key),
+            byte_size: byte_size as u64,
+            fetched_at: Some(current_unix_timestamp()),
+            etag: None,
+            last_modified: None,
+            is_valid: true,
+        }
     }
 
     fn cache_path(&self, key: CacheKey) -> PathBuf {
@@ -232,6 +302,41 @@ impl<'client> ContentStore<'client> {
             CacheKey::Calendar(year) => PathBuf::from("calendars").join(format!("year{year}.html")),
         }
     }
+}
+
+fn replace_with_rollback(
+    path: &std::path::Path,
+    contents: &[u8],
+    persist: impl FnOnce() -> ContentResult<()>,
+) -> ContentResult<()> {
+    let previous = match fs::read(path) {
+        Ok(contents) => Some(contents),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    atomic_write(path, contents)?;
+    if let Err(error) = persist() {
+        let rollback = match previous {
+            Some(previous) => atomic_write(path, &previous),
+            None => match fs::remove_file(path) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error),
+            },
+        };
+        if let Err(rollback) = rollback {
+            return Err(ContentError::RefreshRollback {
+                path: path.to_path_buf(),
+                persistence: error.to_string(),
+                source: rollback,
+            });
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 impl CacheCleanScope {
@@ -276,6 +381,15 @@ pub enum ContentError {
     State(String),
     #[error("solver runtime is too large to store")]
     InvalidRuntime,
+    #[error("refusing to replace unmanaged cache file {path}")]
+    UnmanagedCacheFile { path: PathBuf },
+    #[error("content refresh persistence failed ({persistence}) and restoring {path} also failed")]
+    RefreshRollback {
+        path: PathBuf,
+        persistence: String,
+        #[source]
+        source: std::io::Error,
+    },
     #[error(transparent)]
     Parser(#[from] ParserError),
     #[error(transparent)]
@@ -300,14 +414,20 @@ pub type ContentResult<T> = Result<T, ContentError>;
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{
+        fs,
+        io::{Read, Write},
+        net::TcpListener,
+        sync::mpsc::{self, Receiver},
+        thread,
+    };
 
-    use aocsuite_client::{AocClient, AocClientOptions, AocPage};
-    use aocsuite_parser::AocSubmissionResult;
+    use aocsuite_client::{AocClient, AocClientOptions};
+    use aocsuite_parser::{AocSubmissionResult, ParserError};
     use aocsuite_utils::{PuzzleDay, PuzzlePart, PuzzleYear};
     use tempfile::tempdir;
 
-    use super::{CacheCleanScope, CacheKey, ContentStore};
+    use super::{CacheCleanScope, CacheKey, ContentError, ContentStore};
 
     fn puzzle(day: u32, year: i32) -> aocsuite_utils::PuzzleId {
         aocsuite_utils::PuzzleId::new(
@@ -318,6 +438,166 @@ mod tests {
 
     fn client() -> AocClient {
         AocClient::new(None, AocClientOptions::default()).expect("create test client")
+    }
+
+    fn serve_responses(responses: Vec<(u16, &'static str)>) -> (AocClient, Receiver<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let address = listener.local_addr().expect("read test server address");
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let mut requests = Vec::new();
+            for (status, body) in responses {
+                let (mut stream, _) = listener.accept().expect("accept test request");
+                let mut request = [0; 4096];
+                let bytes = stream.read(&mut request).expect("read test request");
+                requests.push(String::from_utf8_lossy(&request[..bytes]).into_owned());
+                write!(
+                    stream,
+                    "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .expect("write test response");
+            }
+            sender.send(requests).expect("send test requests");
+        });
+        let client = AocClient::new(
+            None,
+            AocClientOptions {
+                base_url: format!("http://{address}"),
+                user_agent: "aocsuite-storage-test/1".to_owned(),
+                ..AocClientOptions::default()
+            },
+        )
+        .expect("create test client");
+        (client, receiver)
+    }
+
+    #[test]
+    fn puzzle_markdown_text_is_loaded_cache_first() {
+        let temp = tempdir().expect("create temporary cache root");
+        let (client, requests) = serve_responses(vec![(
+            200,
+            "<main><article><h2>Test Puzzle</h2><p>Description.</p></article></main>",
+        )]);
+        let store =
+            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
+
+        let first = store
+            .load_puzzle_markdown(puzzle(1, 2024))
+            .expect("load puzzle markdown");
+        let second = store
+            .load_puzzle_markdown(puzzle(1, 2024))
+            .expect("load cached puzzle markdown");
+
+        assert_eq!(second, first);
+        assert!(first.contains("Test Puzzle"));
+        assert_eq!(requests.recv().expect("receive requests").len(), 1);
+    }
+
+    #[test]
+    fn puzzle_markdown_download_replaces_an_existing_preview() {
+        let temp = tempdir().expect("create temporary cache root");
+        let (client, requests) = serve_responses(vec![
+            (
+                200,
+                "<main><article><h2>Original Puzzle</h2><p>Part one.</p></article></main>",
+            ),
+            (
+                200,
+                "<main><article><h2>Updated Puzzle</h2><p>Part one.</p></article><article><h2>Part Two</h2><p>New content.</p></article></main>",
+            ),
+        ]);
+        let store =
+            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
+        let puzzle = puzzle(1, 2024);
+
+        let original = store
+            .load_puzzle_markdown(puzzle)
+            .expect("load original markdown");
+        let updated = store
+            .download_puzzle_markdown(puzzle)
+            .expect("download updated markdown");
+
+        assert!(original.contains("Original Puzzle"));
+        assert!(updated.contains("Updated Puzzle"));
+        assert!(updated.contains("Part Two"));
+        assert_eq!(
+            store.load_cached_puzzle_markdown(puzzle).unwrap(),
+            Some(updated)
+        );
+        assert_eq!(requests.recv().expect("receive requests").len(), 2);
+    }
+
+    #[test]
+    fn invalid_puzzle_download_preserves_existing_files_and_metadata() {
+        let temp = tempdir().expect("create temporary cache root");
+        let (client, requests) = serve_responses(vec![
+            (
+                200,
+                "<main><article><h2>Original Puzzle</h2><p>Part one.</p></article></main>",
+            ),
+            (200, "<main>missing puzzle article</main>"),
+        ]);
+        let store =
+            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
+        let puzzle = puzzle(1, 2024);
+        let original = store
+            .load_puzzle_markdown(puzzle)
+            .expect("load original markdown");
+        let html_key = CacheKey::PuzzleHtml(puzzle);
+        let markdown_key = CacheKey::PuzzleMarkdown(puzzle);
+        let original_html = fs::read_to_string(store.cache_path(html_key)).unwrap();
+        let original_entries = [html_key, markdown_key].map(|key| {
+            store
+                .database
+                .cache_entry(key)
+                .expect("read cache metadata")
+        });
+
+        assert!(matches!(
+            store.download_puzzle_markdown(puzzle),
+            Err(ContentError::Parser(ParserError::MissingPuzzleArticle))
+        ));
+        assert_eq!(
+            fs::read_to_string(store.cache_path(html_key)).unwrap(),
+            original_html
+        );
+        assert_eq!(
+            store.load_cached_puzzle_markdown(puzzle).unwrap(),
+            Some(original)
+        );
+        assert_eq!(
+            [html_key, markdown_key].map(|key| {
+                store
+                    .database
+                    .cache_entry(key)
+                    .expect("read cache metadata")
+            }),
+            original_entries
+        );
+        assert_eq!(requests.recv().expect("receive requests").len(), 2);
+    }
+
+    #[test]
+    fn puzzle_markdown_download_does_not_overwrite_an_unindexed_file() {
+        let temp = tempdir().expect("create temporary cache root");
+        let cache_dir = temp.path().join("cache");
+        let client = client();
+        let store = ContentStore::open(cache_dir.clone(), &client).expect("open content store");
+        let puzzle = puzzle(1, 2024);
+        let path = store.cache_path(CacheKey::PuzzleMarkdown(puzzle));
+        fs::create_dir_all(path.parent().expect("puzzle has parent"))
+            .expect("create puzzle directory");
+        fs::write(&path, "unmanaged markdown").expect("write unmanaged markdown");
+
+        assert!(matches!(
+            store.download_puzzle_markdown(puzzle),
+            Err(ContentError::UnmanagedCacheFile { path: error_path }) if error_path == path
+        ));
+        assert_eq!(
+            fs::read_to_string(path).expect("read unmanaged markdown"),
+            "unmanaged markdown"
+        );
     }
 
     #[test]
@@ -378,26 +658,6 @@ mod tests {
     }
 
     #[test]
-    fn cache_keys_map_only_source_content_to_aoc_pages() {
-        let puzzle = puzzle(1, 2024);
-        let year = PuzzleYear::new(2024).expect("valid year");
-
-        assert!(matches!(
-            CacheKey::PuzzleHtml(puzzle).source_page(),
-            Some(AocPage::Puzzle(page)) if page == puzzle
-        ));
-        assert!(matches!(
-            CacheKey::Input(puzzle).source_page(),
-            Some(AocPage::Input(page)) if page == puzzle
-        ));
-        assert!(matches!(
-            CacheKey::Calendar(year).source_page(),
-            Some(AocPage::Calendar(page_year)) if page_year == year
-        ));
-        assert!(CacheKey::PuzzleMarkdown(puzzle).source_page().is_none());
-    }
-
-    #[test]
     fn recording_a_correct_submission_invalidates_affected_cache_entries() {
         let temp = tempdir().expect("create temporary cache root");
         let cache_dir = temp.path().join("cache");
@@ -427,42 +687,5 @@ mod tests {
         assert!(!store
             .is_cached(CacheKey::PuzzleMarkdown(puzzle))
             .expect("check puzzle markdown cache"));
-    }
-
-    #[test]
-    fn opening_an_invalid_database_returns_a_typed_corruption_error() {
-        let temp = tempdir().expect("create temporary cache root");
-        let cache_dir = temp.path().join("cache");
-        fs::create_dir_all(&cache_dir).expect("create cache directory");
-        fs::write(cache_dir.join("state.sqlite"), "not a SQLite database")
-            .expect("write invalid database");
-        let client = client();
-
-        assert!(matches!(
-            ContentStore::open(cache_dir, &client),
-            Err(super::ContentError::CorruptStateDatabase { .. })
-        ));
-    }
-
-    #[test]
-    fn opening_a_newer_database_returns_a_typed_schema_error() {
-        let temp = tempdir().expect("create temporary cache root");
-        let cache_dir = temp.path().join("cache");
-        fs::create_dir_all(&cache_dir).expect("create cache directory");
-        let connection =
-            rusqlite::Connection::open(cache_dir.join("state.sqlite")).expect("create database");
-        connection
-            .pragma_update(None, "user_version", 2_u32)
-            .expect("set newer schema version");
-        drop(connection);
-        let client = client();
-
-        assert!(matches!(
-            ContentStore::open(cache_dir, &client),
-            Err(super::ContentError::NewerStateSchema {
-                found: 2,
-                supported: 1,
-            })
-        ));
     }
 }

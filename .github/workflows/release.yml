@@ -15,15 +15,17 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
-      AOCSUITE_DATA_DIR: ${{ runner.temp }}/aocsuite-data
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: stable
+
+      - name: Configure test data directory
+        run: echo "AOCSUITE_DATA_DIR=${RUNNER_TEMP}/aocsuite-data" >> "$GITHUB_ENV"
 
       - name: Validate release tag
         env:
@@ -92,14 +94,17 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: stable
 
       - name: Build CLI
         run: cargo build -p aocsuite-cli --release --locked
 
-      - name: Smoke test packaged binary
+      - name: Build TUI
+        run: cargo build -p aocsuite-tui --release --locked
+
+      - name: Smoke test CLI binary
         shell: bash
         run: target/release/aocsuite-cli${{ runner.os == 'Windows' && '.exe' || '' }} --help
 
@@ -107,18 +112,23 @@ jobs:
         id: package
         shell: bash
         run: |
-          archive="aocsuite-cli-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.extension }}"
-          binary="target/release/aocsuite-cli${{ runner.os == 'Windows' && '.exe' || '' }}"
+          archive="aocsuite-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.extension }}"
+          files=(
+            "target/release/aocsuite-cli${{ runner.os == 'Windows' && '.exe' || '' }}"
+            "target/release/aocsuite-tui${{ runner.os == 'Windows' && '.exe' || '' }}"
+            README.md
+            LICENSE
+          )
           if [[ "${{ matrix.extension }}" == "zip" ]]; then
-            7z a "$archive" "$binary" README.md LICENSE
+            7z a "$archive" "${files[@]}"
           else
-            tar -czf "$archive" "$binary" README.md LICENSE
+            tar -czf "$archive" "${files[@]}"
           fi
           ${{ matrix.checksum }} "$archive" > "$archive.sha256"
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Upload release files
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: release-${{ matrix.target }}
           path: |

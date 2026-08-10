@@ -6,7 +6,8 @@ This document records settled persistent-state design: runtime-root resolution,
 layout ownership, canonical data, initialization, migrations, cleanup, and
 uninstall safety.
 
-Implementation status belongs in `plans/pre-tui-refactor.md`. Crate boundaries
+Pre-TUI implementation status belongs in `../plans/pre-tui-refactor.md`; initial
+TUI sequencing belongs in `../plans/tui-implementation.md`. Crate boundaries
 belong in `architecture.md`.
 
 ## Goals
@@ -46,8 +47,8 @@ environment state.
 │   ├── inputs/
 │   └── calendars/
 └── workspace/
-    ├── .git/
-    ├── .gitignore
+    ├── .git/             (created on first Git workflow)
+    ├── .gitignore        (created on first Git workflow)
     ├── .aocsuite-runs/
     ├── examples/
     ├── rust/
@@ -137,8 +138,7 @@ Bootstrap may create:
 - the runtime root;
 - the layout manifest;
 - required directories;
-- `workspace/`;
-- the workspace Git repository;
+- `workspace/`, without Git state;
 
 Bootstrap is idempotent and distinguishes:
 
@@ -191,8 +191,10 @@ It does not store:
 - cooldown state;
 - private leaderboard data;
 - complete submission events;
-- typed calendar state or derived stars until the TUI calendar contract is
-  defined.
+- typed calendar state or derived stars.
+
+The initial TUI derives completion from the currently loaded semantic calendar.
+It does not persist a typed calendar or derived completion state.
 
 Database bootstrap must provide:
 
@@ -244,6 +246,22 @@ operations use valid cached content when available and otherwise retrieve and
 persist it; callers do not inspect cache status or select cache-versus-network
 behavior.
 
+A cached puzzle-preview query is a read-only exception to normal semantic load
+behavior. It returns Markdown only when the managed derived Markdown entry is
+valid and present. It does not fall back to raw HTML, perform an AoC request, or
+create or update cache state.
+
+An explicit puzzle-description download bypasses cached puzzle content. Storage
+validates the downloaded HTML and derives Markdown before replacing either
+file. The canonical HTML, derived Markdown, and both metadata entries are
+replaced as one rollback-protected operation. Download, parsing, file, or
+metadata failures preserve the previous managed cache, and unmanaged files are
+never replaced.
+
+An explicit calendar refresh bypasses an existing valid calendar cache entry.
+It replaces cached calendar content only after the client returns a valid
+response; a failed refresh preserves the existing cached calendar.
+
 ## Workspace
 
 `workspace/rust` and `workspace/python` are complete projects that remain usable
@@ -281,9 +299,12 @@ Storage owns Git operations scoped to `workspace/`.
 Captured Git disables pagers and interactive prompts. Explicit pass-through may
 inherit terminal streams, but it is not a security sandbox.
 
-Workspace initialization creates `.gitignore` when it is absent. An existing
-`.gitignore` is user-managed and preserved. The initial generated file ignores
-only disposable state, including:
+`Workspace::ensure` creates only the workspace directory. The first Git workflow
+initializes the repository and creates `.gitignore` when it is absent. An
+existing `.gitignore` is user-managed and preserved. The exact supported clone
+workflow clones into the workspace instead of initializing it, then creates the
+generated `.gitignore` only when the clone did not supply one. The initial
+generated file ignores only disposable state, including:
 
 - Rust `target/`;
 - Python virtual environments;
@@ -321,8 +342,9 @@ consumption, and timing persistence must be serialized.
 
 The frontend scheduler serializes one language job per runtime-root workspace.
 The job remains serialized until timing persistence completes. If timing
-persistence fails after solver execution, it returns the typed persistence error
-without rerunning the solver.
+persistence fails after solver execution, the frontend does not rerun the solver;
+it may retain the completed execution report while mapping the typed persistence
+error to a user-facing warning.
 
 Storage retains only the latest configured number of runtimes per puzzle part.
 

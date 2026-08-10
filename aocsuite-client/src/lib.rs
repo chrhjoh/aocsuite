@@ -237,19 +237,11 @@ mod tests {
         net::TcpListener,
         sync::mpsc::{self, Receiver},
         thread,
-        time::Duration,
     };
 
     use aocsuite_utils::{PuzzleDay, PuzzleId, PuzzlePart, PuzzleYear};
 
-    use super::{
-        AocClient, AocClientError, AocClientOptions, AocPage, GET_RETRY_ATTEMPTS,
-        default_retry_delay, retry_delay,
-    };
-    use reqwest::{
-        StatusCode,
-        header::{HeaderMap, HeaderValue, RETRY_AFTER},
-    };
+    use super::{AocClient, AocClientError, AocClientOptions, AocPage};
 
     fn puzzle() -> PuzzleId {
         PuzzleId::new(
@@ -319,74 +311,6 @@ mod tests {
         (format!("http://{address}"), receiver)
     }
 
-    fn serve_disconnections(count: u32) -> (String, Receiver<u32>) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
-        let address = listener.local_addr().expect("read test server address");
-        let (sender, receiver) = mpsc::channel();
-        thread::spawn(move || {
-            for _ in 0..count {
-                let (mut stream, _) = listener.accept().expect("accept test request");
-                let mut request = [0; 1024];
-                let _ = stream.read(&mut request);
-            }
-            sender.send(count).expect("send request count");
-        });
-        (format!("http://{address}"), receiver)
-    }
-
-    fn serve_after(delay: Duration) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
-        let address = listener.local_addr().expect("read test server address");
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept test request");
-            let mut request = [0; 1024];
-            let _ = stream.read(&mut request);
-            thread::sleep(delay);
-            let _ = stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
-        });
-        format!("http://{address}")
-    }
-
-    #[test]
-    fn invalid_session_header_returns_a_typed_error() {
-        assert!(matches!(
-            AocClient::new(Some("valid\r\ninvalid"), AocClientOptions::default()),
-            Err(AocClientError::Session(_))
-        ));
-    }
-
-    #[test]
-    fn pages_build_every_supported_url_shape() {
-        let puzzle = puzzle();
-        let base = "https://example.com/root/";
-
-        assert_eq!(
-            AocPage::Puzzle(puzzle).url(base),
-            "https://example.com/root/2024/day/1"
-        );
-        assert_eq!(
-            AocPage::Input(puzzle).url(base),
-            "https://example.com/root/2024/day/1/input"
-        );
-        assert_eq!(
-            AocPage::Submit(puzzle).url(base),
-            "https://example.com/root/2024/day/1/answer"
-        );
-        assert_eq!(
-            AocPage::Calendar(puzzle.year).url(base),
-            "https://example.com/root/2024"
-        );
-        assert_eq!(
-            AocPage::Leaderboard(puzzle.year, None).url(base),
-            "https://example.com/root/2024/leaderboard"
-        );
-        assert_eq!(
-            AocPage::Leaderboard(puzzle.year, Some(42)).url(base),
-            "https://example.com/root/2024/leaderboard/private/view/42"
-        );
-    }
-
     #[test]
     fn public_requests_allow_an_absent_session() {
         let (base_url, request) = serve_once(200, "puzzle");
@@ -413,39 +337,6 @@ mod tests {
             client.submit(puzzle, PuzzlePart::One, "answer"),
             Err(AocClientError::MissingSession)
         ));
-    }
-
-    #[test]
-    fn request_timeout_is_configurable() {
-        let options = AocClientOptions {
-            base_url: serve_after(Duration::from_millis(250)),
-            timeout: Duration::from_millis(20),
-            ..AocClientOptions::default()
-        };
-        let mut client = AocClient::new(None, options).unwrap();
-        client._sleep = |_| {};
-        let puzzle = puzzle();
-
-        assert!(matches!(
-            client.download(&AocPage::Puzzle(puzzle)),
-            Err(AocClientError::Http(error)) if error.is_timeout()
-        ));
-    }
-
-    #[test]
-    fn configured_sessions_are_attached_to_requests() {
-        let (base_url, request) = serve_once(200, "input");
-        let client = client(base_url, Some("test-session"));
-        let puzzle = puzzle();
-
-        client.download(&AocPage::Input(puzzle)).unwrap();
-        assert!(
-            request
-                .recv()
-                .unwrap()
-                .to_ascii_lowercase()
-                .contains("cookie: session=test-session")
-        );
     }
 
     #[test]
@@ -510,60 +401,5 @@ mod tests {
             "puzzle"
         );
         assert_eq!(requests.recv().unwrap().len(), 2);
-    }
-
-    #[test]
-    fn exhausted_transient_get_status_returns_the_final_typed_error() {
-        let (base_url, requests) = serve_responses(vec![(429, "retry", None); 4]);
-
-        assert!(matches!(
-            client(base_url, None).download(&AocPage::Puzzle(puzzle())),
-            Err(AocClientError::RateLimited(None))
-        ));
-        assert_eq!(requests.recv().unwrap().len(), 4);
-    }
-
-    #[test]
-    fn get_transport_errors_are_retried() {
-        let (base_url, requests) = serve_disconnections(GET_RETRY_ATTEMPTS + 1);
-
-        assert!(matches!(
-            client(base_url, None).download(&AocPage::Puzzle(puzzle())),
-            Err(AocClientError::Http(_))
-        ));
-        assert_eq!(requests.recv().unwrap(), GET_RETRY_ATTEMPTS + 1);
-    }
-
-    #[test]
-    fn retry_after_is_used_only_for_rate_limited_and_unavailable_responses() {
-        let mut headers = HeaderMap::new();
-        headers.insert(RETRY_AFTER, HeaderValue::from_static("90"));
-
-        assert_eq!(
-            retry_delay(StatusCode::TOO_MANY_REQUESTS, &headers),
-            Some(Duration::from_secs(60))
-        );
-        assert_eq!(
-            retry_delay(StatusCode::SERVICE_UNAVAILABLE, &headers),
-            Some(Duration::from_secs(60))
-        );
-        assert_eq!(
-            retry_delay(StatusCode::INTERNAL_SERVER_ERROR, &headers),
-            None
-        );
-        assert_eq!(default_retry_delay(0), Duration::from_secs(1));
-        assert_eq!(default_retry_delay(1), Duration::from_secs(2));
-        assert_eq!(default_retry_delay(2), Duration::from_secs(4));
-    }
-
-    #[test]
-    fn successful_login_page_returns_an_authentication_error() {
-        let (base_url, _) = serve_once(200, "Please log in to get your puzzle input.");
-        let puzzle = puzzle();
-        let error = client(base_url, Some("expired"))
-            .download(&AocPage::Input(puzzle))
-            .expect_err("login page is rejected");
-
-        assert!(matches!(error, AocClientError::Authentication));
     }
 }

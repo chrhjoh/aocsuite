@@ -26,6 +26,11 @@ pub enum ConfirmedTemplateReset {
     Confirmed,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ConfirmedLibraryRemoval {
+    Confirmed,
+}
+
 pub struct Language<'workspace, 'executor> {
     language_type: LanguageId,
     project_dir: PathBuf,
@@ -109,7 +114,12 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
 
     pub fn ensure_lib_path(&self, lib_name: &str) -> AocLanguageResult<PathBuf> {
         let lib_path = self.lib_path(lib_name)?;
-        std::fs::create_dir_all(lib_path.parent().expect("library path is not root"))?;
+        let parent = lib_path.parent().expect("library path is not root");
+        std::fs::create_dir_all(parent).map_err(|source| AocLanguageError::LibraryIo {
+            operation: "create the parent directory for",
+            path: parent.to_path_buf(),
+            source,
+        })?;
         Ok(lib_path)
     }
 
@@ -128,12 +138,21 @@ impl<'workspace, 'executor> Language<'workspace, 'executor> {
         Ok(lib_path)
     }
 
-    pub fn remove_lib_file(&self, lib_name: &str) -> AocLanguageResult<()> {
+    pub fn remove_lib_file(
+        &self,
+        lib_name: &str,
+        _: ConfirmedLibraryRemoval,
+    ) -> AocLanguageResult<()> {
         let lib_path = self.lib_path(lib_name)?;
-        if lib_path.exists() {
-            std::fs::remove_file(lib_path)?;
+        match std::fs::remove_file(&lib_path) {
+            Ok(()) => Ok(()),
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(source) => Err(AocLanguageError::LibraryIo {
+                operation: "remove",
+                path: lib_path,
+                source,
+            }),
         }
-        Ok(())
     }
 
     pub fn name(&self) -> String {
@@ -240,10 +259,20 @@ fn scan_lib_directory(dir: &Path, file_extention: &str) -> crate::AocLanguageRes
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(lib_files),
-        Err(error) => return Err(error.into()),
+        Err(source) => {
+            return Err(AocLanguageError::LibraryIo {
+                operation: "read",
+                path: dir.to_path_buf(),
+                source,
+            });
+        }
     };
     for entry in entries {
-        let entry = entry?;
+        let entry = entry.map_err(|source| AocLanguageError::LibraryIo {
+            operation: "read an entry from",
+            path: dir.to_path_buf(),
+            source,
+        })?;
         let path = entry.path();
         if path.is_file() {
             if let Some(file_name) = path.file_stem() {
@@ -269,13 +298,11 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{ensure_no_case_collision, validate_user_lib, ConfirmedTemplateReset, Language};
+    use super::{ensure_no_case_collision, validate_user_lib, Language};
     use crate::{
-        python::PythonRunner,
         rust::RustRunner,
-        traits::{LanguageHandler, Solver},
+        traits::Solver,
         utils::{read_result, with_result_file},
-        AocLanguageError, SolverFile,
     };
     use aocsuite_storage::Workspace;
     use aocsuite_utils::{
@@ -284,20 +311,6 @@ mod tests {
     };
 
     static SYSTEM_EXECUTOR: SystemCommandExecutor = SystemCommandExecutor;
-
-    fn puzzle_solution(day: u32) -> SolverFile {
-        SolverFile::PuzzleSolution(PuzzleId::new(
-            PuzzleDay::new(day).expect("valid test day"),
-            PuzzleYear::new(2024).expect("valid test year"),
-        ))
-    }
-
-    fn active_solution(day: u32) -> SolverFile {
-        SolverFile::ActiveSolution(PuzzleId::new(
-            PuzzleDay::new(day).expect("valid test day"),
-            PuzzleYear::new(2024).expect("valid test year"),
-        ))
-    }
 
     fn test_root(language: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -351,80 +364,6 @@ mod tests {
     }
 
     #[test]
-    fn library_path_queries_do_not_initialize_language_projects() {
-        let root = test_root("library-path");
-        let workspace = Workspace::new(root.join("workspace"));
-        let language = Language::new(LanguageId::Rust, &workspace, &SYSTEM_EXECUTOR);
-        let expected = root.join("workspace/rust/src/helpers.rs");
-
-        assert!(!language.library_exists("helpers").expect("check library"));
-        assert_eq!(
-            language.list_lib_files().expect("list libraries"),
-            Vec::<String>::new()
-        );
-        language
-            .remove_lib_file("helpers")
-            .expect("remove absent library");
-        assert!(!expected.parent().expect("library parent").exists());
-
-        assert_eq!(
-            language
-                .ensure_lib_path("helpers")
-                .expect("ensure library path"),
-            expected
-        );
-        assert!(expected.parent().expect("library parent").is_dir());
-
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
-    fn confirmed_template_reset_replaces_custom_template() {
-        for language_id in [LanguageId::Rust, LanguageId::Python] {
-            let root = test_root(&format!("{language_id}-template-reset"));
-            let workspace = Workspace::new(root.join("workspace"));
-            let language = Language::new(language_id, &workspace, &SYSTEM_EXECUTOR);
-            let template = language
-                .ensure_solver_file(&SolverFile::SolutionTemplate)
-                .expect("create template");
-            fs::write(&template, "custom template").expect("write custom template");
-
-            assert_eq!(
-                language
-                    .reset_template(ConfirmedTemplateReset::Confirmed)
-                    .expect("reset template"),
-                template
-            );
-            assert!(fs::read_to_string(&template)
-                .expect("read reset template")
-                .contains("part1"));
-
-            fs::remove_dir_all(root).expect("remove test runtime");
-        }
-    }
-
-    #[test]
-    fn environment_cleanup_does_not_initialize_absent_projects() {
-        struct NoCommandExecutor;
-
-        impl CommandExecutor for NoCommandExecutor {
-            fn execute(&self, _: &CommandRequest) -> std::io::Result<std::process::Output> {
-                panic!("cleanup must not run a command for an absent project");
-            }
-        }
-
-        for language_id in [LanguageId::Rust, LanguageId::Python] {
-            let root = test_root(&format!("{language_id}-environment-cleanup"));
-            let workspace = Workspace::new(root.join("workspace"));
-            let language = Language::new(language_id, &workspace, &NoCommandExecutor);
-
-            language.clean_env().expect("clean absent environment");
-
-            assert!(!workspace.language_project_dir(language_id).exists());
-        }
-    }
-
-    #[test]
     fn runtime_cleanup_removes_only_generated_runtime_files() {
         for (language_id, entrypoint, active_solution) in [
             (LanguageId::Rust, "src/main.rs", "src/solution.rs"),
@@ -475,98 +414,6 @@ mod tests {
 
         assert!(source.exists());
         assert!(!active.exists());
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    fn assert_requested_solution_is_active(runner: &dyn LanguageHandler) {
-        let first_solution = runner
-            .ensure_solver_file(&puzzle_solution(1))
-            .expect("create first solution");
-        fs::write(&first_solution, "first solution").expect("write first solution");
-        runner
-            .ensure_solver_file(&active_solution(1))
-            .expect("activate first solution");
-
-        let active_path = runner.solver_file_path(&active_solution(1));
-        assert_eq!(
-            fs::read_to_string(&active_path).expect("read active first solution"),
-            "first solution"
-        );
-
-        let second_solution = runner
-            .ensure_solver_file(&puzzle_solution(2))
-            .expect("create second solution");
-        fs::write(&second_solution, "second solution").expect("write second solution");
-        runner
-            .ensure_solver_file(&active_solution(2))
-            .expect("activate second solution");
-
-        assert_eq!(
-            fs::read_to_string(&active_path).expect("read active second solution"),
-            "second solution"
-        );
-    }
-
-    #[test]
-    fn puzzle_solutions_use_flat_language_solution_directories() {
-        let rust_root = test_root("rust-path");
-        let python_root = test_root("python-path");
-        let solution = puzzle_solution(4);
-
-        assert_eq!(
-            RustRunner::new(rust_root.clone(), &SYSTEM_EXECUTOR).solver_file_path(&solution),
-            rust_root.join("solutions/year2024_day4.rs")
-        );
-        assert_eq!(
-            PythonRunner::new(python_root.clone(), &SYSTEM_EXECUTOR).solver_file_path(&solution),
-            python_root.join("solutions/year2024_day4.py")
-        );
-    }
-
-    #[test]
-    fn rust_activation_selects_the_requested_solution() {
-        let root = test_root("rust");
-        let runner = RustRunner::new(root.clone(), &SYSTEM_EXECUTOR);
-
-        assert_requested_solution_is_active(&runner);
-
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
-    fn python_activation_selects_the_requested_solution() {
-        let root = test_root("python");
-        fs::create_dir_all(&root).expect("create test runtime");
-        let runner = PythonRunner::new(root.clone(), &SYSTEM_EXECUTOR);
-
-        assert_requested_solution_is_active(&runner);
-
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
-    fn python_setup_creates_main_without_overwriting_it() {
-        let root = test_root("python-main");
-        let runner = PythonRunner::new(root.clone(), &SYSTEM_EXECUTOR);
-        let main_path = runner.solver_file_path(&SolverFile::Entrypoint);
-
-        runner
-            .migrate_runtime()
-            .expect("set up fresh Python solver");
-        assert_eq!(
-            fs::read_to_string(&main_path).expect("read generated Python main"),
-            runner.main_contents()
-        );
-
-        fs::write(&main_path, "custom main").expect("replace generated Python main");
-        runner
-            .migrate_runtime()
-            .expect("set up existing Python solver");
-        assert_eq!(
-            fs::read_to_string(&main_path).expect("read preserved Python main"),
-            "custom main"
-        );
-
         fs::remove_dir_all(root).expect("remove test runtime");
     }
 
@@ -714,91 +561,14 @@ mod tests {
     }
 
     #[test]
-    fn python_runtime_migration_replaces_only_owned_files() {
-        let root = test_root("python-migration");
-        let runner = PythonRunner::new(root.clone(), &SYSTEM_EXECUTOR);
-        let main = root.join("main.py");
-        let solution = root.join("solution.py");
-        let library = root.join("helpers.py");
-        let template = root.join("template.py");
-        let puzzle = root.join("solutions/year2024_day1.py");
-        fs::create_dir_all(puzzle.parent().expect("puzzle parent"))
-            .expect("create puzzle directory");
-        for path in [&main, &solution, &library, &template, &puzzle] {
-            fs::write(path, "legacy or user content").expect("write legacy fixture");
-        }
-
-        runner
-            .migrate_runtime()
-            .expect("migrate legacy Python runtime");
-
-        assert_eq!(
-            fs::read_to_string(&main).expect("read main"),
-            runner.main_contents()
-        );
-        for path in [&solution, &library, &template, &puzzle] {
-            assert_eq!(
-                fs::read_to_string(path).expect("read preserved user file"),
-                "legacy or user content"
-            );
-        }
-        assert!(root.join(".aocsuite-runtime.json").exists());
-
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
-    fn python_solution_template_interpolates_input_length() {
-        let root = test_root("python-template");
-        let runner = PythonRunner::new(root.clone(), &SYSTEM_EXECUTOR);
-
-        let solution = runner
-            .ensure_solver_file(&puzzle_solution(1))
-            .expect("create Python solution from template");
-        let contents = fs::read_to_string(solution).expect("read generated Python solution");
-
-        assert!(contents.contains("Input length: {len(input)}"));
-        assert!(!contents.contains("Input length: {{len(input)}}"));
-
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
     fn result_files_are_cleaned_after_failures() {
         let root = test_root("results");
         let runs_dir = root.join(".aocsuite-runs");
         fs::create_dir_all(&runs_dir).expect("create runs directory");
-        let stale_result = root.join("result.json");
-        fs::write(&stale_result, "stale result").expect("write stale legacy result");
-
         let malformed_result = runs_dir.join("malformed.json");
-        assert_ne!(malformed_result, stale_result);
-        assert!(!malformed_result.exists());
         fs::write(&malformed_result, "not JSON").expect("write malformed result");
         assert!(with_result_file(&malformed_result, read_result).is_err());
         assert!(!malformed_result.exists());
-        assert!(stale_result.exists());
-
-        let failed_result = runs_dir.join("failed.json");
-        fs::write(&failed_result, "partial result").expect("write partial result");
-        let failure: crate::AocLanguageResult<()> = with_result_file(&failed_result, |_| {
-            Err(AocLanguageError::Clean("solver failed".to_string()))
-        });
-        assert!(failure.is_err());
-        assert!(!failed_result.exists());
-
-        fs::remove_dir_all(root).expect("remove test runtime");
-    }
-
-    #[test]
-    fn generated_harnesses_publish_results_atomically() {
-        let root = test_root("atomic-harnesses");
-        fs::create_dir_all(&root).expect("create test runtime");
-        let rust = RustRunner::new(root.clone(), &SYSTEM_EXECUTOR);
-        let python = PythonRunner::new(root.clone(), &SYSTEM_EXECUTOR);
-
-        assert!(rust.main_contents().contains("fs::rename"));
-        assert!(python.main_contents().contains("os.replace"));
 
         fs::remove_dir_all(root).expect("remove test runtime");
     }

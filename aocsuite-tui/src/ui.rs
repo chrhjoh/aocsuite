@@ -1,0 +1,1013 @@
+use std::collections::HashMap;
+
+use aocsuite_parser::{AocSubmissionResult, Calendar, CalendarStars};
+use aocsuite_utils::PuzzleId;
+use ratatui::{
+    layout::{Constraint, Direction, Layout, Margin, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{
+        Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs,
+        Wrap,
+    },
+    Frame,
+};
+
+use crate::app::{
+    friendly_puzzle, App, ConfigDialog, ConfigField, ConfigOperationState, DescriptionState,
+    LanguageConfirmation, LanguageDialog, LanguageFocus, LanguageOperationState, LanguageTextInput,
+    RunDialog, RunInput, RunRequest, SubmissionDialog, Tab,
+};
+
+pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
+    let root = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(4),
+            Constraint::Length(1),
+        ])
+        .split(frame.area());
+    render_tabs(frame, root[0], app);
+    match app.active_tab {
+        Tab::Calendar => render_calendar_tab(frame, root[1], app),
+        Tab::Language => render_language_tab(frame, root[1], app),
+        Tab::Config => render_config_tab(frame, root[1], app),
+    }
+    render_footer(frame, root[2], app);
+    if app.active_submission.is_some() {
+        render_submitting(frame, app.run_spinner_frame);
+    } else if let Some(dialog) = &app.submission_dialog {
+        render_submission_dialog(frame, dialog);
+    } else if let Some(request) = app.active_run {
+        render_running(frame, request, app.run_spinner_frame);
+    } else if let Some(dialog) = &app.run_dialog {
+        render_run_dialog(frame, dialog);
+    } else if let Some(dialog) = &app.config_dialog {
+        render_config_dialog(frame, dialog);
+    } else if let Some(dialog) = &app.language_dialog {
+        render_language_dialog(frame, dialog);
+    } else if app.help_open {
+        render_help_dialog(frame, app);
+    }
+}
+
+fn render_submitting(frame: &mut Frame<'_>, spinner_frame: usize) {
+    let area = centered_dialog(frame.area());
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    let spinner = ["|", "/", "-", "\\"][spinner_frame % 4];
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(format!("{spinner} Submitting answer..."))
+            .block(Block::default().borders(Borders::ALL).title(" Submission ")),
+        area,
+    );
+}
+
+fn submission_prose(result: &AocSubmissionResult) -> String {
+    match result {
+        AocSubmissionResult::Correct => "Correct. That's the right answer!".to_owned(),
+        AocSubmissionResult::AlreadyCompleted => {
+            "This puzzle part was already completed.".to_owned()
+        }
+        AocSubmissionResult::IncorrectTooHigh => "Incorrect. The answer is too high.".to_owned(),
+        AocSubmissionResult::IncorrectTooLow => "Incorrect. The answer is too low.".to_owned(),
+        AocSubmissionResult::Incorrect => "Incorrect. That's not the right answer.".to_owned(),
+        AocSubmissionResult::RateLimited(seconds) => {
+            format!("Rate limited. Wait {seconds} seconds before submitting another answer.")
+        }
+        AocSubmissionResult::Locked => "This puzzle part is not unlocked yet.".to_owned(),
+        AocSubmissionResult::EmptySubmission => {
+            "Advent of Code received an empty answer.".to_owned()
+        }
+        AocSubmissionResult::InvalidFormat => {
+            "Advent of Code rejected the answer format.".to_owned()
+        }
+        AocSubmissionResult::Unknown(markdown) => {
+            format!("Advent of Code returned an unknown response:\n\n{markdown}")
+        }
+    }
+}
+
+fn render_submission_dialog(frame: &mut Frame<'_>, dialog: &SubmissionDialog) {
+    let area = centered_dialog(frame.area());
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    match dialog {
+        SubmissionDialog::Part { puzzle, part } => frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(format!("{} Day {}", puzzle.year, puzzle.day)),
+                Line::default(),
+                choice_line("Part 1", "Part 2", *part == aocsuite_utils::PuzzlePart::Two),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Submit answer "),
+            ),
+            area,
+        ),
+        SubmissionDialog::Answer {
+            puzzle,
+            part,
+            answer,
+            error,
+        } => frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(format!("{} Day {} | Part {part}", puzzle.year, puzzle.day)),
+                input_line(answer),
+                Line::styled(
+                    error.as_deref().unwrap_or_default(),
+                    Style::default().fg(Color::Red),
+                ),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Enter answer "),
+            ),
+            area,
+        ),
+        SubmissionDialog::Confirm { request, submit } => frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(format!(
+                    "{} Day {} | Part {}",
+                    request.puzzle.year, request.puzzle.day, request.part
+                )),
+                Line::from(format!("Answer: {}", request.answer())),
+                choice_line("Cancel", "Submit", *submit),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Confirm submission "),
+            ),
+            area,
+        ),
+        SubmissionDialog::Outcome {
+            puzzle,
+            part,
+            result,
+            scroll,
+        } => {
+            let text = match result {
+                Ok(result) => submission_prose(result),
+                Err(message) => message.clone(),
+            };
+            frame.render_widget(
+                Paragraph::new(text)
+                    .scroll((*scroll, 0))
+                    .wrap(Wrap { trim: false })
+                    .block(Block::default().borders(Borders::ALL).title(format!(
+                        " Submission | {} Day {} | Part {} ",
+                        puzzle.year, puzzle.day, part
+                    ))),
+                area,
+            );
+        }
+    }
+}
+
+fn choice_line<'a>(left: &'a str, right: &'a str, right_selected: bool) -> Line<'a> {
+    let selected = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+    Line::from(vec![
+        Span::styled(
+            format!("[ {left} ]"),
+            if right_selected {
+                Style::default()
+            } else {
+                selected
+            },
+        ),
+        Span::raw("   "),
+        Span::styled(
+            format!("[ {right} ]"),
+            if right_selected {
+                selected
+            } else {
+                Style::default()
+            },
+        ),
+    ])
+}
+
+fn destructive_choice_line(label: &str, confirmed: bool) -> Line<'_> {
+    let cancel_style = if confirmed {
+        Style::default()
+    } else {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    };
+    let confirm_style = if confirmed {
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    Line::from(vec![
+        Span::styled("[ Cancel ]", cancel_style),
+        Span::raw("   "),
+        Span::styled(format!("[ {label} ]"), confirm_style),
+    ])
+}
+
+fn run_context(request: RunRequest, include_input: bool) -> String {
+    let mut context = format!(
+        "{}  |  {}  |  Part {}",
+        friendly_puzzle(request.puzzle),
+        request.language,
+        request.part
+    );
+    if include_input {
+        context.push_str(match request.input {
+            RunInput::Aoc => "  |  AoC input",
+            RunInput::Example => "  |  Shared example",
+        });
+    }
+    context
+}
+
+fn run_title(label: &str, request: RunRequest, width: u16) -> String {
+    let title = format!(" {label} | {} ", run_context(request, true));
+    let maximum = usize::from(width.saturating_sub(4));
+    if title.chars().count() <= maximum {
+        return title;
+    }
+    if maximum <= 3 {
+        return ".".repeat(maximum);
+    }
+    let mut truncated = title.chars().take(maximum - 3).collect::<String>();
+    truncated.push_str("...");
+    truncated
+}
+
+fn render_running(frame: &mut Frame<'_>, request: RunRequest, spinner_frame: usize) {
+    let full = frame.area();
+    let width = full.width.saturating_sub(4).min(84);
+    let height = full.height.saturating_sub(2).min(7);
+    let area = Rect::new(
+        full.x + full.width.saturating_sub(width) / 2,
+        full.y + full.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    let spinner = ["|", "/", "-", "\\"][spinner_frame % 4];
+    let title = run_title("Running", request, area.width);
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(Line::styled(
+            spinner,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .block(Block::default().borders(Borders::ALL).title(title)),
+        area,
+    );
+}
+
+fn render_run_dialog(frame: &mut Frame<'_>, dialog: &RunDialog) {
+    let full = frame.area();
+    let width = full.width.saturating_sub(4).min(84);
+    let height = full.height.saturating_sub(2).min(22);
+    let area = Rect::new(
+        full.x + full.width.saturating_sub(width) / 2,
+        full.y + full.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    let RunDialog {
+        request,
+        result,
+        scroll,
+    } = dialog;
+    let mut text = String::new();
+    let label;
+    match result {
+        Err(failure) => {
+            label = "Run failed";
+            text.push_str(&format!("{}\n", failure.summary));
+            if let Some(details) = &failure.details {
+                text.push_str(&format!("\n{details}"));
+            }
+        }
+        Ok(report) => {
+            label = "Run result";
+            if let Some(part) = report.parts.first() {
+                text.push_str(&format!(
+                    "Answer\n{}\n\nRuntime\n{} ms\n",
+                    part.answer, part.runtime_ms
+                ));
+            }
+            for (label, output) in [
+                ("Compile stdout", &report.compile_stdout),
+                ("Compile stderr", &report.compile_stderr),
+                ("Solver stdout", &report.solver_stdout),
+                ("Solver stderr", &report.solver_stderr),
+            ] {
+                if !output.is_empty() {
+                    text.push_str(&format!("\n{label}\n{output}"));
+                }
+            }
+            if let Some(warning) = &report.warning {
+                text.push_str(&format!("\nWarning\n{warning}"));
+            }
+        }
+    }
+    let title = run_title(label, *request, area.width);
+    frame.render_widget(
+        Paragraph::new(text)
+            .scroll((*scroll, 0))
+            .wrap(Wrap { trim: false })
+            .block(Block::default().borders(Borders::ALL).title(title)),
+        area,
+    );
+}
+
+fn render_tabs(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let titles = Tab::ALL
+        .iter()
+        .map(|tab| Line::from(tab.title()))
+        .collect::<Vec<_>>();
+    let selected = Tab::ALL
+        .iter()
+        .position(|tab| *tab == app.active_tab)
+        .expect("active tab exists");
+    frame.render_widget(
+        Tabs::new(titles)
+            .select(selected)
+            .block(Block::default().borders(Borders::ALL).title(" AoC Suite "))
+            .highlight_style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .divider(" | "),
+        area,
+    );
+}
+
+fn render_calendar_tab(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let direction = if area.width >= 100 {
+        Direction::Horizontal
+    } else {
+        Direction::Vertical
+    };
+    let constraints = if direction == Direction::Horizontal {
+        [Constraint::Length(60), Constraint::Fill(1)]
+    } else {
+        [Constraint::Percentage(60), Constraint::Percentage(40)]
+    };
+    let panes = Layout::default()
+        .direction(direction)
+        .constraints(constraints)
+        .split(area);
+    render_calendar(frame, panes[0], app);
+    render_description(frame, panes[1], app);
+}
+
+fn render_calendar(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let title = format!(" {} ", app.selected_year);
+    let body = match &app.calendar {
+        Some(calendar) => {
+            let (stars, total, completed) = completion(calendar);
+            let selected_puzzle = app.selected_puzzle();
+            let selected_row = selected_puzzle.and_then(|puzzle| {
+                calendar
+                    .rows
+                    .iter()
+                    .rposition(|row| row.cells.iter().any(|cell| cell.puzzle == Some(puzzle)))
+            });
+            let mut lines = vec![Line::from(vec![
+                Span::styled(
+                    format!("{stars}/{total} stars"),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(format!("  {completed} completed days")),
+            ])];
+            lines.push(Line::default());
+            lines.extend(calendar.rows.iter().enumerate().map(|(row_index, row)| {
+                Line::from(
+                    row.cells
+                        .iter()
+                        .map(|cell| {
+                            let mut style = Style::default().fg(Color::Rgb(
+                                cell.color.red,
+                                cell.color.green,
+                                cell.color.blue,
+                            ));
+                            if selected_row == Some(row_index) && cell.puzzle == selected_puzzle {
+                                style = style.bg(Color::DarkGray).add_modifier(Modifier::BOLD);
+                            }
+                            Span::styled(cell.text.clone(), style)
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            }));
+            lines
+        }
+        None if app.calendar_loading => Vec::new(),
+        None => vec![Line::from("Calendar unavailable. Press u to retry.")],
+    };
+    frame.render_widget(
+        Paragraph::new(body)
+            .block(Block::default().borders(Borders::ALL).title(title))
+            .scroll(app.calendar_scroll),
+        area,
+    );
+}
+
+fn render_description(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let Some(puzzle) = app.selected_puzzle() else {
+        frame.render_widget(
+            Paragraph::new("")
+                .block(Block::default().borders(Borders::ALL).title(" Puzzle "))
+                .wrap(Wrap { trim: false }),
+            area,
+        );
+        return;
+    };
+    let downloading = app.description_downloading(puzzle);
+    let scrollable = matches!(app.description, DescriptionState::Loaded { .. });
+    let (title, text) = match &app.description {
+        DescriptionState::CheckingCache(_) => (format!(" Day {} ", puzzle.day), String::new()),
+        DescriptionState::Empty if downloading => (
+            format!(" Day {} - downloading... ", puzzle.day),
+            "Downloading puzzle description...".to_owned(),
+        ),
+        DescriptionState::Empty => (
+            format!(" Day {} ", puzzle.day),
+            "Press d to download this puzzle description.".to_owned(),
+        ),
+        DescriptionState::Loaded { markdown, .. } => {
+            let title = if downloading {
+                format!(" Day {} - downloading... ", puzzle.day)
+            } else {
+                format!(" Day {} ", puzzle.day)
+            };
+            (title, markdown.clone())
+        }
+        DescriptionState::Error { .. } if downloading => (
+            format!(" Day {} - downloading... ", puzzle.day),
+            "Downloading puzzle description...".to_owned(),
+        ),
+        DescriptionState::Error { message, .. } => {
+            (format!(" Day {} - error ", puzzle.day), message.clone())
+        }
+    };
+    let block = Block::default().borders(Borders::ALL).title(title);
+    let inner = block.inner(area);
+    let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
+    let content_length = paragraph.line_count(inner.width);
+    frame.render_widget(
+        paragraph.block(block).scroll((app.description_scroll, 0)),
+        area,
+    );
+    if scrollable && content_length > usize::from(inner.height) {
+        let mut state = ScrollbarState::new(content_length)
+            .viewport_content_length(usize::from(inner.height))
+            .position(usize::from(app.description_scroll));
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(None)
+                .thumb_symbol("▐"),
+            area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
+            &mut state,
+        );
+    }
+}
+
+fn render_language_tab(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(4)])
+        .split(area);
+    let rust_style = if app.language == aocsuite_utils::LanguageId::Rust {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    let python_style = if app.language == aocsuite_utils::LanguageId::Python {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Rust", rust_style),
+            Span::raw(" | "),
+            Span::styled("Python", python_style),
+        ]))
+        .block(Block::default().borders(Borders::ALL).title(" Language ")),
+        sections[0],
+    );
+
+    let direction = if area.width >= 80 {
+        Direction::Horizontal
+    } else {
+        Direction::Vertical
+    };
+    let panes = Layout::default()
+        .direction(direction)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(sections[1]);
+    let (package_activity, library_activity) = match &app.language_operation {
+        LanguageOperationState::Idle => (None, None),
+        LanguageOperationState::Running {
+            packages,
+            libraries,
+        } => (packages.as_deref(), libraries.as_deref()),
+    };
+    render_language_list(
+        frame,
+        panes[0],
+        "Packages",
+        &app.language_packages,
+        app.language_package_selection,
+        app.language_focus == LanguageFocus::Packages,
+        package_activity,
+    );
+    render_language_list(
+        frame,
+        panes[1],
+        "Libraries",
+        &app.language_libraries,
+        app.language_library_selection,
+        app.language_focus == LanguageFocus::Libraries,
+        library_activity,
+    );
+}
+
+fn render_language_list(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    items: &[String],
+    selected: usize,
+    focused: bool,
+    activity: Option<&str>,
+) {
+    let title_style = if focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    let lines = if items.is_empty() {
+        vec![Line::styled("None", Style::default().fg(Color::DarkGray))]
+    } else {
+        items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| {
+                let is_selected = index == selected;
+                let style = if focused && is_selected {
+                    Style::default()
+                        .bg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                Line::styled(
+                    format!("{} {item}", if is_selected { ">" } else { " " }),
+                    style,
+                )
+            })
+            .collect()
+    };
+    let visible_rows = usize::from(area.height.saturating_sub(2));
+    let offset = selected
+        .saturating_add(1)
+        .saturating_sub(visible_rows)
+        .min(u16::MAX as usize) as u16;
+    frame.render_widget(
+        Paragraph::new(lines).scroll((offset, 0)).block(
+            Block::default().borders(Borders::ALL).title(Span::styled(
+                activity.map_or_else(
+                    || format!(" {title} "),
+                    |activity| format!(" {title} - {activity} "),
+                ),
+                title_style,
+            )),
+        ),
+        area,
+    );
+}
+
+fn render_language_dialog(frame: &mut Frame<'_>, dialog: &LanguageDialog) {
+    let area = centered_dialog(frame.area());
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    match dialog {
+        LanguageDialog::Text { kind, value, error } => {
+            let (title, prompt) = match kind {
+                LanguageTextInput::AddPackage => (" Add package ", "Package name"),
+                LanguageTextInput::Library => (" New library ", "Library name"),
+            };
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(prompt),
+                    input_line(value),
+                    Line::styled(
+                        error.as_deref().unwrap_or_default(),
+                        Style::default().fg(Color::Red),
+                    ),
+                ])
+                .block(Block::default().borders(Borders::ALL).title(title)),
+                area,
+            );
+        }
+        LanguageDialog::Confirm { action, confirmed } => {
+            let (title, question, destructive) = match action {
+                LanguageConfirmation::RemovePackage(package) => (
+                    " Remove package ",
+                    format!("Remove package {package}?"),
+                    "Remove",
+                ),
+                LanguageConfirmation::RemoveLibrary(library) => (
+                    " Delete library ",
+                    format!("Delete library {library}?"),
+                    "Delete",
+                ),
+                LanguageConfirmation::ResetTemplate => (
+                    " Reset template ",
+                    "Replace the current template?".to_owned(),
+                    "Reset",
+                ),
+            };
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(question),
+                    Line::default(),
+                    destructive_choice_line(destructive, *confirmed),
+                ])
+                .block(Block::default().borders(Borders::ALL).title(title)),
+                area,
+            );
+        }
+        LanguageDialog::Message(message) => {
+            frame.render_widget(
+                Paragraph::new(vec![Line::from(message.as_str())])
+                    .wrap(Wrap { trim: false })
+                    .block(Block::default().borders(Borders::ALL).title(" Error ")),
+                area,
+            );
+        }
+    }
+}
+
+fn render_config_tab(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let title = match app.config_operation {
+        ConfigOperationState::Idle => " Config ".to_owned(),
+        ConfigOperationState::Loading => " Config - loading... ".to_owned(),
+        ConfigOperationState::Saving => " Config - saving... ".to_owned(),
+    };
+    let lines = ConfigField::ALL
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            let selected = index == app.config_selection;
+            let value = app
+                .config
+                .as_ref()
+                .map_or_else(String::new, |config| match field {
+                    ConfigField::Year => config.year.clone(),
+                    ConfigField::Editor => config
+                        .editor
+                        .clone()
+                        .unwrap_or_else(|| "Not configured".to_owned()),
+                    ConfigField::RunHistoryLimit => config.run_history_limit.clone(),
+                    ConfigField::Session if config.session_configured => "Configured".to_owned(),
+                    ConfigField::Session => "Not configured".to_owned(),
+                });
+            let style = if selected {
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            Line::styled(
+                format!(
+                    "{} {:<24} {value}",
+                    if selected { ">" } else { " " },
+                    field.label()
+                ),
+                style,
+            )
+        })
+        .collect::<Vec<_>>();
+    let visible_rows = usize::from(area.height.saturating_sub(2));
+    let offset = app
+        .config_selection
+        .saturating_add(1)
+        .saturating_sub(visible_rows)
+        .min(u16::MAX as usize) as u16;
+    frame.render_widget(
+        Paragraph::new(lines)
+            .scroll((offset, 0))
+            .block(Block::default().borders(Borders::ALL).title(title)),
+        area,
+    );
+}
+
+fn render_config_dialog(frame: &mut Frame<'_>, dialog: &ConfigDialog) {
+    let area = centered_dialog(frame.area());
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    frame.render_widget(Clear, area);
+    match dialog {
+        ConfigDialog::Text {
+            field,
+            value,
+            error,
+        } => {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(field.label()),
+                    input_line(value),
+                    Line::styled(
+                        error.as_deref().unwrap_or_default(),
+                        Style::default().fg(Color::Red),
+                    ),
+                ])
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Edit setting "),
+                ),
+                area,
+            );
+        }
+        ConfigDialog::Session { value, error } => {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from("Set or replace session"),
+                    input_line(if value.is_empty() { "" } else { "********" }),
+                    Line::styled(
+                        error.as_deref().unwrap_or_default(),
+                        Style::default().fg(Color::Red),
+                    ),
+                ])
+                .block(Block::default().borders(Borders::ALL).title(" Session ")),
+                area,
+            );
+        }
+        ConfigDialog::ConfirmRemoveSession { confirmed } => {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from("Remove the configured session?"),
+                    Line::default(),
+                    destructive_choice_line("Remove", *confirmed),
+                ])
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Remove session "),
+                ),
+                area,
+            );
+        }
+        ConfigDialog::Message { message, scroll } => {
+            let block = Block::default().borders(Borders::ALL).title(" Error ");
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            frame.render_widget(
+                Paragraph::new(message.as_str())
+                    .scroll((*scroll, 0))
+                    .wrap(Wrap { trim: false }),
+                inner,
+            );
+        }
+    }
+}
+
+fn centered_dialog(area: Rect) -> Rect {
+    let width = area.width.saturating_sub(4).min(64);
+    let height = area.height.saturating_sub(2).min(7);
+    Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    )
+}
+
+fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let text = match &app.status {
+        Some(status) => format!("? help\n{status}"),
+        None => "? help".to_owned(),
+    };
+    frame.render_widget(
+        Paragraph::new(text).style(Style::default().fg(Color::Gray)),
+        area,
+    );
+}
+
+fn render_help_dialog(frame: &mut Frame<'_>, app: &App) {
+    let area = help_dialog_area(frame.area());
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    let mut lines = vec![
+        key_line("q", "Quit", area.width),
+        key_line("g", "Open workspace in lazygit", area.width),
+        key_line("Tab / Shift-Tab", "Next / previous tab", area.width),
+        Line::default(),
+    ];
+    match app.active_tab {
+        Tab::Calendar => lines.extend([
+            key_line("Up / Down", "Select puzzle", area.width),
+            key_line("Left / Right", "Previous / next year", area.width),
+            key_line("Ctrl + arrows", "Pan calendar", area.width),
+            key_line("PageUp / PageDown", "Scroll puzzle description", area.width),
+            key_line("d", "Download or refresh puzzle description", area.width),
+            key_line("s", "Submit an answer", area.width),
+            key_line("1 / 2", "Run puzzle part one / two", area.width),
+            key_line("i", "Toggle AoC / shared-example input", area.width),
+            key_line("u", "Refresh calendar", area.width),
+            key_line("b", "Open puzzle in browser", area.width),
+            key_line("Enter", "Open exercise in editor", area.width),
+        ]),
+        Tab::Language => lines.extend([
+            key_line("s", "Switch session language", area.width),
+            key_line(
+                "Left / Right",
+                "Select packages / libraries pane",
+                area.width,
+            ),
+            key_line("Up / Down", "Select package or library", area.width),
+            key_line("r", "Reload package and library lists", area.width),
+            key_line("a", "Add package", area.width),
+            key_line("x", "Remove selected package or library", area.width),
+            key_line("n", "Create library", area.width),
+            key_line("Enter", "Open selected library", area.width),
+            key_line("t / T", "Open / reset template", area.width),
+        ]),
+        Tab::Config => lines.extend([
+            key_line("Up / Down", "Select configuration field", area.width),
+            key_line("Enter", "Edit selected field", area.width),
+            key_line("r", "Reload configuration", area.width),
+            key_line("x", "Reset field / remove session", area.width),
+        ]),
+    }
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" {} keymap ", app.active_tab.title())),
+            )
+            .scroll((app.help_scroll, 0))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn key_line(key: &'static str, description: &'static str, width: u16) -> Line<'static> {
+    let key_width = if width < 50 { 12 } else { 20 };
+    Line::from(vec![
+        Span::styled(
+            format!("{key:<key_width$}"),
+            Style::default().fg(Color::Yellow),
+        ),
+        Span::raw(description),
+    ])
+}
+
+fn input_line(value: &str) -> Line<'_> {
+    Line::from(format!("> {value}"))
+}
+
+fn help_dialog_area(area: Rect) -> Rect {
+    let width = area.width.saturating_sub(4).min(72);
+    let height = area.height.saturating_sub(2).min(18);
+    Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    )
+}
+
+fn completion(calendar: &Calendar) -> (usize, usize, usize) {
+    let mut stars_by_puzzle = HashMap::<PuzzleId, usize>::new();
+    for cell in calendar.rows.iter().flat_map(|row| &row.cells) {
+        let Some(puzzle) = cell.puzzle else {
+            continue;
+        };
+        let stars = match cell.stars {
+            Some(CalendarStars::One) => 1,
+            Some(CalendarStars::Two) => 2,
+            None => 0,
+        };
+        stars_by_puzzle
+            .entry(puzzle)
+            .and_modify(|current| *current = (*current).max(stars))
+            .or_insert(stars);
+    }
+    let earned = stars_by_puzzle.values().sum();
+    let completed = stars_by_puzzle
+        .values()
+        .filter(|stars| **stars == 2)
+        .count();
+    (earned, stars_by_puzzle.len() * 2, completed)
+}
+
+#[cfg(test)]
+mod tests {
+    use aocsuite_parser::{Calendar, CalendarCell, CalendarRow, Rgb};
+    use aocsuite_utils::{LanguageId, PuzzleDay, PuzzleId, PuzzleYear};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use crate::app::{Action, App, ConfigData, SecretCharacter};
+
+    use super::render;
+
+    fn app() -> App {
+        let puzzle = PuzzleId::new(PuzzleDay::new(10).unwrap(), PuzzleYear::new(2026).unwrap());
+        let mut app = App::new(None, puzzle, LanguageId::Rust);
+        app.update(Action::CalendarFinished {
+            year: puzzle.year,
+            refresh: false,
+            result: Ok(Calendar {
+                rows: vec![CalendarRow {
+                    cells: vec![CalendarCell {
+                        text: "calendar puzzle".to_owned(),
+                        color: Rgb {
+                            red: 255,
+                            green: 255,
+                            blue: 255,
+                        },
+                        stars: None,
+                        puzzle: Some(puzzle),
+                    }],
+                }],
+            }),
+        });
+        app
+    }
+
+    #[test]
+    fn session_input_is_masked_in_the_rendered_buffer() {
+        let backend = TestBackend::new(70, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app();
+        app.update(Action::PreviousTab);
+        app.update(Action::ConfigLoaded {
+            result: Ok(ConfigData {
+                year: "2026".to_owned(),
+                editor: Some("vim".to_owned()),
+                run_history_limit: "10".to_owned(),
+                session_configured: false,
+            }),
+        });
+        app.config_selection = 3;
+        app.update(Action::EditConfigField);
+        for character in "sensitive-value".chars() {
+            app.update(Action::ConfigSecretInput(SecretCharacter(character)));
+        }
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(!rendered.contains("sensitive-value"));
+    }
+
+    fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
+        let area = buffer.area;
+        (area.y..area.y + area.height)
+            .map(|y| {
+                (area.x..area.x + area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}

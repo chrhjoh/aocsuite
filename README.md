@@ -9,7 +9,7 @@ A a command-line tool and tui for Advent of Code (AOC) that helps you manage sol
 - Templating system for premade exercise layouts
 - Library file support
 - Open files in your editor of choice
-- Submit solutions directly from the command line
+- Submit solutions from the CLI or TUI
 - interacts with git for managing solutions
 
 ### Language support
@@ -21,14 +21,20 @@ Generally language implementations are made with the fewest tools possible for s
 
 ## Installation
 
+### Release
+
+CLI and TUI are available precompiled for Linux x86-64, Windows
+x86-64, and macOS ARM64 as github releases.
+
 ### From Source
 
-Will be improved in the future. For now the cli can be installed via the cli
+The CLI and TUI can also be installed from their workspace crates:
 
 ```bash
 git clone https://github.com/your-username/aocsuite.git
 cd aocsuite
 cargo install --path aocsuite-cli
+cargo install --path aocsuite-tui
 ```
 
 ## Quick Start CLI
@@ -60,7 +66,37 @@ cargo install --path aocsuite-cli
    aocsuite-cli submit <PART> <ANSWER>
    ```
 
-### Session Token Setup
+## Quick Start TUI
+
+Start the terminal interface with:
+
+```bash
+aocsuite-tui
+```
+
+The TUI provides three tabs:
+
+- **Calendar**: browse released years and puzzles, download or refresh puzzle
+  descriptions, open a puzzle in the browser or editor, and run its solver with
+  AoC input or the shared example. Submit answers with `s`. Press `1` or `2` to
+  run that part, `i` to toggle AoC/shared-example input, and `u` to refresh the
+  selected year's calendar.
+- **Language**: select Rust or Python for the current session and manage
+  packages, libraries, and templates.
+- **Config**: manage the default year, editor, run-history retention, and AoC
+  session credential.
+
+Press `Tab` or `Shift-Tab` to change tabs, `?` for the active tab's keymap, and
+`q` to quit. Use `Up`, `Down`, `PageUp`, or `PageDown` to scroll long help and
+`Esc` to close it. The layout adapts on narrow terminals on a best-effort basis.
+
+Cleanup, uninstall, raw Git commands, and leaderboards remain CLI workflows. Press
+`g` from any TUI tab to open the workspace in `lazygit` (available through
+`PATH`). TUI solver
+execution uses the current in-session language and runs part one or part two
+directly; custom input paths remain CLI-only.
+
+## Session Token Setup
 
 To get your input and submit answers to Advent of Code website, you'll need your session token:
 
@@ -113,7 +149,7 @@ The editor falls back to `EDITOR` when no editor is configured.
 
 ### Git tracking
 
-`aocsuite-cli git` - wraps around git to enable version control of the solution directory. A basic .gitignore is supplied to avoid tracking aocsuite specific files.
+`aocsuite-cli git` - wraps raw Git commands for version control of the solution directory. A basic `.gitignore` is supplied when the first Git workflow initializes the workspace.
 
 Files are stored at `$AOCSUITE_DATA_DIR`, `$XDG_DATA_HOME/aocsuite`, or `$HOME/.local/share/aocsuite`, in that order. Set `AOCSUITE_DATA_DIR` to override the complete runtime root.
 

@@ -6,8 +6,9 @@ This document records settled target architecture. It describes ownership,
 dependency direction, and cross-crate contracts.
 
 It does not describe migration progress and does not authorize unrelated
-refactoring. Current status and sequencing are tracked in
-`plans/pre-tui-refactor.md`.
+refactoring. Pre-TUI migration status is tracked in
+`../plans/pre-tui-refactor.md`; initial TUI scope and sequencing are tracked in
+`../plans/tui-implementation.md`.
 
 ## Architectural principles
 
@@ -192,8 +193,9 @@ Own frontend concerns:
 - terminal lifecycle;
 - frontend-specific scheduling.
 
-The TUI should expose the same user-facing AoC workflows as the CLI unless a
-workflow is explicitly documented as CLI-only. Parity means equivalent domain
+The TUI should eventually expose the same user-facing AoC workflows as the CLI
+unless a workflow is explicitly documented as CLI-only. Phased TUI plans may
+defer workflows without making them CLI-only. Parity means equivalent domain
 operations and outcomes, not identical interaction or presentation.
 
 Until command metadata is centralized,
