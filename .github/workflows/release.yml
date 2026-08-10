@@ -101,7 +101,10 @@ jobs:
       - name: Build CLI
         run: cargo build -p aocsuite-cli --release --locked
 
-      - name: Smoke test packaged binary
+      - name: Build TUI
+        run: cargo build -p aocsuite-tui --release --locked
+
+      - name: Smoke test CLI binary
         shell: bash
         run: target/release/aocsuite-cli${{ runner.os == 'Windows' && '.exe' || '' }} --help
 
@@ -109,12 +112,17 @@ jobs:
         id: package
         shell: bash
         run: |
-          archive="aocsuite-cli-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.extension }}"
-          binary="target/release/aocsuite-cli${{ runner.os == 'Windows' && '.exe' || '' }}"
+          archive="aocsuite-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.extension }}"
+          files=(
+            "target/release/aocsuite-cli${{ runner.os == 'Windows' && '.exe' || '' }}"
+            "target/release/aocsuite-tui${{ runner.os == 'Windows' && '.exe' || '' }}"
+            README.md
+            LICENSE
+          )
           if [[ "${{ matrix.extension }}" == "zip" ]]; then
-            7z a "$archive" "$binary" README.md LICENSE
+            7z a "$archive" "${files[@]}"
           else
-            tar -czf "$archive" "$binary" README.md LICENSE
+            tar -czf "$archive" "${files[@]}"
           fi
           ${{ matrix.checksum }} "$archive" > "$archive.sha256"
           echo "archive=$archive" >> "$GITHUB_OUTPUT"

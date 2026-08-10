@@ -12,8 +12,7 @@ sequencing is tracked in `plans/tui-implementation.md`.
 
 - Verify pull requests and default-branch changes.
 - Exercise supported operating systems with deterministic tests.
-- Publish reproducible CLI binaries.
-- Add TUI binaries to the same product release after TUI parity.
+- Publish reproducible CLI and TUI binaries in the same product archives.
 - Keep CI independent of credentials, live services, user applications, and
   developer-local state.
 
@@ -178,7 +177,8 @@ It must:
 1. validate the tag against the workspace product version;
 2. run or require the complete CI suite;
 3. build native release binaries with `--locked`;
-4. execute each native binary with `--help`;
+4. execute each native binary that provides a noninteractive argument interface
+   with `--help`;
 5. package binaries with README and license files;
 6. generate SHA-256 checksums;
 7. create a GitHub Release and upload archives and checksums.
@@ -193,17 +193,21 @@ aarch64-apple-darwin
 
 Prefer native GitHub runners.
 
-Suggested artifact names:
+Initial TUI targets:
 
 ```text
-aocsuite-cli-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-aocsuite-cli-v0.4.0-x86_64-pc-windows-msvc.zip
-aocsuite-cli-v0.4.0-aarch64-apple-darwin.tar.gz
+x86_64-unknown-linux-gnu
+x86_64-pc-windows-msvc
+aarch64-apple-darwin
 ```
 
-After TUI parity, prefer one product archive containing both binaries when they
-share versioning and platform support. Use separate archives only when
-installation or support differs.
+Use one product archive containing both binaries:
+
+```text
+aocsuite-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+aocsuite-v0.4.0-x86_64-pc-windows-msvc.zip
+aocsuite-v0.4.0-aarch64-apple-darwin.tar.gz
+```
 
 ## Additional automation
 
