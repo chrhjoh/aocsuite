@@ -80,15 +80,12 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             extension: tar.gz
-            checksum: sha256sum
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             extension: zip
-            checksum: sha256sum
           - os: macos-14
             target: aarch64-apple-darwin
             extension: tar.gz
-            checksum: shasum -a 256
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -124,7 +121,6 @@ jobs:
           else
             tar -czf "$archive" "${files[@]}"
           fi
-          ${{ matrix.checksum }} "$archive" > "$archive.sha256"
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Upload release files
@@ -133,7 +129,6 @@ jobs:
           name: release-${{ matrix.target }}
           path: |
             ${{ steps.package.outputs.archive }}
-            ${{ steps.package.outputs.archive }}.sha256
           if-no-files-found: error
 
   publish:
