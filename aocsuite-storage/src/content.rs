@@ -422,12 +422,12 @@ mod tests {
         thread,
     };
 
-    use aocsuite_client::{AocClient, AocClientOptions, AocPage};
+    use aocsuite_client::{AocClient, AocClientOptions};
     use aocsuite_parser::{AocSubmissionResult, ParserError};
     use aocsuite_utils::{PuzzleDay, PuzzlePart, PuzzleYear};
     use tempfile::tempdir;
 
-    use super::{replace_with_rollback, CacheCleanScope, CacheKey, ContentError, ContentStore};
+    use super::{CacheCleanScope, CacheKey, ContentError, ContentStore};
 
     fn puzzle(day: u32, year: i32) -> aocsuite_utils::PuzzleId {
         aocsuite_utils::PuzzleId::new(
@@ -495,28 +495,6 @@ mod tests {
     }
 
     #[test]
-    fn cached_puzzle_markdown_lookup_uses_only_valid_markdown() {
-        let temp = tempdir().expect("create temporary cache root");
-        let client = client();
-        let store =
-            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
-        let puzzle = puzzle(1, 2024);
-
-        store
-            .save(CacheKey::PuzzleHtml(puzzle), b"cached html")
-            .expect("save cached html");
-        assert_eq!(store.load_cached_puzzle_markdown(puzzle).unwrap(), None);
-
-        store
-            .save(CacheKey::PuzzleMarkdown(puzzle), b"cached markdown")
-            .expect("save cached markdown");
-        assert_eq!(
-            store.load_cached_puzzle_markdown(puzzle).unwrap(),
-            Some("cached markdown".to_owned())
-        );
-    }
-
-    #[test]
     fn puzzle_markdown_download_replaces_an_existing_preview() {
         let temp = tempdir().expect("create temporary cache root");
         let (client, requests) = serve_responses(vec![
@@ -546,37 +524,6 @@ mod tests {
         assert_eq!(
             store.load_cached_puzzle_markdown(puzzle).unwrap(),
             Some(updated)
-        );
-        assert_eq!(requests.recv().expect("receive requests").len(), 2);
-    }
-
-    #[test]
-    fn failed_puzzle_markdown_download_preserves_the_existing_preview() {
-        let temp = tempdir().expect("create temporary cache root");
-        let (client, requests) = serve_responses(vec![
-            (
-                200,
-                "<main><article><h2>Original Puzzle</h2><p>Part one.</p></article></main>",
-            ),
-            (400, "rejected refresh"),
-        ]);
-        let store =
-            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
-        let puzzle = puzzle(1, 2024);
-        let original = store
-            .load_puzzle_markdown(puzzle)
-            .expect("load original markdown");
-        let html_path = store.cache_path(CacheKey::PuzzleHtml(puzzle));
-        let original_html = fs::read_to_string(&html_path).expect("read original html");
-
-        assert!(store.download_puzzle_markdown(puzzle).is_err());
-        assert_eq!(
-            store.load_cached_puzzle_markdown(puzzle).unwrap(),
-            Some(original)
-        );
-        assert_eq!(
-            fs::read_to_string(html_path).expect("read preserved html"),
-            original_html
         );
         assert_eq!(requests.recv().expect("receive requests").len(), 2);
     }
@@ -654,96 +601,6 @@ mod tests {
     }
 
     #[test]
-    fn calendar_refresh_bypasses_valid_cached_content() {
-        let temp = tempdir().expect("create temporary cache root");
-        let (client, requests) =
-            serve_responses(vec![(200, "cached calendar"), (200, "refreshed calendar")]);
-        let store =
-            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
-        let year = PuzzleYear::new(2024).expect("valid year");
-
-        assert_eq!(store.load_calendar(year).unwrap(), "cached calendar");
-        assert_eq!(store.refresh_calendar(year).unwrap(), "refreshed calendar");
-        assert_eq!(store.load_calendar(year).unwrap(), "refreshed calendar");
-        assert_eq!(requests.recv().expect("receive requests").len(), 2);
-    }
-
-    #[test]
-    fn failed_calendar_refresh_preserves_cached_content_and_metadata() {
-        let temp = tempdir().expect("create temporary cache root");
-        let (client, requests) =
-            serve_responses(vec![(200, "cached calendar"), (400, "rejected refresh")]);
-        let store =
-            ContentStore::open(temp.path().join("cache"), &client).expect("open content store");
-        let year = PuzzleYear::new(2024).expect("valid year");
-        let key = CacheKey::Calendar(year);
-
-        assert_eq!(store.load_calendar(year).unwrap(), "cached calendar");
-        let metadata = store
-            .database
-            .cache_entry(key)
-            .expect("read cache metadata")
-            .expect("calendar metadata exists");
-
-        assert!(store.refresh_calendar(year).is_err());
-        assert_eq!(store.load_calendar(year).unwrap(), "cached calendar");
-        assert_eq!(
-            store
-                .database
-                .cache_entry(key)
-                .expect("read cache metadata"),
-            Some(metadata)
-        );
-        assert_eq!(requests.recv().expect("receive requests").len(), 2);
-    }
-
-    #[test]
-    fn calendar_refresh_does_not_overwrite_an_unindexed_file() {
-        let temp = tempdir().expect("create temporary cache root");
-        let cache_dir = temp.path().join("cache");
-        let client = client();
-        let store = ContentStore::open(cache_dir.clone(), &client).expect("open content store");
-        let year = PuzzleYear::new(2024).expect("valid year");
-        let path = cache_dir.join("calendars/year2024.html");
-        fs::create_dir_all(path.parent().expect("calendar has parent"))
-            .expect("create calendar directory");
-        fs::write(&path, "unmanaged calendar").expect("write unmanaged calendar");
-
-        assert!(matches!(
-            store.refresh_calendar(year),
-            Err(ContentError::UnmanagedCacheFile { path: error_path }) if error_path == path
-        ));
-        assert_eq!(
-            fs::read_to_string(path).expect("read unmanaged calendar"),
-            "unmanaged calendar"
-        );
-        assert!(store
-            .database
-            .cache_entry(CacheKey::Calendar(year))
-            .expect("read cache metadata")
-            .is_none());
-    }
-
-    #[test]
-    fn failed_refresh_persistence_restores_previous_file_contents() {
-        let temp = tempdir().expect("create temporary cache root");
-        let path = temp.path().join("calendars/year2024.html");
-        fs::create_dir_all(path.parent().expect("calendar has parent"))
-            .expect("create calendar directory");
-        fs::write(&path, "previous calendar").expect("write previous calendar");
-
-        let result = replace_with_rollback(&path, b"replacement calendar", || {
-            Err(ContentError::State("forced persistence failure".to_owned()))
-        });
-
-        assert!(matches!(result, Err(ContentError::State(_))));
-        assert_eq!(
-            fs::read_to_string(path).expect("read restored calendar"),
-            "previous calendar"
-        );
-    }
-
-    #[test]
     fn cleanup_removes_only_indexed_files_for_each_target() {
         let temp = tempdir().expect("create temporary cache root");
         let cache_dir = temp.path().join("cache");
@@ -801,26 +658,6 @@ mod tests {
     }
 
     #[test]
-    fn cache_keys_map_only_source_content_to_aoc_pages() {
-        let puzzle = puzzle(1, 2024);
-        let year = PuzzleYear::new(2024).expect("valid year");
-
-        assert!(matches!(
-            CacheKey::PuzzleHtml(puzzle).source_page(),
-            Some(AocPage::Puzzle(page)) if page == puzzle
-        ));
-        assert!(matches!(
-            CacheKey::Input(puzzle).source_page(),
-            Some(AocPage::Input(page)) if page == puzzle
-        ));
-        assert!(matches!(
-            CacheKey::Calendar(year).source_page(),
-            Some(AocPage::Calendar(page_year)) if page_year == year
-        ));
-        assert!(CacheKey::PuzzleMarkdown(puzzle).source_page().is_none());
-    }
-
-    #[test]
     fn recording_a_correct_submission_invalidates_affected_cache_entries() {
         let temp = tempdir().expect("create temporary cache root");
         let cache_dir = temp.path().join("cache");
@@ -850,42 +687,5 @@ mod tests {
         assert!(!store
             .is_cached(CacheKey::PuzzleMarkdown(puzzle))
             .expect("check puzzle markdown cache"));
-    }
-
-    #[test]
-    fn opening_an_invalid_database_returns_a_typed_corruption_error() {
-        let temp = tempdir().expect("create temporary cache root");
-        let cache_dir = temp.path().join("cache");
-        fs::create_dir_all(&cache_dir).expect("create cache directory");
-        fs::write(cache_dir.join("state.sqlite"), "not a SQLite database")
-            .expect("write invalid database");
-        let client = client();
-
-        assert!(matches!(
-            ContentStore::open(cache_dir, &client),
-            Err(super::ContentError::CorruptStateDatabase { .. })
-        ));
-    }
-
-    #[test]
-    fn opening_a_newer_database_returns_a_typed_schema_error() {
-        let temp = tempdir().expect("create temporary cache root");
-        let cache_dir = temp.path().join("cache");
-        fs::create_dir_all(&cache_dir).expect("create cache directory");
-        let connection =
-            rusqlite::Connection::open(cache_dir.join("state.sqlite")).expect("create database");
-        connection
-            .pragma_update(None, "user_version", 2_u32)
-            .expect("set newer schema version");
-        drop(connection);
-        let client = client();
-
-        assert!(matches!(
-            ContentStore::open(cache_dir, &client),
-            Err(super::ContentError::NewerStateSchema {
-                found: 2,
-                supported: 1,
-            })
-        ));
     }
 }

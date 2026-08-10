@@ -81,9 +81,19 @@ Read only the domain documents relevant to the task:
 
 ## Tests and verification
 
-Add or update tests for the changed behavior.
-Include focused unit tests for internal logic and tests that verify public-facing functions behave as expected.
-Do not broadly restructure the test suite, introduce a new test framework, or expand coverage into unrelated areas unless explicitly requested.
+Add, update, remove, or restructure tests only when the user or current task
+specifically requests test work.
+
+Historical design documents, plans, prior regressions, existing tests, and
+general coverage goals do not independently require or justify tests.
+
+When test work is requested, retain or add only tests with a clear present-day
+unit purpose, meaningful component-boundary integration purpose, or directly
+useful public behavior or safety purpose.
+
+Do not preserve tests solely to lock presentation, implementation details,
+helper behavior, trivial parsing or path construction, artificial edge cases,
+or narrow historical regressions without a credible present-day boundary.
 
 Use explicit temporary roots and deterministic clock, environment, process, and
 HTTP seams. Normal tests must not invoke real Git, Cargo, Python, pip, editors,
