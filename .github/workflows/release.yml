@@ -109,17 +109,16 @@ jobs:
         id: package
         shell: bash
         run: |
-          archive="aocsuite-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.extension }}"
-          files=(
-            "target/release/aocsuite-cli${{ runner.os == 'Windows' && '.exe' || '' }}"
-            "target/release/aocsuite-tui${{ runner.os == 'Windows' && '.exe' || '' }}"
-            README.md
-            LICENSE
-          )
+          directory="aocsuite-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          archive="${directory}.${{ matrix.extension }}"
+          mkdir "$directory"
+          cp "target/release/aocsuite-cli${{ runner.os == 'Windows' && '.exe' || '' }}" "$directory/"
+          cp "target/release/aocsuite-tui${{ runner.os == 'Windows' && '.exe' || '' }}" "$directory/"
+          cp README.md LICENSE "$directory/"
           if [[ "${{ matrix.extension }}" == "zip" ]]; then
-            7z a "$archive" "${files[@]}"
+            7z a "$archive" "$directory"
           else
-            tar -czf "$archive" "${files[@]}"
+            tar -czf "$archive" "$directory"
           fi
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
