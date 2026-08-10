@@ -1,16 +1,16 @@
 [package]
 name = "aocsuite-cli"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 
 [dependencies]
-aocsuite-client = { version = "0.4.0", path = "../aocsuite-client" }
-aocsuite-config = { version = "0.4.0", path = "../aocsuite-config" }
-aocsuite-launcher = { version = "0.4.0", path = "../aocsuite-launcher" }
-aocsuite-lang = { version = "0.4.0", path = "../aocsuite-lang" }
-aocsuite-parser = { version = "0.4.0", path = "../aocsuite-parser" }
-aocsuite-storage = { version = "0.4.0", path = "../aocsuite-storage" }
-aocsuite-utils = { version = "0.4.0", path = "../aocsuite-utils" }
+aocsuite-client = { version = "0.4.1", path = "../aocsuite-client" }
+aocsuite-config = { version = "0.4.1", path = "../aocsuite-config" }
+aocsuite-launcher = { version = "0.4.1", path = "../aocsuite-launcher" }
+aocsuite-lang = { version = "0.4.1", path = "../aocsuite-lang" }
+aocsuite-parser = { version = "0.4.1", path = "../aocsuite-parser" }
+aocsuite-storage = { version = "0.4.1", path = "../aocsuite-storage" }
+aocsuite-utils = { version = "0.4.1", path = "../aocsuite-utils" }
 clap = { workspace = true, features = ["derive"] }
 colored.workspace = true
 rpassword.workspace = true

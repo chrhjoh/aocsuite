@@ -1,10 +1,10 @@
 [package]
 name = "aocsuite-config"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 
 [dependencies]
-aocsuite-utils = { version = "0.4.0", path = "../aocsuite-utils" }
+aocsuite-utils = { version = "0.4.1", path = "../aocsuite-utils" }
 serde_json.workspace = true
 serde.workspace = true
 thiserror.workspace = true

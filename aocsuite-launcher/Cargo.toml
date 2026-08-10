@@ -1,9 +1,9 @@
 [package]
 name = "aocsuite-launcher"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 
 [dependencies]
-aocsuite-utils = { version = "0.4.0", path = "../aocsuite-utils" }
+aocsuite-utils = { version = "0.4.1", path = "../aocsuite-utils" }
 thiserror.workspace = true
 which = "8.0.0"

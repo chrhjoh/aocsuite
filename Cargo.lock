@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-cli"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aocsuite-client",
  "aocsuite-config",
@@ -116,7 +116,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-client"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aocsuite-utils",
  "reqwest",
@@ -125,7 +125,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-config"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aocsuite-utils",
  "serde",
@@ -136,7 +136,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-lang"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aocsuite-storage",
  "aocsuite-utils",
@@ -147,7 +147,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-launcher"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aocsuite-utils",
  "thiserror 2.0.12",
@@ -156,7 +156,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-parser"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aocsuite-utils",
  "html2md",
@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-storage"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aocsuite-client",
  "aocsuite-parser",
@@ -182,7 +182,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-tui"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aocsuite-client",
  "aocsuite-config",
@@ -198,7 +198,7 @@ dependencies = [
 
 [[package]]
 name = "aocsuite-utils"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "chrono",
  "chrono-tz",

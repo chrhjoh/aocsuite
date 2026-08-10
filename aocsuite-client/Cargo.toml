@@ -1,9 +1,9 @@
 [package]
 name = "aocsuite-client"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 
 [dependencies]
-aocsuite-utils = { version = "0.4.0", path = "../aocsuite-utils" }
+aocsuite-utils = { version = "0.4.1", path = "../aocsuite-utils" }
 reqwest = { workspace = true, features = ["blocking"] }
 thiserror.workspace = true

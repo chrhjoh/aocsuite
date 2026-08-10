@@ -1,11 +1,11 @@
 [package]
 name = "aocsuite-lang"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 
 [dependencies]
-aocsuite-storage = { version = "0.4.0", path = "../aocsuite-storage" }
-aocsuite-utils = { version = "0.4.0", path = "../aocsuite-utils" }
+aocsuite-storage = { version = "0.4.1", path = "../aocsuite-storage" }
+aocsuite-utils = { version = "0.4.1", path = "../aocsuite-utils" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
